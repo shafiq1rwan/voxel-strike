@@ -209,7 +209,16 @@ export class Game {
     this.weapons.viewModel.visible = true;
     this.state = 'playing';
     this.levelStartTime = this.time;
-    if (!this.isTouch) this.input.requestLock();
+    if (this.isTouch) {
+      // go immersive: fullscreen + landscape lock where the platform allows it
+      void document.documentElement.requestFullscreen?.().catch(() => {});
+      const orientation = screen.orientation as ScreenOrientation & {
+        lock?: (o: string) => Promise<void>;
+      };
+      orientation.lock?.('landscape').catch(() => {});
+    } else {
+      this.input.requestLock();
+    }
     this.hud.message(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard. Reach the exit.`);
     // if the browser blocked audio despite the gesture, tell the player how to fix it
     window.setTimeout(() => {

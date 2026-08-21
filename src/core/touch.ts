@@ -22,19 +22,44 @@ export class TouchControls {
   private lookLastY = 0;
   private base: HTMLElement;
   private knob: HTMLElement;
+  /** true while the body is CSS-rotated 90° (device held in portrait) */
+  private forced = false;
+
+  /** map raw screen touch coords into the (possibly rotated) game space */
+  private mapXY(clientX: number, clientY: number): { x: number; y: number } {
+    if (!this.forced) return { x: clientX, y: clientY };
+    return { x: clientY, y: window.innerWidth - clientX };
+  }
 
   constructor(container: HTMLElement, private input: Input, onPause: () => void) {
+    // flips the HUD into its mobile layout (top status bar, thumb-corner UI)
+    document.body.classList.add('touch-mode');
+
     const ui = document.createElement('div');
     ui.id = 'touchui';
     ui.innerHTML = `
       <div id="tjoy-zone"></div>
       <div id="tlook-zone"></div>
       <div id="tjoy-base"><div id="tjoy-knob"></div></div>
+      <div id="tammo">–</div>
       <button id="tjump" class="tbtn-touch">JUMP</button>
       <button id="tfire" class="tbtn-touch">FIRE</button>
       <button id="tpause" class="tbtn-touch">&#10073;&#10073;</button>
     `;
     container.appendChild(ui);
+
+    // forced landscape: when the device is held in portrait, the whole body
+    // is CSS-rotated 90° so the game is always landscape — no reliance on the
+    // OS auto-rotate setting (and it covers iOS, which can't lock orientation)
+    const portrait = window.matchMedia('(orientation: portrait)');
+    const applyOrientation = (isPortrait: boolean): void => {
+      this.forced = isPortrait;
+      document.body.classList.toggle('force-landscape', isPortrait);
+      // the body box changed shape — let the renderer re-derive its aspect
+      window.dispatchEvent(new Event('resize'));
+    };
+    applyOrientation(portrait.matches);
+    portrait.addEventListener('change', (e) => applyOrientation(e.matches));
     this.base = ui.querySelector('#tjoy-base') as HTMLElement;
     this.knob = ui.querySelector('#tjoy-knob') as HTMLElement;
 
@@ -48,12 +73,13 @@ export class TouchControls {
       e.preventDefault();
       if (this.joyId !== null) return;
       const t = e.changedTouches[0];
+      const p = this.mapXY(t.clientX, t.clientY);
       this.joyId = t.identifier;
-      this.joyBaseX = t.clientX;
-      this.joyBaseY = t.clientY;
+      this.joyBaseX = p.x;
+      this.joyBaseY = p.y;
       this.base.style.display = 'block';
-      this.base.style.left = `${t.clientX - JOY_RADIUS}px`;
-      this.base.style.top = `${t.clientY - JOY_RADIUS}px`;
+      this.base.style.left = `${p.x - JOY_RADIUS}px`;
+      this.base.style.top = `${p.y - JOY_RADIUS}px`;
       this.setKnob(0, 0);
     }, { passive: false });
 
@@ -61,9 +87,10 @@ export class TouchControls {
       e.preventDefault();
       if (this.lookId !== null) return;
       const t = e.changedTouches[0];
+      const p = this.mapXY(t.clientX, t.clientY);
       this.lookId = t.identifier;
-      this.lookLastX = t.clientX;
-      this.lookLastY = t.clientY;
+      this.lookLastX = p.x;
+      this.lookLastY = p.y;
     }, { passive: false });
 
     window.addEventListener('touchmove', (e) => {
@@ -71,8 +98,9 @@ export class TouchControls {
       for (const t of Array.from(e.changedTouches)) {
         if (t.identifier === this.joyId) {
           handled = true;
-          let dx = t.clientX - this.joyBaseX;
-          let dy = t.clientY - this.joyBaseY;
+          const p = this.mapXY(t.clientX, t.clientY);
+          let dx = p.x - this.joyBaseX;
+          let dy = p.y - this.joyBaseY;
           const len = Math.hypot(dx, dy);
           if (len > JOY_RADIUS) {
             dx = (dx / len) * JOY_RADIUS;
@@ -83,10 +111,11 @@ export class TouchControls {
           this.input.touchState.moveY = -dy / JOY_RADIUS;
         } else if (t.identifier === this.lookId) {
           handled = true;
-          this.input.mouseDX += (t.clientX - this.lookLastX) * LOOK_SENS;
-          this.input.mouseDY += (t.clientY - this.lookLastY) * LOOK_SENS;
-          this.lookLastX = t.clientX;
-          this.lookLastY = t.clientY;
+          const p = this.mapXY(t.clientX, t.clientY);
+          this.input.mouseDX += (p.x - this.lookLastX) * LOOK_SENS;
+          this.input.mouseDY += (p.y - this.lookLastY) * LOOK_SENS;
+          this.lookLastX = p.x;
+          this.lookLastY = p.y;
         }
       }
       if (handled && e.cancelable) e.preventDefault();

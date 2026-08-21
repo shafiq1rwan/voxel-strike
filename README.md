@@ -51,8 +51,16 @@ is bigger and meaner than the last.
 
 **On phones/tablets** the game switches to touch controls automatically:
 left-thumb virtual joystick to move, drag the right side to aim, FIRE and
-JUMP buttons, tap the HUD weapon slots to switch, and a pause button
-top-right.
+JUMP buttons (with the ammo count above FIRE), tap the weapon slots in the
+top bar to switch, and a pause button top-right. The HUD moves to a compact
+top strip so the bottom corners stay clear for your thumbs. The game is
+**always landscape**: held in portrait, it rotates itself 90° (no need to
+enable the OS auto-rotate), and the installed PWA locks landscape natively.
+
+It's also an installable **PWA**: on the deployed site, use your browser's
+"Add to Home Screen" / install prompt. The installed app launches fullscreen,
+locked to landscape, and works offline after the first visit (network-first
+service worker, so new deploys still come through).
 
 Tips:
 

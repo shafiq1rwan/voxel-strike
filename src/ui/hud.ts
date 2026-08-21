@@ -127,8 +127,42 @@ const CSS = `
   border-color: rgba(255,80,50,.55); color: #ff8060; font-size: 13px;
 }
 #tjump { right: 126px; bottom: 42px; }
-#tpause { top: 8px; right: 52px; width: 42px; height: 42px; border-radius: 10px; }
+#tpause { top: 8px; right: 10px; width: 42px; height: 42px; border-radius: 10px; }
+#tammo {
+  position: absolute; right: 12px; bottom: 208px; width: 108px; text-align: center;
+  font: bold 22px 'Courier New', Courier, monospace; color: #ffd028;
+  text-shadow: 2px 2px 0 #000; pointer-events: none; letter-spacing: 1px;
+}
 #slots .slot { pointer-events: auto; }
+/* forced landscape: when a touch device is held in portrait, the whole body
+   is rotated 90° so the game always presents as landscape. Fixed-position
+   overlays stay contained because the transform creates a containing block. */
+body.force-landscape {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vh;
+  height: 100vw;
+  transform: rotate(90deg) translate(0, -100%);
+  transform-origin: top left;
+  overflow: hidden;
+}
+
+/* ---------------- mobile HUD layout (touch devices) ---------------- */
+body.touch-mode #statbar {
+  top: 0; bottom: auto; align-items: flex-start; padding: 6px 62px 10px 12px;
+  background: linear-gradient(to bottom, rgba(4,6,10,.8), rgba(4,6,10,0));
+}
+body.touch-mode .stat { min-width: 56px; }
+body.touch-mode .stat .value { font-size: 21px; }
+body.touch-mode .stat .label { font-size: 8px; letter-spacing: 1px; }
+body.touch-mode #weaponname { font-size: 9px; letter-spacing: 2px; margin-bottom: 3px; }
+body.touch-mode .slot { width: 36px; height: 27px; font-size: 13px; }
+body.touch-mode #keys { margin-top: 4px; }
+body.touch-mode #messages {
+  top: 58px; left: 10px; font-size: 11px; max-width: 58vw; gap: 2px;
+}
+body.touch-mode #fps { display: none; }
 
 /* ---------------- small screens ---------------- */
 @media (max-width: 760px) {
@@ -344,8 +378,14 @@ export class HUD {
     });
   }
 
+  private tammoEl: HTMLElement | null = null;
+
   updateAmmo(p: Player, w: WeaponSystem): void {
-    this.ammoEl.textContent = String(p.ammo[WEAPONS[w.current].ammoType]);
+    const text = String(p.ammo[WEAPONS[w.current].ammoType]);
+    this.ammoEl.textContent = text;
+    // mirror next to the touch FIRE button when mobile controls are mounted
+    this.tammoEl ??= this.root.querySelector('#tammo');
+    if (this.tammoEl && this.tammoEl.textContent !== text) this.tammoEl.textContent = text;
   }
 
   updateWeapon(w: WeaponSystem): void {

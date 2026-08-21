@@ -92,6 +92,16 @@ is the debug handle the tests use (the Game instance).
 - Touch devices (`src/core/touch.ts`, detected via pointer:coarse) get a
   virtual joystick + look-drag + FIRE/JUMP/pause buttons feeding the same
   `Input` abstraction; pointer lock is skipped entirely and pause runs through
-  `Game.requestPause()`/`resumeGame()` instead of lock-change events.
+  `Game.requestPause()`/`resumeGame()` instead of lock-change events. Touch
+  mode adds `body.touch-mode` (mobile HUD = top strip; CSS in hud.ts) and
+  tries fullscreen + orientation lock on start. When held in portrait, the
+  whole body gets `.force-landscape` (CSS rotate 90°); Renderer.resize reads
+  BODY client dims (not window) and TouchControls.mapXY converts raw touch
+  coords into the rotated game space — keep those three in sync.
+- PWA: `public/manifest.webmanifest` (fullscreen, landscape) + `public/sw.js`
+  (network-first, cache fallback — bump its CACHE name when changing SW
+  behavior) + icons from `node scripts/gen-icons.mjs`. The SW registers in
+  production builds only (`import.meta.env.PROD` in main.ts), so dev/HMR and
+  the test suites never hit it.
 - `vite.config.ts` uses `base: './'` so builds work on GitHub Pages project
   sites — don't remove it.
