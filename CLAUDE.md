@@ -60,6 +60,12 @@ is the debug handle the tests use (the Game instance).
   hitscan + rockets, viewmodels, muzzle flash.
 - `src/core/audio.ts` — every sound is WebAudio synthesis; positional pan/gain;
   self-healing autoplay resume on any gesture.
+- `src/core/music.ts` — optional soundtrack: menu/ambient/combat loop slots
+  with crossfades, driven per-frame from `Game.frame()` (combat = awake enemy
+  within 26 units, 5s linger). Tracks come from `public/music/manifest.json`;
+  the manifest ships empty so the no-asset build stays silent with zero 404s.
+  Music files are git-ignored (license safety) — only manifest + README are
+  tracked.
 - `src/core/settings.ts` — persisted options (sensitivity, volume, FOV,
   resolution, shake); `Game.applySettings()` pushes them into systems.
 - `src/ui/hud.ts` — DOM HUD + all screens; the voxel wordmark renderer

@@ -461,6 +461,13 @@ export class HUD {
             </div>
           </div>
           <div class="setrow">
+            <label for="set-music">Music volume</label>
+            <div class="setctl">
+              <input id="set-music" class="tslider" type="range" min="0" max="1" step="0.05" value="${s.musicVolume}">
+              <span class="setval" id="val-music"></span>
+            </div>
+          </div>
+          <div class="setrow">
             <label for="set-fov">Field of view</label>
             <div class="setctl">
               <input id="set-fov" class="tslider" type="range" min="60" max="100" step="5" value="${s.fov}">
@@ -505,6 +512,7 @@ export class HUD {
     const q = <T extends HTMLElement>(sel: string): T => el.querySelector(sel) as T;
     const sens = q<HTMLInputElement>('#set-sens');
     const vol = q<HTMLInputElement>('#set-vol');
+    const music = q<HTMLInputElement>('#set-music');
     const fov = q<HTMLInputElement>('#set-fov');
     const res = q<HTMLButtonElement>('#set-res');
     const shake = q<HTMLButtonElement>('#set-shake');
@@ -512,6 +520,7 @@ export class HUD {
     const refresh = (): void => {
       q('#val-sens').textContent = s.sensitivity.toFixed(1);
       q('#val-vol').textContent = `${Math.round(s.volume * 100)}%`;
+      q('#val-music').textContent = `${Math.round(s.musicVolume * 100)}%`;
       q('#val-fov').textContent = `${s.fov}°`;
       res.textContent = `${s.resolution}p`;
       shake.textContent = s.shake ? 'ON' : 'OFF';
@@ -524,6 +533,7 @@ export class HUD {
 
     sens.addEventListener('input', () => { s.sensitivity = Number(sens.value); apply(); });
     vol.addEventListener('input', () => { s.volume = Number(vol.value); apply(); });
+    music.addEventListener('input', () => { s.musicVolume = Number(music.value); apply(); });
     fov.addEventListener('input', () => { s.fov = Number(fov.value); apply(); });
     res.addEventListener('click', () => {
       s.resolution = RESOLUTIONS[(RESOLUTIONS.indexOf(s.resolution) + 1) % RESOLUTIONS.length];

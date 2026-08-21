@@ -1,0 +1,18 @@
+{
+  "husk": {
+    "file": "troll.png",
+    "frameW": 32,
+    "frameH": 32,
+    "worldH": 1.9,
+    "fps": 7,
+    "counts": { "idle": 2, "walk": 4, "attack": 3, "pain": 1, "death": 2 }
+  },
+  "sentinel": {
+    "file": "eye.png",
+    "frameW": 32,
+    "frameH": 32,
+    "worldH": 1.15,
+    "fps": 7,
+    "counts": { "idle": 6, "walk": 6, "attack": 3, "pain": 1, "death": 4 }
+  }
+}

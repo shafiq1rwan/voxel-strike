@@ -7,6 +7,19 @@ dist/
 # test artifacts (screenshots from the headless suites)
 scripts/shots/
 
+# downloaded music tracks — check the asset license before committing to a
+# public repo (see public/music/README.md); the manifest + docs stay tracked
+public/music/*
+!public/music/manifest.json
+!public/music/README.md
+
+# downloaded enemy sprite sheets — same license caution; the generated demo
+# sheet, manifest, and docs stay tracked
+public/sprites/*
+!public/sprites/manifest.json
+!public/sprites/README.md
+!public/sprites/demo-husk.png
+
 # env / local overrides
 *.local
 .env

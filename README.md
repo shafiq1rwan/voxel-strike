@@ -8,6 +8,11 @@ Everything is generated procedurally at runtime: the level layout, the
 texture atlas, the enemy and weapon models, and every sound effect (WebAudio
 synthesis). There are no external or copied assets.
 
+Optionally, you can add a soundtrack: drop licensed tracks into
+`public/music/` and list them in `manifest.json` — the game crossfades
+between menu, ambient, and combat loops. See
+[public/music/README.md](public/music/README.md).
+
 ![status](https://img.shields.io/badge/build-passing-brightgreen)
 
 ## Quick start
@@ -97,6 +102,8 @@ src/
 │   ├── input.ts            keyboard + pointer-lock mouse
 │   ├── physics.ts          AABB-vs-voxel movement, ray/box intersection
 │   ├── audio.ts            procedural WebAudio synth, positional pan/gain
+│   ├── music.ts            optional soundtrack: menu/ambient/combat crossfading loops
+│   ├── settings.ts         persisted options (sensitivity, volume, FOV, resolution)
 │   └── rng.ts              seeded RNG (mulberry32)
 ├── world/
 │   ├── blocks.ts           block types + procedural 16px texture atlas
@@ -111,6 +118,7 @@ src/
 │   └── projectiles.ts      pooled rockets + enemy plasma bolts
 ├── fx/
 │   ├── particles.ts        1024-instance pooled voxel particles
+│   ├── tracers.ts          pooled hitscan tracer streaks
 │   └── dynlights.ts        dynamic light pool fed to the chunk shader
 ├── ui/
 │   └── hud.ts              DOM overlay: stats, messages, screens

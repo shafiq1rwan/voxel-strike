@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { EnemySpec, RoomDef } from '../types';
 import { moveBody, rayBox } from '../core/physics';
+import { SpriteDef, SpriteRowName, SPRITE_ROWS } from './sprites';
 import type { Game } from '../game';
 
 export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'pain' | 'dead';
@@ -65,6 +66,14 @@ export class Enemy {
   private gait = Math.random() * 10;
   private lastStride = 0;
   private growlCd = 2 + Math.random() * 4;
+  // billboard sprite skin (optional, from SpriteLibrary)
+  private spriteMesh: THREE.Mesh | null = null;
+  private spriteTex: THREE.Texture | null = null;
+  private spriteDef: SpriteDef | null = null;
+  private spriteTime = 0;
+  private spriteRow = -1;
+  private spriteFrame = -1;
+  private corpseGrounded = false;
 
   constructor(spec: EnemySpec, room: RoomDef | null, groundY: number, startPatrolling: boolean) {
     this.kind = spec.kind;
@@ -241,8 +250,70 @@ export class Enemy {
       game.dynLights.flash(this.pos.x, this.pos.y, this.pos.z, 0.3, 0.85, 1, 1.4, 8, 0.28);
       game.audio.play('boltHit', this.pos);
     }
-    this.mesh.visible = false;
+    // sprite skins keep the corpse and play their death frames instead
+    if (!this.spriteMesh) this.mesh.visible = false;
     game.onEnemyKilled();
+  }
+
+  /** swap the voxel rig for a billboard sprite once its skin is loaded */
+  private maybeAdoptSprite(game: Game): void {
+    if (this.spriteMesh) return;
+    const def = game.sprites.get(this.kind);
+    if (!def) return;
+    this.spriteDef = def;
+    this.spriteTex = def.texture.clone();
+    this.spriteTex.needsUpdate = true;
+    this.spriteTex.repeat.set(def.frameW / def.sheetW, def.frameH / def.sheetH);
+    const h = def.worldH;
+    const w = h * (def.frameW / def.frameH);
+    const mat = new THREE.MeshBasicMaterial({
+      map: this.spriteTex,
+      transparent: true,
+      alphaTest: 0.5,
+      fog: true,
+    });
+    this.spriteMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    this.spriteMesh.userData.baseColor = new THREE.Color(0xffffff);
+    // feet of the sprite sit at the bottom of the collision box
+    this.spriteMesh.position.y = h / 2 - this.half.y;
+    this.mesh.add(this.spriteMesh);
+    this.body.visible = false;
+  }
+
+  /** frame selection + yaw-only billboard for the sprite skin */
+  private spriteAnimate(dt: number, game: Game): void {
+    const def = this.spriteDef!;
+    const speed = Math.hypot(this.vel.x, this.vel.z);
+    let row: SpriteRowName;
+    if (this.state === 'dead') row = 'death';
+    else if (this.state === 'attack') row = 'attack';
+    else if (this.state === 'pain') row = 'pain';
+    else row = speed > 0.6 ? 'walk' : 'idle';
+    const rowIndex = SPRITE_ROWS.indexOf(row);
+    if (rowIndex !== this.spriteRow) {
+      this.spriteRow = rowIndex;
+      this.spriteTime = 0;
+      this.spriteFrame = -1;
+    }
+    this.spriteTime += dt * (row === 'walk' ? 0.5 + speed / this.tuning.speed : 1);
+    const count = def.counts[row];
+    let frame = Math.floor(this.spriteTime * def.fps);
+    frame = row === 'death' ? Math.min(frame, count - 1) : frame % count;
+    if (frame !== this.spriteFrame) {
+      this.spriteFrame = frame;
+      this.spriteTex!.offset.set(
+        (frame * def.frameW) / def.sheetW,
+        1 - ((rowIndex + 1) * def.frameH) / def.sheetH
+      );
+      // footfalls on the stepping frames
+      if (this.kind === 'husk' && row === 'walk' && frame % 2 === 0 && speed > 1.6) {
+        game.audio.play('huskStep', this.pos);
+      }
+    }
+    // yaw-only billboard, counteracting the AI facing rotation on this.mesh
+    const dx = game.camera.position.x - this.pos.x;
+    const dz = game.camera.position.z - this.pos.z;
+    this.spriteMesh!.rotation.y = Math.atan2(dx, dz) - this.mesh.rotation.y;
   }
 
   update(dt: number, game: Game): void {
@@ -252,8 +323,26 @@ export class Enemy {
     this.flashTime = Math.max(0, this.flashTime - dt);
     const pl = game.player;
 
-    // dead enemies burst into gibs in die(); nothing remains to animate
-    if (this.state === 'dead') return;
+    if (this.alive) this.maybeAdoptSprite(game);
+
+    // dead: voxel rigs burst into gibs in die(); sprite skins play their
+    // death animation and remain as a corpse
+    if (this.state === 'dead') {
+      if (this.spriteMesh) {
+        // the corpse drops to the floor (hovering enemies die mid-air)
+        if (!this.corpseGrounded) {
+          this.vel.x *= 0.9;
+          this.vel.z *= 0.9;
+          this.vel.y -= 20 * dt;
+          const res = moveBody(game.world, this.pos, this.half, this.vel, dt, game.solidBoxes());
+          this.mesh.position.copy(this.pos);
+          if (res.onGround) this.corpseGrounded = true;
+        }
+        this.spriteAnimate(dt, game);
+        this.updateLighting(game, dt);
+      }
+      return;
+    }
 
     const toPlayer = new THREE.Vector3().subVectors(pl.pos, this.pos);
     const distSq = toPlayer.x * toPlayer.x + toPlayer.z * toPlayer.z;
@@ -475,6 +564,10 @@ export class Enemy {
   }
 
   private animate(dt: number, game: Game): void {
+    if (this.spriteMesh) {
+      this.spriteAnimate(dt, game);
+      return;
+    }
     const speed = Math.hypot(this.vel.x, this.vel.z);
     this.animPhase += dt * 2;
     if (this.kind === 'husk') {
@@ -570,7 +663,7 @@ export class Enemy {
     const g = Math.min(1.3, lum + l[1] * 0.9 + d[1]);
     const b = Math.min(1.3, lum + l[2] * 0.9 + d[2]);
     const flash = this.flashTime > 0;
-    this.body.traverse((o) => {
+    this.mesh.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       if (o.userData.fullBright) return;
       const m = o.material as THREE.MeshBasicMaterial;
@@ -592,7 +685,9 @@ export class EnemyManager {
       e.mesh.traverse((o) => {
         if (o instanceof THREE.Mesh) {
           o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
+          const m = o.material as THREE.MeshBasicMaterial;
+          m.map?.dispose(); // per-enemy sprite texture clones
+          m.dispose();
         }
       });
     }

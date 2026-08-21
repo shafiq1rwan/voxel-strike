@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Renderer } from './core/renderer';
 import { Input } from './core/input';
 import { AudioMan } from './core/audio';
+import { Music } from './core/music';
 import { Box, rayBox } from './core/physics';
 import { VoxelWorld } from './world/world';
 import { ChunkManager } from './world/mesher';
@@ -10,6 +11,7 @@ import { Block, isDestructible } from './world/blocks';
 import { Player } from './entities/player';
 import { Door, Elevator } from './entities/door';
 import { EnemyManager } from './entities/enemies';
+import { SpriteLibrary } from './entities/sprites';
 import { PickupManager } from './entities/pickups';
 import { ProjectilePool } from './entities/projectiles';
 import { Particles } from './fx/particles';
@@ -29,12 +31,14 @@ export class Game {
   readonly camera: THREE.PerspectiveCamera;
   readonly input: Input;
   readonly audio = new AudioMan();
+  readonly music = new Music(this.audio);
   readonly hud: HUD;
   readonly dynLights = new DynLights();
   readonly particles = new Particles();
   readonly tracers = new Tracers();
   readonly projectiles = new ProjectilePool();
   readonly enemies = new EnemyManager();
+  readonly sprites = new SpriteLibrary();
   readonly player = new Player();
   readonly weapons = new WeaponSystem();
   readonly settings: GameSettings = loadSettings();
@@ -71,6 +75,8 @@ export class Game {
   private fovKick = 0;
   private lowHealth = false;
   private ambientTimer = 8;
+  /** stays in combat music for a few seconds after the last contact */
+  private combatLinger = 0;
 
   constructor(parent: HTMLElement) {
     this.rendererSys = new Renderer(parent);
@@ -91,6 +97,7 @@ export class Game {
     // menu shows the bare facility; the gun raises when the run starts
     this.weapons.viewModel.visible = false;
 
+    this.sprites.load();
     this.buildLevel();
     this.applySettings();
 
@@ -221,6 +228,7 @@ export class Game {
     this.player.sensitivity = this.settings.sensitivity;
     this.player.shakeScale = this.settings.shake ? 1 : 0;
     this.audio.setVolume(this.settings.volume);
+    this.music.setVolume(this.settings.musicVolume);
     this.rendererSys.setResolution(this.settings.resolution);
     this.camera.fov = this.settings.fov + this.fovKick;
     this.camera.updateProjectionMatrix();
@@ -447,6 +455,28 @@ export class Game {
       this.hud.setFPS(this.fpsFrames / this.fpsAccum);
       this.fpsAccum = 0;
       this.fpsFrames = 0;
+    }
+
+    // soundtrack: menu on the title, combat while something hunts you
+    this.music.update();
+    if (this.state === 'title') {
+      this.music.setMode('menu');
+    } else {
+      let contact = false;
+      if (this.state === 'playing' || this.state === 'paused') {
+        for (const e of this.enemies.list) {
+          if (!e.alive || !e.awake) continue;
+          const dx = e.pos.x - this.player.pos.x;
+          const dz = e.pos.z - this.player.pos.z;
+          if (dx * dx + dz * dz < 26 * 26) {
+            contact = true;
+            break;
+          }
+        }
+      }
+      if (contact) this.combatLinger = 5;
+      else this.combatLinger = Math.max(0, this.combatLinger - dt);
+      this.music.setMode(this.combatLinger > 0 ? 'combat' : 'ambient');
     }
 
     if (this.state === 'title') {

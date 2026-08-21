@@ -56,6 +56,15 @@ export class AudioMan {
     return this.ctx?.state === 'running';
   }
 
+  /** exposed for the music system (null until init) */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
+  get masterBus(): GainNode | null {
+    return this.master;
+  }
+
   private volume = 0.7;
 
   setVolume(v: number): void {

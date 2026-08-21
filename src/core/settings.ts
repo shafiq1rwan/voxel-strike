@@ -4,6 +4,8 @@ export interface GameSettings {
   sensitivity: number;
   /** master volume 0..1 */
   volume: number;
+  /** music volume 0..1 (scaled by master) */
+  musicVolume: number;
   /** base field of view in degrees */
   fov: number;
   /** internal render height in lines (chunkier = lower) */
@@ -15,6 +17,7 @@ export interface GameSettings {
 export const DEFAULT_SETTINGS: GameSettings = {
   sensitivity: 1,
   volume: 0.7,
+  musicVolume: 0.55,
   fov: 75,
   resolution: 240,
   shake: true,
@@ -34,6 +37,10 @@ export function loadSettings(): GameSettings {
     return {
       sensitivity: clamp(Number(p.sensitivity) || DEFAULT_SETTINGS.sensitivity, 0.3, 2.5),
       volume: clamp(Number.isFinite(Number(p.volume)) ? Number(p.volume) : DEFAULT_SETTINGS.volume, 0, 1),
+      musicVolume: clamp(
+        Number.isFinite(Number(p.musicVolume)) ? Number(p.musicVolume) : DEFAULT_SETTINGS.musicVolume,
+        0, 1
+      ),
       fov: clamp(Number(p.fov) || DEFAULT_SETTINGS.fov, 60, 100),
       resolution: RESOLUTIONS.includes(Number(p.resolution)) ? Number(p.resolution) : DEFAULT_SETTINGS.resolution,
       shake: typeof p.shake === 'boolean' ? p.shake : DEFAULT_SETTINGS.shake,
