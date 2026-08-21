@@ -26,7 +26,11 @@ export class Renderer {
   }
 
   private resize(): void {
-    const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    // body dimensions, not window: in forced-landscape mode (touch devices
+    // held in portrait) the body is rotated 90° and its box is the game view
+    const w0 = document.body.clientWidth || window.innerWidth;
+    const h0 = document.body.clientHeight || window.innerHeight;
+    const aspect = w0 / Math.max(1, h0);
     const w = Math.round(this.resH * aspect);
     this.renderer.setSize(w, this.resH, false);
     this.camera.aspect = aspect;
