@@ -56,6 +56,9 @@ top bar to switch, and a pause button top-right. The HUD moves to a compact
 top strip so the bottom corners stay clear for your thumbs. The game is
 **always landscape**: held in portrait, it rotates itself 90° (no need to
 enable the OS auto-rotate), and the installed PWA locks landscape natively.
+Touch play also gets **aim assist** — near-miss shots bend onto the target
+and look sensitivity eases while tracking an enemy (toggle in Settings;
+never active with a mouse).
 
 It's also an installable **PWA**: on the deployed site, use your browser's
 "Add to Home Screen" / install prompt. The installed app launches fullscreen,
@@ -184,6 +187,7 @@ node scripts/smoke.mjs      # boot, move, shoot, switch weapons, explode — fai
 node scripts/e2e.mjs        # plays the whole campaign: aggro + damage indicator + barrel chain, then key → locked door → elevator → exit for all 3 sectors
 node scripts/movement.mjs   # regression: W/A/S/D displacement must match the camera's forward/right vectors at 5 facing angles
 node scripts/firing.mjs     # regression: spam-clicking and holding the trigger both fire at the weapon's full rate; early clicks are buffered
+node scripts/aimassist.mjs  # regression: touch profiles get bullet magnetism + sticky aim; the identical shot misses on desktop
 ```
 
 Each accepts an optional URL argument, e.g.

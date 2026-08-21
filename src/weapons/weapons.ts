@@ -276,6 +276,8 @@ export class WeaponSystem {
     const origin = new THREE.Vector3(pl.pos.x, pl.eyeY(), pl.pos.z);
     const fwd = new THREE.Vector3();
     cam.getWorldDirection(fwd);
+    // bullet magnetism (touch only): near-misses bend onto the target
+    if (!def.projectile) this.applyAimAssist(origin, fwd, game);
     const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
     const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
     // approximate world-space muzzle (matches the viewmodel's barrel)
@@ -310,6 +312,42 @@ export class WeaponSystem {
         .normalize();
       this.hitscan(origin, dir, def.damage, game, muzzle);
     }
+  }
+
+  /**
+   * Touch-only aim assist: if a live, visible enemy sits within a small cone
+   * of the aim direction, snap the shot onto it. Desktop aim is never touched.
+   */
+  private applyAimAssist(origin: THREE.Vector3, fwd: THREE.Vector3, game: Game): void {
+    if (!game.isTouch || !game.settings.aimAssist) return;
+    const MAX_ANGLE = 0.07; // ~4 degrees
+    const MAX_DIST = 40;
+    let best: THREE.Vector3 | null = null;
+    let bestAngle = MAX_ANGLE;
+    const to = new THREE.Vector3();
+    for (const e of game.enemies.list) {
+      if (!e.alive) continue;
+      const dx = e.pos.x - origin.x;
+      const dz = e.pos.z - origin.z;
+      const hDist = Math.hypot(dx, dz);
+      if (hDist > MAX_DIST || hDist < 1) continue;
+      // snap target: enemy column at the height the ray naturally passes,
+      // clamped into the body — so aiming level at a torso costs 0 vertical
+      // error and the cone only measures the actual horizontal miss
+      const hFwd = Math.hypot(fwd.x, fwd.z);
+      if (hFwd < 0.05) continue; // aiming almost straight up/down
+      const rayY = origin.y + (fwd.y / hFwd) * hDist;
+      const ty = Math.max(e.pos.y - e.half.y + 0.15, Math.min(e.pos.y + e.half.y - 0.1, rayY));
+      to.set(dx, ty - origin.y, dz);
+      const dist = to.length();
+      to.divideScalar(dist);
+      const angle = fwd.angleTo(to);
+      if (angle >= bestAngle) continue;
+      if (!game.hasLOS(origin.x, origin.y, origin.z, e.pos.x, ty, e.pos.z)) continue;
+      bestAngle = angle;
+      best = to.clone();
+    }
+    if (best) fwd.copy(best);
   }
 
   private hitscan(origin: THREE.Vector3, dir: THREE.Vector3, damage: number, game: Game, muzzle: THREE.Vector3): void {

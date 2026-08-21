@@ -12,6 +12,8 @@ export interface GameSettings {
   resolution: number;
   /** camera shake on/off */
   shake: boolean;
+  /** aim assist (magnetism + sticky aim) — only ever active on touch devices */
+  aimAssist: boolean;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -21,6 +23,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   fov: 75,
   resolution: 240,
   shake: true,
+  aimAssist: true,
 };
 
 export const RESOLUTIONS = [180, 240, 320, 480];
@@ -44,6 +47,7 @@ export function loadSettings(): GameSettings {
       fov: clamp(Number(p.fov) || DEFAULT_SETTINGS.fov, 60, 100),
       resolution: RESOLUTIONS.includes(Number(p.resolution)) ? Number(p.resolution) : DEFAULT_SETTINGS.resolution,
       shake: typeof p.shake === 'boolean' ? p.shake : DEFAULT_SETTINGS.shake,
+      aimAssist: typeof p.aimAssist === 'boolean' ? p.aimAssist : DEFAULT_SETTINGS.aimAssist,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

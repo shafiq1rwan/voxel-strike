@@ -587,6 +587,13 @@ export class HUD {
             </div>
           </div>
           <div class="setrow">
+            <label>Aim assist</label>
+            <div class="setctl">
+              <span class="sethint">touch devices only</span>
+              <button id="set-assist" class="tbtn tbtn-quiet tbtn-mini"></button>
+            </div>
+          </div>
+          <div class="setrow">
             <label>Layout ${seedHex}</label>
             <div class="setctl">
               <span class="sethint">abandons the current run</span>
@@ -615,6 +622,7 @@ export class HUD {
     const fov = q<HTMLInputElement>('#set-fov');
     const res = q<HTMLButtonElement>('#set-res');
     const shake = q<HTMLButtonElement>('#set-shake');
+    const assist = q<HTMLButtonElement>('#set-assist');
 
     const refresh = (): void => {
       q('#val-sens').textContent = s.sensitivity.toFixed(1);
@@ -623,6 +631,7 @@ export class HUD {
       q('#val-fov').textContent = `${s.fov}°`;
       res.textContent = `${s.resolution}p`;
       shake.textContent = s.shake ? 'ON' : 'OFF';
+      assist.textContent = s.aimAssist ? 'ON' : 'OFF';
     };
     const apply = (): void => {
       refresh();
@@ -639,6 +648,7 @@ export class HUD {
       apply();
     });
     shake.addEventListener('click', () => { s.shake = !s.shake; apply(); });
+    assist.addEventListener('click', () => { s.aimAssist = !s.aimAssist; apply(); });
     q('#set-newlayout').addEventListener('click', () => opts.onNewLayout());
     q('#settings-back').addEventListener('click', () => opts.onBack());
     this.titleKey = (ev: KeyboardEvent) => {

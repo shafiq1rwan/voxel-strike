@@ -106,7 +106,11 @@ export class Player {
     // mouse look
     const [mdx, mdy] = input.consumeMouse();
     if (!this.dead) {
-      const sens = 0.0022 * this.sensitivity;
+      let sens = 0.0022 * this.sensitivity;
+      // sticky aim (touch only): tracking friction while aiming near a target
+      if (game.isTouch && game.settings.aimAssist && (mdx !== 0 || mdy !== 0) && this.aimNearEnemy(game)) {
+        sens *= 0.55;
+      }
       this.yaw -= mdx * sens;
       this.pitch -= mdy * sens;
       this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch));
@@ -168,6 +172,36 @@ export class Player {
       if (stride <= 0 !== this.lastStride <= 0) game.audio.play('step');
       this.lastStride = stride;
     }
+  }
+
+  /** is a live, visible enemy within a small cone of the aim direction? */
+  private aimNearEnemy(game: Game): boolean {
+    const CONE = 0.1; // ~6 degrees
+    const cosPitch = Math.cos(this.pitch);
+    const fx = -Math.sin(this.yaw) * cosPitch;
+    const fy = Math.sin(this.pitch);
+    const fz = -Math.cos(this.yaw) * cosPitch;
+    const hFwd = Math.hypot(fx, fz);
+    if (hFwd < 0.05) return false;
+    const ox = this.pos.x;
+    const oy = this.eyeY();
+    const oz = this.pos.z;
+    for (const e of game.enemies.list) {
+      if (!e.alive) continue;
+      const dx = e.pos.x - ox;
+      const dz = e.pos.z - oz;
+      const hDist = Math.hypot(dx, dz);
+      if (hDist > 30 || hDist < 1) continue;
+      // vertical error measured against the enemy's body span, not its center
+      const rayY = oy + (fy / hFwd) * hDist;
+      const ty = Math.max(e.pos.y - e.half.y + 0.15, Math.min(e.pos.y + e.half.y - 0.1, rayY));
+      const dy = ty - oy;
+      const dist = Math.sqrt(hDist * hDist + dy * dy);
+      const dot = (dx * fx + dy * fy + dz * fz) / dist;
+      if (dot < Math.cos(CONE)) continue;
+      if (game.hasLOS(ox, oy, oz, e.pos.x, ty, e.pos.z)) return true;
+    }
+    return false;
   }
 
   /** apply position/orientation to the camera */
