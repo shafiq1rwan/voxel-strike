@@ -24,6 +24,9 @@ const GLOW_COLORS: Record<PickupKind, number> = {
   weaponShotgun: 0x70d8ff,
   weaponSMG: 0x70d8ff,
   weaponRocket: 0x70d8ff,
+  powerQuad: 0xffd028,
+  powerShield: 0x55e0ff,
+  powerHaste: 0xff8030,
 };
 
 /** stronger point-glow for the important pickups */
@@ -36,6 +39,9 @@ const DYN_GLOW: Partial<Record<PickupKind, [number, number, number]>> = {
   weaponRocket: [0.4, 0.9, 0.5],
   healthBig: [1, 0.3, 0.3],
   armorVest: [0.3, 1, 0.4],
+  powerQuad: [1, 0.8, 0.15],
+  powerShield: [0.3, 0.85, 1],
+  powerHaste: [1, 0.5, 0.15],
 };
 
 function box(w: number, h: number, d: number, color: number): THREE.Mesh {
@@ -185,6 +191,44 @@ const BUILDERS: Record<PickupKind, () => THREE.Object3D> = {
     g.add(tube, muzzle, grip);
     return g;
   },
+  // powerups: floating energy constructs, unmistakably not supplies
+  powerQuad: () => {
+    const g = new THREE.Group();
+    const core = box(0.24, 0.24, 0.24, 0xfff2c8);
+    const cageA = box(0.42, 0.42, 0.42, 0xffd028);
+    cageA.rotation.set(Math.PI / 4, 0, Math.PI / 4);
+    cageA.scale.setScalar(0.72);
+    const cageB = box(0.42, 0.42, 0.42, 0xd8a010);
+    cageB.rotation.set(0, Math.PI / 4, Math.PI / 4);
+    cageB.scale.setScalar(0.6);
+    g.add(core, cageA, cageB);
+    return g;
+  },
+  powerShield: () => {
+    const g = new THREE.Group();
+    const core = box(0.22, 0.26, 0.22, 0xd8f8ff);
+    const ringA = box(0.5, 0.08, 0.5, 0x55e0ff);
+    const ringB = box(0.42, 0.08, 0.42, 0x2898c8);
+    ringB.position.y = 0.16;
+    const ringC = box(0.42, 0.08, 0.42, 0x2898c8);
+    ringC.position.y = -0.16;
+    g.add(core, ringA, ringB, ringC);
+    return g;
+  },
+  powerHaste: () => {
+    const g = new THREE.Group();
+    // jagged bolt: three offset shards
+    const a = box(0.14, 0.26, 0.12, 0xffb060);
+    a.position.set(0.06, 0.18, 0);
+    a.rotation.z = -0.5;
+    const b = box(0.16, 0.28, 0.14, 0xff8030);
+    b.rotation.z = 0.5;
+    const c = box(0.12, 0.24, 0.1, 0xffd8a0);
+    c.position.set(0.05, -0.18, 0);
+    c.rotation.z = -0.5;
+    g.add(a, b, c);
+    return g;
+  },
 };
 
 let glowTexture: THREE.CanvasTexture | null = null;
@@ -328,7 +372,7 @@ export class PickupManager {
   private tryCollect(kind: PickupKind, game: Game): boolean {
     const pl = game.player;
     const hud = game.hud;
-    const sfx = (name: 'pickup' | 'pickupKey' | 'pickupWeapon', msg: string): void => {
+    const sfx = (name: 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup', msg: string): void => {
       game.audio.play(name);
       hud.message(msg);
       hud.pickupFlash();
@@ -366,6 +410,7 @@ export class PickupManager {
       case 'keyRed':
         pl.keys.add('red');
         sfx('pickupKey', 'Picked up the RED keycard!');
+        game.onKeyPickup(); // taking the key springs the ambush
         return true;
       case 'keyBlue':
         pl.keys.add('blue');
@@ -389,6 +434,18 @@ export class PickupManager {
         game.weapons.give('rocket');
         pl.addAmmo('rockets', 4);
         sfx('pickupWeapon', 'You got the THUMPER launcher!');
+        return true;
+      case 'powerQuad':
+        pl.buffs.quad = 20;
+        sfx('powerup', 'QUAD DAMAGE — 20 seconds of overkill!');
+        return true;
+      case 'powerShield':
+        pl.buffs.shield = 12;
+        sfx('powerup', 'OVERSHIELD — nothing gets through. 12 seconds.');
+        return true;
+      case 'powerHaste':
+        pl.buffs.haste = 25;
+        sfx('powerup', 'ADRENALINE — faster legs, faster trigger. 25 seconds.');
         return true;
     }
   }

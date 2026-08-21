@@ -73,6 +73,41 @@ const CSS = `
 #pickupflash {
   position: absolute; inset: 0; background: rgba(255,230,140,.18); opacity: 0; transition: opacity .3s;
 }
+#shieldflash {
+  position: absolute; inset: 0; opacity: 0; transition: opacity .3s;
+  background: radial-gradient(ellipse at center, rgba(60,200,255,0) 45%, rgba(60,200,255,.4) 100%);
+}
+#score {
+  position: absolute; top: 28px; right: 14px; font-size: 17px; font-weight: bold;
+  letter-spacing: 2px; color: #cfd6e4; text-align: right;
+}
+#score .label { font-size: 10px; letter-spacing: 2px; color: #7d8699; margin-right: 8px; }
+#score-mult { color: #ffd028; margin-left: 7px; }
+#score-mult:empty { display: none; }
+#buffs {
+  position: absolute; top: 56px; right: 14px; display: flex; flex-direction: column;
+  gap: 4px; align-items: flex-end;
+}
+.buff {
+  font-size: 12px; font-weight: bold; letter-spacing: 2px; padding: 3px 9px;
+  border: 1px solid; background: rgba(8,10,16,.65);
+}
+.buff.quad { color: #ffd028; border-color: #ffd028; }
+.buff.shield { color: #55e0ff; border-color: #55e0ff; }
+.buff.haste { color: #ff8030; border-color: #ff8030; }
+.streak {
+  position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%);
+  font-size: 27px; font-weight: bold; letter-spacing: 6px; color: #ffd028;
+  text-shadow: 2px 2px 0 #000, 0 0 18px rgba(255,208,40,.6);
+  pointer-events: none; animation: streakup 1.1s forwards; white-space: nowrap;
+}
+@keyframes streakup {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  30% { transform: translate(-50%, -50%) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -85%); }
+}
 .screen {
   position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
   justify-content: center; background: rgba(4,6,10,.86); color: #cfd6e4;
@@ -163,6 +198,10 @@ body.touch-mode #messages {
   top: 58px; left: 10px; font-size: 11px; max-width: 58vw; gap: 2px;
 }
 body.touch-mode #fps { display: none; }
+body.touch-mode #score { top: 56px; right: 10px; font-size: 13px; }
+body.touch-mode #buffs { top: 78px; right: 10px; }
+body.touch-mode .buff { font-size: 10px; padding: 2px 6px; }
+body.touch-mode .streak { font-size: 19px; letter-spacing: 4px; }
 
 /* ---------------- small screens ---------------- */
 @media (max-width: 760px) {
@@ -316,6 +355,11 @@ export class HUD {
   private pickupEl!: HTMLElement;
   private crosshairEl!: HTMLElement;
   private fpsEl!: HTMLElement;
+  private shieldEl!: HTMLElement;
+  private scoreNumEl!: HTMLElement;
+  private scoreMultEl!: HTMLElement;
+  private buffsEl!: HTMLElement;
+  private buffsCache = '';
   private screenEl: HTMLElement | null = null;
   private hitTimer: number | null = null;
   private logoStop: (() => void) | null = null;
@@ -331,9 +375,12 @@ export class HUD {
       <div id="damageflash"></div>
       <div id="lowvignette"></div>
       <div id="pickupflash"></div>
+      <div id="shieldflash"></div>
       <div id="crosshair">+</div>
       <div id="messages"></div>
       <div id="fps"></div>
+      <div id="score"><span class="label">SCORE</span><span id="score-num">000000</span><span id="score-mult"></span></div>
+      <div id="buffs"></div>
       <div id="statbar">
         <div class="stat" id="hp"><div class="value">100</div><div class="label">HEALTH</div></div>
         <div class="stat" id="armor"><div class="value">0</div><div class="label">ARMOR</div></div>
@@ -360,6 +407,10 @@ export class HUD {
     this.pickupEl = this.root.querySelector('#pickupflash')!;
     this.crosshairEl = this.root.querySelector('#crosshair')!;
     this.fpsEl = this.root.querySelector('#fps')!;
+    this.shieldEl = this.root.querySelector('#shieldflash')!;
+    this.scoreNumEl = this.root.querySelector('#score-num')!;
+    this.scoreMultEl = this.root.querySelector('#score-mult')!;
+    this.buffsEl = this.root.querySelector('#buffs')!;
     for (let i = 0; i < 4; i++) {
       const s = document.createElement('div');
       s.className = 'slot';
@@ -425,6 +476,41 @@ export class HUD {
     setTimeout(() => (this.pickupEl.style.opacity = '0'), 90);
   }
 
+  /** cyan pulse when the overshield eats a hit */
+  shieldFlash(): void {
+    this.shieldEl.style.opacity = '1';
+    setTimeout(() => (this.shieldEl.style.opacity = '0'), 110);
+  }
+
+  updateScore(score: number, mult: number): void {
+    this.scoreNumEl.textContent = String(score).padStart(6, '0');
+    this.scoreMultEl.textContent = mult > 1 ? `×${mult}` : '';
+  }
+
+  /** big center popup for kill streaks (DOUBLE KILL etc.) */
+  streak(text: string): void {
+    // a fast chain escalates: the newest streak replaces the previous popup
+    this.root.querySelectorAll('.streak').forEach((el) => el.remove());
+    const el = document.createElement('div');
+    el.className = 'streak';
+    el.textContent = text;
+    this.root.appendChild(el);
+    setTimeout(() => el.remove(), 1150);
+  }
+
+  /** active powerup chips with their remaining seconds */
+  updateBuffs(p: Player): void {
+    const parts: string[] = [];
+    if (p.buffs.quad > 0) parts.push(`<div class="buff quad">QUAD ${Math.ceil(p.buffs.quad)}</div>`);
+    if (p.buffs.shield > 0) parts.push(`<div class="buff shield">SHIELD ${Math.ceil(p.buffs.shield)}</div>`);
+    if (p.buffs.haste > 0) parts.push(`<div class="buff haste">HASTE ${Math.ceil(p.buffs.haste)}</div>`);
+    const s = parts.join('');
+    if (s !== this.buffsCache) {
+      this.buffsCache = s;
+      this.buffsEl.innerHTML = s;
+    }
+  }
+
   hitMarker(): void {
     this.crosshairEl.classList.add('hit');
     if (this.hitTimer !== null) clearTimeout(this.hitTimer);
@@ -455,7 +541,7 @@ export class HUD {
     return this.root;
   }
 
-  showTitle(opts: { seed: number; onStart: () => void; onSettings: () => void }): void {
+  showTitle(opts: { seed: number; best?: number; onStart: () => void; onSettings: () => void }): void {
     this.hideScreen();
     const el = document.createElement('div');
     el.id = 'title-screen';
@@ -493,7 +579,7 @@ export class HUD {
         </div>
       </div>
       <div class="title-foot">
-        <span>LAYOUT ${seedHex} &middot; GENERATED FRESH EVERY RUN</span>
+        <span>LAYOUT ${seedHex}${opts.best ? ` &middot; BEST SCORE ${opts.best.toLocaleString()}` : ' &middot; GENERATED FRESH EVERY RUN'}</span>
         <span>VOXELSTRIKE 0.2</span>
       </div>
     `;
@@ -680,7 +766,7 @@ export class HUD {
       sector: number; totalSectors: number;
       kills: number; totalEnemies: number;
       secrets: number; totalSecrets: number;
-      time: string; seed: number;
+      time: string; score: number; seed: number;
     },
     onResume: () => void,
     onNewRun: () => void,
@@ -700,6 +786,7 @@ export class HUD {
           <span>KILLS <b>${stats.kills} / ${stats.totalEnemies}</b></span>
           <span>SECRETS <b>${stats.secrets} / ${stats.totalSecrets}</b></span>
           <span>TIME <b>${stats.time}</b></span>
+          <span>SCORE <b>${stats.score.toLocaleString()}</b></span>
         </div>
         <div class="title-menu">
           <button id="resume-btn" class="tbtn tbtn-primary">Resume</button>

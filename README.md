@@ -74,6 +74,15 @@ Tips:
   near them, but keep your distance.
 - One wall in each level has visible **cracks** — break it to find a secret
   stash (the rocket launcher lives there).
+- Grabbing the keycard trips the alarm — a **security response** teleports in
+  around you. Have an exit route (or a barrel) ready before you take it.
+- Glowing **powerups** are rare and timed: QUAD DAMAGE (yellow, ×4 damage),
+  OVERSHIELD (teal, absorbs everything), ADRENALINE (orange, faster movement
+  and fire rate). Save them for the key room if you can.
+- Kills build a **combo multiplier** (up to ×5) that decays after 2.5 seconds
+  — chain kills, secrets, and fast sector clears all feed your score, and the
+  best score per layout seed is remembered on your device. Share a `?seed=`
+  link to race a friend on the same dungeon.
 - When you take a hit, a **red wedge** around the crosshair points at
   whatever hurt you.
 - Gunfire is loud: enemies within earshot will come looking.
@@ -101,8 +110,13 @@ per-type ammo pools, and box-modeled first-person view models.
 - **Arc Sentinel** — a hovering teal drone with rotating fins. Keeps its
   distance, glows brighter as it charges, then fires a slow plasma bolt you
   can dodge. Strafes when you get close.
+- **Ticker** — a squat hazard-striped crawler with a glowing amber core. It
+  sprints straight at you, stops, beeps faster and faster, and self-destructs.
+  Killing it at range still detonates the corpse — which makes tickers
+  wonderful when they die next to their friends, and terrible when they die
+  next to you.
 
-Both run a full state machine — **idle / patrol / chase / attack / pain /
+All of them run a full state machine — **idle / patrol / chase / attack / pain /
 death** — wake on line-of-sight or nearby gunfire, alert each other, and
 steer around walls with a Doom-style sidestep when blocked.
 
@@ -188,6 +202,7 @@ node scripts/e2e.mjs        # plays the whole campaign: aggro + damage indicator
 node scripts/movement.mjs   # regression: W/A/S/D displacement must match the camera's forward/right vectors at 5 facing angles
 node scripts/firing.mjs     # regression: spam-clicking and holding the trigger both fire at the weapon's full rate; early clicks are buffered
 node scripts/aimassist.mjs  # regression: touch profiles get bullet magnetism + sticky aim; the identical shot misses on desktop
+node scripts/features.mjs   # regression: ticker suicide + corpse chain, key-pickup ambush, quad/shield/haste powerups, score + combo streaks
 ```
 
 Each accepts an optional URL argument, e.g.

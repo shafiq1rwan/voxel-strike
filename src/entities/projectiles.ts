@@ -12,6 +12,8 @@ class Projectile {
   speed = 0;
   life = 0;
   fromPlayer = true;
+  /** damage multiplier (quad-damage rockets) */
+  dmgMult = 1;
   readonly mesh: THREE.Group;
 
   constructor(kind: ProjKind) {
@@ -67,7 +69,7 @@ export class ProjectilePool {
     }
   }
 
-  spawn(kind: ProjKind, x: number, y: number, z: number, dx: number, dy: number, dz: number, speed: number, fromPlayer: boolean): void {
+  spawn(kind: ProjKind, x: number, y: number, z: number, dx: number, dy: number, dz: number, speed: number, fromPlayer: boolean, dmgMult = 1): void {
     const pool = kind === 'rocket' ? this.rockets : this.bolts;
     const p = pool.find((q) => !q.alive) ?? pool[0];
     p.alive = true;
@@ -76,6 +78,7 @@ export class ProjectilePool {
     p.speed = speed;
     p.life = 6;
     p.fromPlayer = fromPlayer;
+    p.dmgMult = dmgMult;
     p.mesh.visible = true;
     p.mesh.position.set(x, y, z);
     p.mesh.lookAt(x - dx, y - dy, z - dz); // rocket model faces -z (nose at -z)
@@ -125,7 +128,7 @@ export class ProjectilePool {
           const eh = game.enemies.raycast(p.x, p.y, p.z, p.dx, p.dy, p.dz, Math.min(step, hitT));
           if (eh) {
             if (p.kind === 'rocket') {
-              game.explode(p.x + p.dx * eh.t, p.y + p.dy * eh.t, p.z + p.dz * eh.t, 90, 3.5);
+              game.explode(p.x + p.dx * eh.t, p.y + p.dy * eh.t, p.z + p.dz * eh.t, 90 * p.dmgMult, 3.5);
             } else {
               eh.enemy.damage(10, p.dx, p.dz, game);
             }
@@ -153,7 +156,7 @@ export class ProjectilePool {
           const hy = p.y + p.dy * hitT;
           const hz = p.z + p.dz * hitT;
           if (p.kind === 'rocket') {
-            game.explode(hx - p.dx * 0.1, hy - p.dy * 0.1, hz - p.dz * 0.1, 90, 3.5);
+            game.explode(hx - p.dx * 0.1, hy - p.dy * 0.1, hz - p.dz * 0.1, 90 * p.dmgMult, 3.5);
           } else {
             game.particles.impact(hx, hy, hz, -p.dx, -p.dy, -p.dz, 0.4, 0.8, 1);
             game.audio.play('boltHit', { x: hx, y: hy, z: hz });

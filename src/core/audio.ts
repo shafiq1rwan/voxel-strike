@@ -8,8 +8,9 @@ export type SoundName =
   | 'boltFire' | 'boltHit' | 'impact' | 'crateBreak' | 'wallBreak'
   | 'enemyPainA' | 'enemyPainB' | 'enemyDieA' | 'enemyDieB'
   | 'huskAlert' | 'huskBite' | 'huskStep' | 'huskGrowl' | 'sentinelAlert'
+  | 'tickerAlert' | 'tickerBeep' | 'alarm'
   | 'playerPain' | 'playerDie'
-  | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'secret'
+  | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup' | 'secret'
   | 'doorOpen' | 'doorClose' | 'doorLocked' | 'elevator'
   | 'step' | 'clank'
   | 'win';
@@ -268,6 +269,23 @@ export class AudioMan {
         this.tone(out, 'square', 0.3, 0.02, 0.2, 880, 1200);
         this.tone(out, 'square', 0.3, 0.02, 0.2, 660, 880, 0.1);
         break;
+      case 'tickerAlert':
+        // frantic rising chitter
+        this.tone(out, 'square', 0.28, 0.004, 0.05, 1100, 1600);
+        this.tone(out, 'square', 0.28, 0.004, 0.05, 1300, 1900, 0.07);
+        this.tone(out, 'square', 0.28, 0.004, 0.06, 1500, 2300, 0.14);
+        break;
+      case 'tickerBeep':
+        // sharp arming beep
+        this.tone(out, 'square', 0.45, 0.003, 0.07, 1970);
+        break;
+      case 'alarm':
+        // facility klaxon: two-tone whoop, repeated
+        for (let i = 0; i < 3; i++) {
+          this.tone(out, 'sawtooth', 0.3, 0.05, 0.2, 480, 700, i * 0.42);
+          this.tone(out, 'sawtooth', 0.3, 0.05, 0.2, 700, 480, i * 0.42 + 0.21);
+        }
+        break;
       case 'playerPain':
         this.tone(out, 'square', 0.5, 0.005, 0.12, 220, 140);
         this.tone(out, 'square', 0.4, 0.005, 0.1, 180, 110, 0.09);
@@ -289,6 +307,13 @@ export class AudioMan {
         this.tone(out, 'sawtooth', 0.35, 0.01, 0.12, 220);
         this.tone(out, 'sawtooth', 0.35, 0.01, 0.12, 330, undefined, 0.08);
         this.tone(out, 'sawtooth', 0.4, 0.01, 0.2, 440, undefined, 0.16);
+        break;
+      case 'powerup':
+        // big warping power chord
+        this.tone(out, 'sawtooth', 0.4, 0.01, 0.35, 220, 440);
+        this.tone(out, 'sawtooth', 0.4, 0.01, 0.35, 277, 554, 0.05);
+        this.tone(out, 'square', 0.35, 0.01, 0.45, 330, 660, 0.1);
+        this.tone(out, 'triangle', 0.4, 0.01, 0.5, 880, 1760, 0.18);
         break;
       case 'secret':
         this.tone(out, 'triangle', 0.4, 0.005, 0.12, 784);

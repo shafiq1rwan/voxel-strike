@@ -247,7 +247,8 @@ export class WeaponSystem {
         game.audio.play('dryfire');
         // auto-switch away from an empty weapon feels bad; just click.
       }
-      this.cooldown = 1 / def.rate;
+      // adrenaline powerup: faster trigger
+      this.cooldown = 1 / (def.rate * (game.player.buffs.haste > 0 ? 1.35 : 1));
       this.queuedShot = 0;
     }
 
@@ -294,9 +295,12 @@ export class WeaponSystem {
       game.punchFOV(1.0);
     }
 
+    // quad damage powerup
+    const dmgMult = pl.buffs.quad > 0 ? 4 : 1;
+
     if (def.projectile) {
       const start = origin.clone().addScaledVector(fwd, 0.7);
-      game.projectiles.spawn('rocket', start.x, start.y, start.z, fwd.x, fwd.y, fwd.z, 17, true);
+      game.projectiles.spawn('rocket', start.x, start.y, start.z, fwd.x, fwd.y, fwd.z, 17, true, dmgMult);
       game.particles.smoke(muzzle.x, muzzle.y, muzzle.z, 4);
       return;
     }
@@ -310,7 +314,7 @@ export class WeaponSystem {
         .addScaledVector(right, (Math.random() * 2 - 1) * def.spread)
         .addScaledVector(up, (Math.random() * 2 - 1) * def.spread)
         .normalize();
-      this.hitscan(origin, dir, def.damage, game, muzzle);
+      this.hitscan(origin, dir, def.damage * dmgMult, game, muzzle);
     }
   }
 

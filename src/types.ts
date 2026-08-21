@@ -7,9 +7,10 @@ export type PickupKind =
   | 'armorShard' | 'armorVest'
   | 'ammoBullets' | 'ammoShells' | 'ammoRockets'
   | 'keyRed' | 'keyBlue' | 'keyYellow'
-  | 'weaponShotgun' | 'weaponSMG' | 'weaponRocket';
+  | 'weaponShotgun' | 'weaponSMG' | 'weaponRocket'
+  | 'powerQuad' | 'powerShield' | 'powerHaste';
 
-export type EnemyKind = 'husk' | 'sentinel';
+export type EnemyKind = 'husk' | 'sentinel' | 'ticker';
 
 export type WeaponId = 'pistol' | 'shotgun' | 'smg' | 'rocket';
 

@@ -21,6 +21,9 @@ const setupShot = (pg, offsetRad) => pg.evaluate(async (offset) => {
   const g = window.__voxelstrike;
   g.input.locked = true;
   const e = g.enemies.list.find((q) => q.alive && q.kind === 'husk');
+  // freeze the target's AI: this test measures aim cones against a static
+  // hitbox — a woken husk weaves sideways and can wander into the ray
+  e.wake = () => {};
   for (const o of g.enemies.list) {
     if (o !== e && o.alive) { o.pos.x = 4; o.pos.z = 4; o.awake = false; o.state = 'idle'; }
   }

@@ -18,6 +18,13 @@ interface EnemyTuning {
 const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
   husk: { hp: 45, speed: 5.0, halfX: 0.38, halfY: 0.82, painChance: 0.4, bloodColor: [0.9, 0.45, 0.1] },
   sentinel: { hp: 60, speed: 2.7, halfX: 0.45, halfY: 0.45, painChance: 0.25, bloodColor: [0.25, 0.85, 1] },
+  // fragile suicide crawler: sprints at the player and self-destructs — and
+  // its corpse explodes even when shot at range, so prioritize it near barrels
+  ticker: { hp: 20, speed: 6.6, halfX: 0.3, halfY: 0.32, painChance: 0.1, bloodColor: [0.75, 0.85, 0.2] },
+};
+
+const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'tickerAlert'> = {
+  husk: 'huskAlert', sentinel: 'sentinelAlert', ticker: 'tickerAlert',
 };
 
 function part(parent: THREE.Object3D, w: number, h: number, d: number, color: number, fullBright = false): THREE.Mesh {
@@ -65,6 +72,8 @@ export class Enemy {
   private body: THREE.Group;
   private gait = Math.random() * 10;
   private lastStride = 0;
+  /** ticker arming beeps played so far this attack */
+  private beepCount = 0;
   private growlCd = 2 + Math.random() * 4;
   // billboard sprite skin (optional, from SpriteLibrary)
   private spriteMesh: THREE.Mesh | null = null;
@@ -85,6 +94,7 @@ export class Enemy {
     this.body = new THREE.Group();
     this.mesh.add(this.body);
     if (spec.kind === 'husk') this.buildHusk();
+    else if (spec.kind === 'ticker') this.buildTicker();
     else this.buildSentinel();
     this.mesh.position.copy(this.pos);
     if (startPatrolling) this.state = 'patrol';
@@ -157,6 +167,26 @@ export class Enemy {
     this.armRG = mkArm(1);
   }
 
+  private buildTicker(): void {
+    // squat hazard-striped shell over a glowing amber core, six skittering legs
+    const shell = part(this.body, 0.44, 0.24, 0.5, 0x3a3626);
+    shell.position.y = 0.02;
+    const stripeA = part(this.body, 0.46, 0.06, 0.12, 0xffd028);
+    stripeA.position.set(0, 0.1, -0.12);
+    const stripeB = part(this.body, 0.46, 0.06, 0.12, 0xffd028);
+    stripeB.position.set(0, 0.1, 0.12);
+    const core = part(this.body, 0.2, 0.14, 0.2, 0xffb028, true);
+    core.position.set(0, -0.02, -0.18);
+    this.glowParts.push(core);
+    for (let i = 0; i < 6; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const leg = part(this.body, 0.07, 0.22, 0.07, 0x2a2618);
+      leg.position.set(0.26 * side, -0.16, -0.16 + Math.floor(i / 2) * 0.16);
+      leg.rotation.z = 0.5 * side;
+      this.fins.push(leg); // reuse the fin slots as leg joints
+    }
+  }
+
   private buildSentinel(): void {
     const core = part(this.body, 0.55, 0.5, 0.55, 0x2c4452);
     core.position.y = 0;
@@ -194,7 +224,7 @@ export class Enemy {
   wake(game: Game): void {
     if (this.awake || !this.alive) return;
     this.awake = true;
-    game.audio.play(this.kind === 'husk' ? 'huskAlert' : 'sentinelAlert', this.pos);
+    game.audio.play(ALERT_SOUND[this.kind], this.pos);
     if (this.state === 'idle' || this.state === 'patrol') this.setState('chase');
   }
 
@@ -231,6 +261,11 @@ export class Enemy {
   private die(game: Game): void {
     this.setState('dead');
     game.audio.play(this.kind === 'husk' ? 'enemyDieA' : 'enemyDieB', this.pos);
+    // tickers are walking bombs: death always detonates them (short fuse so a
+    // sniped ticker still chains into barrels and packmates)
+    if (this.kind === 'ticker') {
+      game.queueExplosion(this.pos.x, this.pos.y, this.pos.z, 0.08, 55, 2.8);
+    }
     // the body bursts apart into its own voxels: every part becomes a handful
     // of gibs in that part's color
     const worldPos = new THREE.Vector3();
@@ -252,7 +287,7 @@ export class Enemy {
     }
     // sprite skins keep the corpse and play their death frames instead
     if (!this.spriteMesh) this.mesh.visible = false;
-    game.onEnemyKilled();
+    game.onEnemyKilled(this);
   }
 
   /** swap the voxel rig for a billboard sprite once its skin is loaded */
@@ -377,7 +412,7 @@ export class Enemy {
     }
 
     // physics
-    if (this.kind === 'husk') {
+    if (this.kind !== 'sentinel') {
       this.vel.y -= 24 * dt;
     } else {
       // hover spring toward target height above the floor
@@ -387,8 +422,8 @@ export class Enemy {
       this.vel.y += (targetY - this.pos.y) * 6 * dt - this.vel.y * 3 * dt;
     }
     const res = moveBody(game.world, this.pos, this.half, this.vel, dt, game.solidBoxes());
-    // ground friction for husk
-    if (this.kind === 'husk' && res.onGround) {
+    // ground friction for walkers
+    if (this.kind !== 'sentinel' && res.onGround) {
       const f = Math.exp(-6 * dt);
       this.vel.x *= f;
       this.vel.z *= f;
@@ -507,6 +542,24 @@ export class Enemy {
       } else {
         this.steer(nx, nz, this.tuning.speed);
       }
+    } else if (this.kind === 'ticker') {
+      // flat-out sprint with a nervous jitter; arm the charge on contact
+      if (dist < 1.8) {
+        this.setState('attack');
+        this.beepCount = 0;
+        return;
+      }
+      const jitter = Math.sin(this.animPhase * 6) * 0.25;
+      let wx = nx - nz * jitter;
+      let wz = nz + nx * jitter;
+      const wl = Math.hypot(wx, wz);
+      this.steer(wx / wl, wz / wl, this.tuning.speed);
+      // agitated chittering while it closes in
+      this.growlCd -= dt;
+      if (this.growlCd <= 0) {
+        this.growlCd = 1.6 + Math.random() * 2;
+        game.audio.play('tickerAlert', this.pos);
+      }
     } else {
       const los = game.hasLOS(this.pos.x, this.pos.y, this.pos.z, pl.pos.x, pl.eyeY(), pl.pos.z);
       if (los && dist < 14 && this.attackCooldown === 0) {
@@ -541,6 +594,19 @@ export class Enemy {
         }
       }
       if (this.stateTime > 0.75) this.setState('chase');
+    } else if (this.kind === 'ticker') {
+      // armed: it stops, beeps faster and faster, then self-destructs — no
+      // backing out once the charge is lit, so kite away from it
+      const t = this.stateTime;
+      const beepsDue = Math.floor(t / 0.16);
+      if (beepsDue > this.beepCount) {
+        this.beepCount = beepsDue;
+        game.audio.play('tickerBeep', this.pos);
+      }
+      if (t > 0.55) {
+        this.hp = 0;
+        this.die(game); // die() queues the explosion
+      }
     } else {
       // telegraph glow then fire a bolt
       const t = this.stateTime;
@@ -572,12 +638,38 @@ export class Enemy {
     this.animPhase += dt * 2;
     if (this.kind === 'husk') {
       this.animateHusk(dt, speed, game);
+    } else if (this.kind === 'ticker') {
+      this.animateTicker(speed, game);
     } else {
       for (let i = 0; i < this.fins.length; i++) {
         const fin = this.fins[i];
         const a = (i / 4) * Math.PI * 2 + this.animPhase * 1.5;
         fin.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
         fin.rotation.y = -a;
+      }
+    }
+  }
+
+  private animateTicker(speed: number, game: Game): void {
+    // legs skitter in alternating tripods; the body vibrates when armed
+    const g = this.animPhase * (2 + speed * 1.6);
+    for (let i = 0; i < this.fins.length; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const leg = this.fins[i];
+      leg.rotation.x = Math.sin(g * 3 + i * 1.1) * Math.min(0.7, speed * 0.14);
+      leg.rotation.z = 0.5 * side;
+    }
+    const arming = this.state === 'attack';
+    this.body.position.y = arming ? Math.sin(this.animPhase * 60) * 0.02 : Math.abs(Math.sin(g * 1.5)) * 0.03;
+    // the core blinks with the arming beeps and glows hotter as it closes
+    const core = this.glowParts[0];
+    if (core) {
+      const m = core.material as THREE.MeshBasicMaterial;
+      const base = core.userData.baseColor as THREE.Color;
+      const blink = arming ? (Math.floor(this.stateTime / 0.16) % 2 === 0 ? 2.2 : 0.6) : this.awake ? 1.4 : 1;
+      m.color.copy(base).multiplyScalar(blink);
+      if (arming) {
+        game.dynLights.submit(this.pos.x, this.pos.y + 0.2, this.pos.z, 1, 0.65, 0.1, 0.5 * blink, 3);
       }
     }
   }

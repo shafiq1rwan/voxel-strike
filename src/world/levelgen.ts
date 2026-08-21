@@ -627,6 +627,24 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
       const [x, z] = freeSpot(r);
       enemies.push({ kind: ranged ? 'sentinel' : 'husk', x, z, roomId: r.id });
     }
+    // ticker nests: packs of suicide crawlers, more common deeper in
+    if (r.dist >= 1 && rng.chance(0.3 + (difficulty - 1) * 0.15)) {
+      const pack = rng.int(1, Math.min(3, 1 + difficulty));
+      for (let i = 0; i < pack; i++) {
+        const [x, z] = freeSpot(r);
+        enemies.push({ kind: 'ticker', x, z, roomId: r.id });
+      }
+    }
+  }
+
+  // -- powerup: at most one per sector, stashed in a far room ----------------
+  if (rng.chance(0.65)) {
+    const farRooms = rooms.filter((r) => r.kind === 'normal' && r.dist >= 2);
+    if (farRooms.length) {
+      const kinds: PickupSpec['kind'][] = ['powerQuad', 'powerShield', 'powerHaste'];
+      const [x, z] = freeSpot(rng.pick(farRooms));
+      pickups.push({ kind: rng.pick(kinds), x, y: 1.5, z });
+    }
   }
 
   // -- bake lights & finish -------------------------------------------------

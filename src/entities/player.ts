@@ -33,6 +33,8 @@ export class Player {
   sensitivity = 1;
   /** 0 disables camera shake (settings) */
   shakeScale = 1;
+  /** timed powerup buffs, seconds remaining */
+  readonly buffs = { quad: 0, shield: 0, haste: 0 };
   private bobPhase = 0;
   private bobAmp = 0;
   private lastStride = 0;
@@ -72,24 +74,20 @@ export class Player {
 
   damage(amount: number, game: Game, source?: { x: number; z: number }): void {
     if (this.dead) return;
+    // overshield: absorbs the hit entirely (direction indicator still shows)
+    if (this.buffs.shield > 0) {
+      game.hud.shieldFlash();
+      game.audio.play('impact');
+      if (source) this.hitIndicator(source, game);
+      this.shake = Math.min(0.3, this.shake + amount * 0.004);
+      return;
+    }
     // armor soaks a third of incoming damage
     const soak = Math.min(this.armor, Math.ceil(amount / 3));
     this.armor -= soak;
     this.health -= amount - soak;
     game.hud.damageFlash();
-    // directional hit indicator: angle of the source relative to where we face
-    if (source) {
-      const dx = source.x - this.pos.x;
-      const dz = source.z - this.pos.z;
-      const len = Math.hypot(dx, dz);
-      if (len > 0.4) {
-        const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
-        const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
-        const f = (dx * fx + dz * fz) / len;
-        const r = (dx * rx + dz * rz) / len;
-        game.hud.damageIndicator((Math.atan2(r, f) * 180) / Math.PI);
-      }
-    }
+    if (source) this.hitIndicator(source, game);
     this.shake = Math.min(0.5, this.shake + amount * 0.008);
     if (this.health <= 0) {
       this.health = 0;
@@ -102,7 +100,25 @@ export class Player {
     game.hud.updateStats(this);
   }
 
+  /** directional hit indicator: angle of the source relative to where we face */
+  private hitIndicator(source: { x: number; z: number }, game: Game): void {
+    const dx = source.x - this.pos.x;
+    const dz = source.z - this.pos.z;
+    const len = Math.hypot(dx, dz);
+    if (len > 0.4) {
+      const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+      const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
+      const f = (dx * fx + dz * fz) / len;
+      const r = (dx * rx + dz * rz) / len;
+      game.hud.damageIndicator((Math.atan2(r, f) * 180) / Math.PI);
+    }
+  }
+
   update(dt: number, input: Input, game: Game, extraBoxes: Box[]): void {
+    // buff timers tick down
+    this.buffs.quad = Math.max(0, this.buffs.quad - dt);
+    this.buffs.shield = Math.max(0, this.buffs.shield - dt);
+    this.buffs.haste = Math.max(0, this.buffs.haste - dt);
     // mouse look
     const [mdx, mdy] = input.consumeMouse();
     if (!this.dead) {
@@ -134,7 +150,9 @@ export class Player {
       wz /= wl;
     }
 
-    const accel = this.onGround ? ACCEL_GROUND : ACCEL_AIR;
+    // adrenaline powerup: faster legs
+    const haste = this.buffs.haste > 0 ? 1.35 : 1;
+    const accel = (this.onGround ? ACCEL_GROUND : ACCEL_AIR) * haste;
     if (wl > 0.001) {
       this.vel.x += wx * accel * dt;
       this.vel.z += wz * accel * dt;
@@ -144,10 +162,11 @@ export class Player {
       this.vel.z *= f;
     }
     // clamp horizontal speed
+    const maxSpeed = MAX_SPEED * haste;
     const hs = Math.hypot(this.vel.x, this.vel.z);
-    if (hs > MAX_SPEED) {
-      this.vel.x *= MAX_SPEED / hs;
-      this.vel.z *= MAX_SPEED / hs;
+    if (hs > maxSpeed) {
+      this.vel.x *= maxSpeed / hs;
+      this.vel.z *= maxSpeed / hs;
     }
 
     this.vel.y -= GRAVITY * dt;

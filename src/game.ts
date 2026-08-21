@@ -11,7 +11,7 @@ import { generateLevel, LevelData } from './world/levelgen';
 import { Block, isDestructible } from './world/blocks';
 import { Player } from './entities/player';
 import { Door, Elevator } from './entities/door';
-import { EnemyManager } from './entities/enemies';
+import { Enemy, EnemyManager } from './entities/enemies';
 import { SpriteLibrary } from './entities/sprites';
 import { PickupManager } from './entities/pickups';
 import { ProjectilePool } from './entities/projectiles';
@@ -21,7 +21,7 @@ import { DynLights } from './fx/dynlights';
 import { WeaponSystem } from './weapons/weapons';
 import { HUD } from './ui/hud';
 import { GameSettings, loadSettings, saveSettings } from './core/settings';
-import { KeyColor, PickupKind } from './types';
+import { EnemySpec, KeyColor, PickupKind } from './types';
 
 type GameState = 'title' | 'playing' | 'paused' | 'dead' | 'intermission' | 'won';
 
@@ -72,8 +72,12 @@ export class Game {
   private solidBoxCache: Box[] = [];
   private solidBoxFrame = -1;
   private frameCounter = 0;
-  /** delayed explosions (barrel chain reactions): x, y, z, fuse seconds */
-  private pendingExplosions: Array<{ x: number; y: number; z: number; t: number }> = [];
+  /** delayed explosions (barrel chains, ticker corpses): fuse seconds + yield */
+  private pendingExplosions: Array<{ x: number; y: number; z: number; t: number; dmg: number; radius: number }> = [];
+  /** score + kill-combo chain (window resets on each kill) */
+  score = 0;
+  private comboChain = 0;
+  private comboTimer = 0;
   private fovKick = 0;
   private lowHealth = false;
   private ambientTimer = 8;
@@ -252,6 +256,7 @@ export class Game {
   private showTitleScreen(): void {
     this.hud.showTitle({
       seed: this.baseSeed,
+      best: this.bestScoreForSeed(),
       onStart: () => this.startGame(),
       onSettings: () => this.openSettings('title'),
     });
@@ -285,6 +290,7 @@ export class Game {
         secrets: this.secretsFound,
         totalSecrets: this.level.totalSecrets,
         time: this.formatTime(this.time - this.levelStartTime),
+        score: this.score,
         seed: this.baseSeed,
       },
       () => this.resumeGame(),
@@ -412,7 +418,7 @@ export class Game {
     } else if (block === Block.Barrel) {
       // short fuse so chains ripple instead of detonating in the same frame
       this.particles.debris(x + 0.5, y + 0.5, z + 0.5, 0.35, 0.5, 0.2, 8);
-      this.pendingExplosions.push({ x: x + 0.5, y: y + 0.5, z: z + 0.5, t: 0.14 });
+      this.queueExplosion(x + 0.5, y + 0.5, z + 0.5, 0.14, 70, 3.2);
     } else {
       this.particles.debris(x + 0.5, y + 0.5, z + 0.5, 0.36, 0.4, 0.47);
       this.audio.play('wallBreak', { x, y, z });
@@ -420,10 +426,62 @@ export class Game {
     }
   }
 
-  onEnemyKilled(): void {
+  /** fused explosion (barrel chains ripple; dead tickers pop a beat later) */
+  queueExplosion(x: number, y: number, z: number, fuse: number, dmg: number, radius: number): void {
+    this.pendingExplosions.push({ x, y, z, t: fuse, dmg, radius });
+  }
+
+  onEnemyKilled(e: Enemy): void {
     this.kills++;
     this.hud.killMarker();
     this.punchFOV(0.8);
+    // score: kill value scaled by the combo chain (kills within 2.5s of each other)
+    const points = e.kind === 'sentinel' ? 150 : e.kind === 'ticker' ? 75 : 100;
+    this.comboChain = this.comboTimer > 0 ? this.comboChain + 1 : 1;
+    this.comboTimer = 2.5;
+    const mult = Math.min(5, this.comboChain);
+    this.score += points * mult;
+    if (this.comboChain === 2) this.hud.streak('DOUBLE KILL');
+    else if (this.comboChain === 3) this.hud.streak('TRIPLE KILL');
+    else if (this.comboChain === 4) this.hud.streak('RAMPAGE');
+    else if (this.comboChain >= 6 && this.comboChain % 2 === 0) this.hud.streak('MASSACRE');
+    this.hud.updateScore(this.score, mult);
+  }
+
+  /** grabbing the red keycard springs a security response around the player */
+  onKeyPickup(): void {
+    const keyRoom = this.level.rooms.find((r) => r.kind === 'key');
+    if (!keyRoom) return;
+    const specs: EnemySpec[] = [];
+    const want = Math.min(5, 2 + this.levelIndex);
+    for (let tries = 0; tries < 80 && specs.length < want; tries++) {
+      const x = keyRoom.x + 1 + Math.floor(Math.random() * (keyRoom.w - 2));
+      const z = keyRoom.z + 1 + Math.floor(Math.random() * (keyRoom.d - 2));
+      if (this.world.get(x, 1, z) !== Block.Air || this.world.get(x, 2, z) !== Block.Air) continue;
+      const dx = x + 0.5 - this.player.pos.x;
+      const dz = z + 0.5 - this.player.pos.z;
+      if (dx * dx + dz * dz < 3.5 * 3.5) continue; // never inside the player's face
+      const kind: EnemySpec['kind'] =
+        specs.length === 0 ? 'husk'
+        : Math.random() < 0.45 ? 'ticker'
+        : this.levelIndex >= 2 && Math.random() < 0.4 ? 'sentinel'
+        : 'husk';
+      specs.push({ kind, x: x + 0.5, z: z + 0.5, roomId: keyRoom.id });
+    }
+    if (!specs.length) return;
+    const before = this.enemies.list.length;
+    this.enemies.spawnFromSpecs(specs, this.level.rooms, this);
+    for (let i = before; i < this.enemies.list.length; i++) {
+      const e = this.enemies.list[i];
+      e.wake(this);
+      // teleport-in flash so the spawn reads as an event, not a pop-in
+      this.dynLights.flash(e.pos.x, e.pos.y + 0.3, e.pos.z, 1, 0.25, 0.15, 1.6, 7, 0.4);
+      this.particles.smoke(e.pos.x, e.pos.y, e.pos.z, 6);
+    }
+    this.level.totalEnemies += specs.length;
+    this.audio.play('alarm');
+    this.hud.message('WARNING — security response inbound!');
+    this.punchFOV(1.5);
   }
 
   /** brief FOV widening on heavy impacts — decays each frame */
@@ -442,6 +500,19 @@ export class Game {
     return `${mins}:${secs}`;
   }
 
+  private seedHex(): string {
+    return (this.baseSeed >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  }
+
+  /** best campaign score recorded for this layout seed on this device */
+  private bestScoreForSeed(): number {
+    try {
+      return Number(localStorage.getItem(`voxelstrike-best-${this.seedHex()}`)) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
   private win(): void {
     if (this.state !== 'playing') return;
     const levelTime = this.time - this.levelStartTime;
@@ -450,6 +521,9 @@ export class Game {
     this.totalEnemiesSoFar += this.level.totalEnemies;
     this.totalSecretsFound += this.secretsFound;
     this.totalSecretsSoFar += this.level.totalSecrets;
+    // sector clear bonus, plus a bonus for speed
+    this.score += 1000 + Math.max(0, 900 - Math.floor(levelTime) * 3);
+    this.hud.updateScore(this.score, 1);
     this.audio.play('win');
     this.audio.setHeartbeat(false);
     this.lowHealth = false;
@@ -459,17 +533,30 @@ export class Game {
     const levelStats =
       `Kills: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; ` +
       `Secrets: ${this.secretsFound} / ${this.level.totalSecrets} &nbsp;·&nbsp; ` +
-      `Time: ${this.formatTime(levelTime)}`;
+      `Time: ${this.formatTime(levelTime)} &nbsp;·&nbsp; ` +
+      `Score: ${this.score.toLocaleString()}`;
 
     if (this.levelIndex < TOTAL_SECTORS) {
       this.state = 'intermission';
       this.hud.showIntermission(this.levelIndex, levelStats, () => this.nextLevel());
     } else {
       this.state = 'won';
+      // per-layout best score: same seed = same dungeon, so scores compare fairly
+      const best = this.bestScoreForSeed();
+      const isRecord = this.score > best;
+      if (isRecord) {
+        try {
+          localStorage.setItem(`voxelstrike-best-${this.seedHex()}`, String(this.score));
+        } catch { /* storage may be unavailable */ }
+      }
+      const scoreLine = isRecord
+        ? `Final score: <b style="color:#ffd028">${this.score.toLocaleString()} — NEW LAYOUT RECORD!</b>`
+        : `Final score: ${this.score.toLocaleString()}` +
+          (best > 0 ? ` &nbsp;·&nbsp; Layout best: ${best.toLocaleString()}` : '');
       const totals =
         `Total kills: ${this.totalKills} / ${this.totalEnemiesSoFar} &nbsp;·&nbsp; ` +
         `Secrets: ${this.totalSecretsFound} / ${this.totalSecretsSoFar} &nbsp;·&nbsp; ` +
-        `Total time: ${this.formatTime(this.totalPlayTime)}`;
+        `Total time: ${this.formatTime(this.totalPlayTime)}<br><br>${scoreLine}`;
       this.hud.showWin(totals, () => {
         location.href = location.pathname;
       });
@@ -560,7 +647,7 @@ export class Game {
       p.t -= dt;
       if (p.t <= 0) {
         this.pendingExplosions.splice(i, 1);
-        this.explode(p.x, p.y, p.z, 70, 3.2);
+        this.explode(p.x, p.y, p.z, p.dmg, p.radius);
       }
     }
 
@@ -603,6 +690,16 @@ export class Game {
     this.tracers.update(dt);
     this.pickups.update(dt, this.time, this);
     this.hud.updateAmmo(this.player, this.weapons);
+    this.hud.updateBuffs(this.player);
+
+    // combo window closes: chain resets, HUD drops the multiplier
+    if (this.comboTimer > 0) {
+      this.comboTimer -= dt;
+      if (this.comboTimer <= 0) {
+        this.comboChain = 0;
+        this.hud.updateScore(this.score, 1);
+      }
+    }
 
     // low-health state: pulsing vignette + heartbeat
     const low = !this.player.dead && this.player.health <= 30;
@@ -633,7 +730,9 @@ export class Game {
         this.secretAnnounced = true;
         this.secretsFound = 1;
         this.audio.play('secret');
-        this.hud.message('You found a secret area!');
+        this.hud.message('You found a secret area! +500');
+        this.score += 500;
+        this.hud.updateScore(this.score, Math.min(5, this.comboChain) || 1);
       }
     }
 
@@ -653,7 +752,7 @@ export class Game {
       if (this.deathTimer > 1.4 && this.deathTimer - dt <= 1.4) {
         document.exitPointerLock();
         this.hud.showDeath(
-          `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Total kills: ${this.totalKills + this.kills}`,
+          `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,
           () => {
             location.href = location.pathname;
           }
