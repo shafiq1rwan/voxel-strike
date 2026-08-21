@@ -95,6 +95,60 @@ const CSS = `
 .panel::after { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
 #fps { position: absolute; top: 10px; right: 14px; font-size: 12px; color: #566076; }
 
+/* ---------------- touch controls ---------------- */
+#touchui { position: absolute; inset: 0; pointer-events: none; }
+#tjoy-zone {
+  position: absolute; left: 0; bottom: 0; width: 45%; height: 70%;
+  pointer-events: auto; touch-action: none;
+}
+#tlook-zone {
+  position: absolute; right: 0; bottom: 0; width: 55%; height: 82%;
+  pointer-events: auto; touch-action: none;
+}
+#tjoy-base {
+  position: absolute; width: 96px; height: 96px; border-radius: 50%;
+  border: 2px solid rgba(255,208,40,.45); background: rgba(10,13,20,.35);
+  display: none; pointer-events: none;
+}
+#tjoy-knob {
+  position: absolute; left: 28px; top: 28px; width: 40px; height: 40px;
+  border-radius: 50%; background: rgba(255,208,40,.55); border: 1px solid #000;
+}
+.tbtn-touch {
+  position: absolute; pointer-events: auto; touch-action: none;
+  width: 62px; height: 62px; border-radius: 50%;
+  border: 2px solid rgba(207,214,228,.35); background: rgba(10,13,20,.45);
+  color: #cfd6e4; font: bold 11px 'Courier New', Courier, monospace;
+  letter-spacing: .1em; display: flex; align-items: center; justify-content: center;
+  user-select: none; -webkit-user-select: none;
+}
+#tfire {
+  right: 22px; bottom: 110px; width: 88px; height: 88px;
+  border-color: rgba(255,80,50,.55); color: #ff8060; font-size: 13px;
+}
+#tjump { right: 126px; bottom: 42px; }
+#tpause { top: 8px; right: 52px; width: 42px; height: 42px; border-radius: 10px; }
+#slots .slot { pointer-events: auto; }
+
+/* ---------------- small screens ---------------- */
+@media (max-width: 760px) {
+  #statbar { padding: 6px 8px; }
+  .stat { min-width: 62px; }
+  .stat .value { font-size: 22px; }
+  .stat .label { font-size: 9px; }
+  #weaponname { font-size: 10px; letter-spacing: 2px; }
+  .slot { width: 30px; height: 24px; }
+  #messages { font-size: 12px; left: 10px; top: 8px; max-width: 70vw; }
+  .screen h1 { font-size: 32px; letter-spacing: 4px; }
+  .panel { padding: 20px 22px 18px; max-width: 92vw; }
+  .title-menu-row { flex-wrap: wrap; justify-content: center; }
+  .setlist { width: 94vw; }
+  .setrow { font-size: 10px; gap: 10px; }
+  input[type=range].tslider { width: 110px; }
+  .howto { font-size: 11px; }
+  .title-foot { font-size: 9px; }
+}
+
 /* ---------------- full-screen menus (title, pause) ---------------- */
 .tscreen {
   position: fixed; inset: 0; z-index: 10; color: #cfd6e4;
@@ -354,6 +408,11 @@ export class HUD {
 
   setFPS(fps: number): void {
     this.fpsEl.textContent = `${fps.toFixed(0)} FPS`;
+  }
+
+  /** the in-game overlay root — touch controls mount here so they share its visibility */
+  get container(): HTMLElement {
+    return this.root;
   }
 
   showTitle(opts: { seed: number; onStart: () => void; onSettings: () => void }): void {

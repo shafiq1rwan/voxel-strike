@@ -49,6 +49,11 @@ is bigger and meaner than the last.
 | 1–4 or mouse wheel | Switch weapon |
 | Esc | Release the mouse (pauses) |
 
+**On phones/tablets** the game switches to touch controls automatically:
+left-thumb virtual joystick to move, drag the right side to aim, FIRE and
+JUMP buttons, tap the HUD weapon slots to switch, and a pause button
+top-right.
+
 Tips:
 
 - Doors open automatically when you approach. The red-emblem door needs the

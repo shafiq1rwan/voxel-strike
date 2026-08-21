@@ -3,6 +3,7 @@ import { Renderer } from './core/renderer';
 import { Input } from './core/input';
 import { AudioMan } from './core/audio';
 import { Music } from './core/music';
+import { TouchControls, isTouchDevice } from './core/touch';
 import { Box, rayBox } from './core/physics';
 import { VoxelWorld } from './world/world';
 import { ChunkManager } from './world/mesher';
@@ -42,6 +43,7 @@ export class Game {
   readonly player = new Player();
   readonly weapons = new WeaponSystem();
   readonly settings: GameSettings = loadSettings();
+  readonly isTouch = isTouchDevice();
 
   world!: VoxelWorld;
   level!: LevelData;
@@ -96,6 +98,10 @@ export class Game {
     scene.add(this.camera);
     // menu shows the bare facility; the gun raises when the run starts
     this.weapons.viewModel.visible = false;
+
+    if (this.isTouch) {
+      new TouchControls(this.hud.container, this.input, () => this.requestPause());
+    }
 
     this.sprites.load();
     this.buildLevel();
@@ -203,7 +209,7 @@ export class Game {
     this.weapons.viewModel.visible = true;
     this.state = 'playing';
     this.levelStartTime = this.time;
-    this.input.requestLock();
+    if (!this.isTouch) this.input.requestLock();
     this.hud.message(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard. Reach the exit.`);
     // if the browser blocked audio despite the gesture, tell the player how to fix it
     window.setTimeout(() => {
@@ -219,7 +225,7 @@ export class Game {
     this.hud.hideScreen();
     this.state = 'playing';
     this.levelStartTime = this.time;
-    this.input.requestLock();
+    if (!this.isTouch) this.input.requestLock();
     this.hud.message(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — it gets worse down here.`);
   }
 
@@ -242,6 +248,24 @@ export class Game {
     });
   }
 
+  /** pause without pointer lock (touch devices have none) */
+  private requestPause(): void {
+    if (this.state !== 'playing') return;
+    this.state = 'paused';
+    this.showPauseScreen();
+  }
+
+  private resumeGame(): void {
+    if (this.isTouch) {
+      if (this.state === 'paused') {
+        this.state = 'playing';
+        this.hud.hideScreen();
+      }
+    } else {
+      this.input.requestLock(); // resume happens via the lock-change event
+    }
+  }
+
   private showPauseScreen(): void {
     this.hud.showPause(
       {
@@ -254,7 +278,7 @@ export class Game {
         time: this.formatTime(this.time - this.levelStartTime),
         seed: this.baseSeed,
       },
-      () => this.input.requestLock(),
+      () => this.resumeGame(),
       () => {
         location.href = location.pathname;
       },

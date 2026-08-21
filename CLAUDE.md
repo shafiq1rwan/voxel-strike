@@ -89,5 +89,9 @@ is the debug handle the tests use (the Game instance).
 - Pointer lock **does** engage in headless Chrome: while locked, real mouse
   clicks hit the canvas, not DOM buttons. Tests must `document.exitPointerLock()`
   (or use JS `.click()`) before clicking menu buttons mid-game.
+- Touch devices (`src/core/touch.ts`, detected via pointer:coarse) get a
+  virtual joystick + look-drag + FIRE/JUMP/pause buttons feeding the same
+  `Input` abstraction; pointer lock is skipped entirely and pause runs through
+  `Game.requestPause()`/`resumeGame()` instead of lock-change events.
 - `vite.config.ts` uses `base: './'` so builds work on GitHub Pages project
   sites — don't remove it.

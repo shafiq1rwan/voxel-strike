@@ -8,6 +8,8 @@ export class Input {
   private buttons = new Set<number>();
   /** set on every left-button press so a fast tap between frames isn't lost */
   private firePressed = false;
+  /** written by TouchControls on touch devices, merged into the getters below */
+  readonly touchState = { moveX: 0, moveY: 0, fire: false, jump: false };
   /** number key / wheel weapon-switch request, consumed by weapons */
   switchRequest: number | null = null;
   locked = false;
@@ -46,6 +48,7 @@ export class Input {
       if (!this.locked) return;
       this.switchRequest = e.deltaY > 0 ? -2 : -1; // -1 = prev, -2 = next
     });
+    document.addEventListener('touchstart', () => this.fireInteract(), { passive: true });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.lockTarget;
       if (!this.locked) this.buttons.clear();
@@ -78,19 +81,21 @@ export class Input {
   }
 
   get forward(): number {
-    return (this.down('KeyW') ? 1 : 0) - (this.down('KeyS') ? 1 : 0);
+    const kb = (this.down('KeyW') ? 1 : 0) - (this.down('KeyS') ? 1 : 0);
+    return Math.max(-1, Math.min(1, kb + this.touchState.moveY));
   }
 
   get strafe(): number {
-    return (this.down('KeyD') ? 1 : 0) - (this.down('KeyA') ? 1 : 0);
+    const kb = (this.down('KeyD') ? 1 : 0) - (this.down('KeyA') ? 1 : 0);
+    return Math.max(-1, Math.min(1, kb + this.touchState.moveX));
   }
 
   get jump(): boolean {
-    return this.down('Space');
+    return this.down('Space') || this.touchState.jump;
   }
 
   get fire(): boolean {
-    return this.buttons.has(0);
+    return this.buttons.has(0) || this.touchState.fire;
   }
 
   /** true once per left-button press since the last call (edge, not level) */
@@ -98,6 +103,11 @@ export class Input {
     const p = this.firePressed;
     this.firePressed = false;
     return p;
+  }
+
+  /** used by touch fire button to register a press edge */
+  pressFire(): void {
+    this.firePressed = true;
   }
 
   /** consume mouse deltas for this frame */
