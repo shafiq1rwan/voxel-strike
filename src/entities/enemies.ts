@@ -85,6 +85,8 @@ export class Enemy {
   private stunTime = 0.32;
   /** which way the whole model jolts on the current hit flash */
   private flinchSign = 1;
+  /** set by hitscan right before damage() when the shot landed in the head zone */
+  lastHitHead = false;
   private growlCd = 2 + Math.random() * 4;
   // billboard sprite skin (optional, from SpriteLibrary)
   private spriteMesh: THREE.Mesh | null = null;
@@ -347,6 +349,9 @@ export class Enemy {
       this.setState('pain');
       game.audio.play(this.kind === 'husk' || this.kind === 'brute' ? 'enemyPainA' : 'enemyPainB', this.pos);
     }
+    // the headshot flag only describes THIS hit — don't let it linger so a
+    // later barrel kill counts as a headshot
+    this.lastHitHead = false;
   }
 
   private die(game: Game): void {

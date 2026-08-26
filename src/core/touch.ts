@@ -31,7 +31,7 @@ export class TouchControls {
     return { x: clientY, y: window.innerWidth - clientX };
   }
 
-  constructor(container: HTMLElement, private input: Input, onPause: () => void) {
+  constructor(container: HTMLElement, private input: Input, onPause: () => void, onMap: () => void) {
     // flips the HUD into its mobile layout (top status bar, thumb-corner UI)
     document.body.classList.add('touch-mode');
 
@@ -44,6 +44,7 @@ export class TouchControls {
       <div id="tammo">–</div>
       <button id="tjump" class="tbtn-touch">JUMP</button>
       <button id="tfire" class="tbtn-touch">FIRE</button>
+      <button id="tmap" class="tbtn-touch">MAP</button>
       <button id="tpause" class="tbtn-touch">&#10073;&#10073;</button>
     `;
     container.appendChild(ui);
@@ -68,6 +69,7 @@ export class TouchControls {
     const fire = ui.querySelector('#tfire') as HTMLElement;
     const jump = ui.querySelector('#tjump') as HTMLElement;
     const pause = ui.querySelector('#tpause') as HTMLElement;
+    const map = ui.querySelector('#tmap') as HTMLElement;
 
     joyZone.addEventListener('touchstart', (e) => {
       e.preventDefault();
@@ -159,6 +161,7 @@ export class TouchControls {
       this.input.touchState.jump = false;
     });
     bindButton(pause, () => onPause());
+    bindButton(map, () => onMap());
 
     // weapon slots in the HUD become tappable
     container.querySelectorAll('#slots .slot').forEach((slot, i) => {

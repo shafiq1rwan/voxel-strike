@@ -6,7 +6,7 @@
 export type SoundName =
   | 'pistol' | 'shotgun' | 'smg' | 'rocketLaunch' | 'arcFire' | 'explosion' | 'dryfire'
   | 'boltFire' | 'boltHit' | 'impact' | 'crateBreak' | 'wallBreak'
-  | 'fleshHit'
+  | 'fleshHit' | 'headshot'
   | 'enemyPainA' | 'enemyPainB' | 'enemyDieA' | 'enemyDieB'
   | 'huskAlert' | 'huskBite' | 'huskStep' | 'huskGrowl' | 'sentinelAlert'
   | 'tickerAlert' | 'tickerBeep' | 'alarm'
@@ -250,6 +250,12 @@ export class AudioMan {
         this.tone(out, 'triangle', 0.3, 0.003, 0.07, 160 * p, 60);
         break;
       }
+      case 'headshot':
+        // sharp skull-crack + rising ping so crits are unmistakable
+        this.noise(out, 0.4, 0.002, 0.06, 'highpass', 3000);
+        this.tone(out, 'square', 0.3, 0.002, 0.08, 1200, 700);
+        this.tone(out, 'triangle', 0.22, 0.002, 0.12, 1700, 2400, 0.02);
+        break;
       case 'enemyPainA':
         this.tone(out, 'sawtooth', 0.5, 0.01, 0.16, 160, 90);
         break;

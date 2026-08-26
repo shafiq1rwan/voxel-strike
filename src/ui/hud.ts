@@ -17,6 +17,7 @@ const CSS = `
 }
 #crosshair.hit { color: #ff5040; transform: translate(-50%,-50%) scale(1.5); }
 #crosshair.kill { color: #ff5040; transform: translate(-50%,-50%) scale(2); text-shadow: 0 0 10px rgba(255,80,64,.9); }
+#crosshair.hs { color: #ffd028 !important; text-shadow: 0 0 12px rgba(255,208,40,.9); }
 #lowvignette {
   position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .5s;
   background: radial-gradient(ellipse at center, rgba(120,0,0,0) 52%, rgba(150,12,6,.55) 100%);
@@ -163,6 +164,7 @@ const CSS = `
 }
 #tjump { right: 126px; bottom: 42px; }
 #tpause { top: 8px; right: 10px; width: 42px; height: 42px; border-radius: 10px; }
+#tmap { top: 8px; right: 60px; width: 42px; height: 42px; border-radius: 10px; font-size: 9px; }
 #tammo {
   position: absolute; right: 12px; bottom: 208px; width: 108px; text-align: center;
   font: bold 22px 'Courier New', Courier, monospace; color: #ffd028;
@@ -512,18 +514,27 @@ export class HUD {
   }
 
   hitMarker(): void {
+    this.crosshairEl.classList.remove('hs');
     this.crosshairEl.classList.add('hit');
     if (this.hitTimer !== null) clearTimeout(this.hitTimer);
-    this.hitTimer = window.setTimeout(() => this.crosshairEl.classList.remove('hit'), 90);
+    this.hitTimer = window.setTimeout(() => this.crosshairEl.classList.remove('hit', 'hs'), 90);
   }
 
-  /** bigger, distinct confirmation when something dies */
-  killMarker(): void {
+  /** gold flash for a critical hit to the head */
+  headshotMarker(): void {
+    this.crosshairEl.classList.add('hit', 'hs');
+    if (this.hitTimer !== null) clearTimeout(this.hitTimer);
+    this.hitTimer = window.setTimeout(() => this.crosshairEl.classList.remove('hit', 'hs'), 110);
+  }
+
+  /** bigger, distinct confirmation when something dies (gold for headshots) */
+  killMarker(headshot = false): void {
     this.crosshairEl.textContent = '✕';
+    this.crosshairEl.classList.toggle('hs', headshot);
     this.crosshairEl.classList.add('kill');
     if (this.hitTimer !== null) clearTimeout(this.hitTimer);
     this.hitTimer = window.setTimeout(() => {
-      this.crosshairEl.classList.remove('kill', 'hit');
+      this.crosshairEl.classList.remove('kill', 'hit', 'hs');
       this.crosshairEl.textContent = '+';
     }, 170);
   }

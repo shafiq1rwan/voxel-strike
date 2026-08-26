@@ -323,6 +323,69 @@ try {
   }
   await page.screenshot({ path: 'scripts/shots/features-3-arc.png' });
 
+  // --- 9. headshots: top-slice hits deal double damage ------------------------
+  const hs = await page.evaluate(async () => {
+    const g = window.__voxelstrike;
+    g.input.locked = true;
+    g.player.health = 200;
+    g.player.dead = false;
+    g.player.buffs.quad = 0; // measure base damage, not leftover quad
+    for (const o of g.enemies.list) {
+      if (o.alive) { o.pos.set(4, o.pos.y, 4); o.awake = false; o.state = 'idle'; o.vel.set(0, 0, 0); o.wake = () => {}; }
+    }
+    const h = g.enemies.list.find((q) => q.alive && q.kind === 'husk');
+    if (!h) return { found: false };
+    const a = g.level.rooms.find((r) => r.kind === 'arena');
+    g.player.pos.set(a.cx + 0.5 - 5, 2.0, a.cz + 0.5);
+    g.player.vel.set(0, 0, 0);
+    g.player.yaw = -Math.PI / 2; // face +x down the cleared lane
+    g.player.pitch = 0;          // eye-level ray passes through the head zone
+    h.pos.set(a.cx + 0.5, h.pos.y, a.cz + 0.5);
+    h.mesh.position.copy(h.pos);
+    h.hp = 100; // headroom to measure two hits
+    g.weapons.switchTo('pistol');
+    g.player.ammo.bullets = 50;
+    await new Promise((r) => setTimeout(r, 300));
+    const hp0 = h.hp;
+    g.input.pressFire();
+    await new Promise((r) => setTimeout(r, 350));
+    const headDmg = hp0 - h.hp;
+    // now aim at center mass, below the head zone (let the camera take the
+    // new pitch for a few frames — the gun fires along the CAMERA direction)
+    g.player.pitch = Math.atan2(h.pos.y - (g.player.pos.y + 0.62), 5);
+    await new Promise((r) => setTimeout(r, 120));
+    const hp1 = h.hp;
+    g.input.pressFire();
+    await new Promise((r) => setTimeout(r, 350));
+    const bodyDmg = hp1 - h.hp;
+    return { found: true, headDmg, bodyDmg };
+  });
+  check(hs.found, 'husk available for the headshot test');
+  if (hs.found) {
+    check(hs.headDmg === 28, `head-zone pistol shot dealt double damage (${hs.headDmg})`);
+    check(hs.bodyDmg === 14, `body pistol shot dealt normal damage (${hs.bodyDmg})`);
+  }
+
+  // --- 10. automap: toggles, and reveal tracks what the player has seen -------
+  const map = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    const wrap = document.querySelector('#automap-wrap');
+    const before = wrap.classList.contains('open');
+    g.toggleMap();
+    const after = wrap.classList.contains('open');
+    let explored = 0;
+    for (const v of g.automap.explored) if (v) explored++;
+    g.toggleMap();
+    const closed = !wrap.classList.contains('open');
+    return { before, after, explored, closed };
+  });
+  check(!map.before && map.after && map.closed, 'automap toggles open and closed');
+  check(map.explored > 50, `automap revealed seen cells (${map.explored})`);
+  await page.evaluate(() => window.__voxelstrike.toggleMap());
+  await new Promise((r) => setTimeout(r, 250));
+  await page.screenshot({ path: 'scripts/shots/features-4-automap.png' });
+  await page.evaluate(() => window.__voxelstrike.toggleMap());
+
   // --- 5. elevator carries a player who WALKS on (not a zero-velocity teleport)
   // Regression: the dynamic-box resolver used to eject a rider sideways when
   // the rising platform overlapped their feet while they carried any leftover

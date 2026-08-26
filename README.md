@@ -46,13 +46,14 @@ is bigger and meaner than the last.
 | Mouse | Aim (click to capture the pointer) |
 | Left click | Fire |
 | Space | Jump |
-| 1–4 or mouse wheel | Switch weapon |
+| 1–5 or mouse wheel | Switch weapon |
+| Tab or M | Automap (fills in as you explore) |
 | Esc | Release the mouse (pauses) |
 
 **On phones/tablets** the game switches to touch controls automatically:
 left-thumb virtual joystick to move, drag the right side to aim, FIRE and
 JUMP buttons (with the ammo count above FIRE), tap the weapon slots in the
-top bar to switch, and a pause button top-right. The HUD moves to a compact
+top bar to switch, and MAP + pause buttons top-right. The HUD moves to a compact
 top strip so the bottom corners stay clear for your thumbs. The game is
 **always landscape**: held in portrait, it rotates itself 90° (no need to
 enable the OS auto-rotate), and the installed PWA locks landscape natively.
@@ -89,6 +90,12 @@ Tips:
 - When you take a hit, a **red wedge** around the crosshair points at
   whatever hurt you.
 - Gunfire is loud: enemies within earshot will come looking.
+- **Headshots**: hits in the top slice of a husk or brute deal **double
+  damage** (gold crosshair flash + a distinct crack) and kill bonuses. Aim
+  high.
+- Lost? The **automap** (Tab/M, MAP button on touch) fills in only what
+  you've actually seen — locked doors show their key color, the exit glows
+  green, and the keycard blinks red once you've spotted it.
 - Rockets hurt you too at close range — but the knockback can be used to
   rocket-jump.
 - Intermission screens track kills, secrets, and time per sector; the final

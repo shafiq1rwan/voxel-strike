@@ -20,6 +20,7 @@ import { Tracers } from './fx/tracers';
 import { DynLights } from './fx/dynlights';
 import { WeaponSystem } from './weapons/weapons';
 import { HUD } from './ui/hud';
+import { Automap } from './ui/automap';
 import { GameSettings, loadSettings, saveSettings } from './core/settings';
 import { EnemySpec, KeyColor, PickupKind } from './types';
 
@@ -44,6 +45,7 @@ export class Game {
   readonly weapons = new WeaponSystem();
   readonly settings: GameSettings = loadSettings();
   readonly isTouch = isTouchDevice();
+  private automap!: Automap;
 
   world!: VoxelWorld;
   level!: LevelData;
@@ -103,8 +105,11 @@ export class Game {
     // menu shows the bare facility; the gun raises when the run starts
     this.weapons.viewModel.visible = false;
 
+    this.automap = new Automap(this.hud.container);
+    this.input.onToggleMap = () => this.toggleMap();
+
     if (this.isTouch) {
-      new TouchControls(this.hud.container, this.input, () => this.requestPause());
+      new TouchControls(this.hud.container, this.input, () => this.requestPause(), () => this.toggleMap());
     }
 
     this.sprites.load();
@@ -185,6 +190,7 @@ export class Game {
 
     this.pickups = new PickupManager(this.level.pickups, this.world);
     scene.add(this.pickups.group);
+    this.automap.reset(this);
 
     this.enemies.spawnFromSpecs(this.level.enemies, this.level.rooms, this);
     scene.add(this.enemies.group);
@@ -260,6 +266,12 @@ export class Game {
       onStart: () => this.startGame(),
       onSettings: () => this.openSettings('title'),
     });
+  }
+
+  /** Tab / M / MAP button — automap overlay, only while actually playing */
+  toggleMap(): void {
+    if (this.state !== 'playing') return;
+    this.automap.toggle(this);
   }
 
   /** pause without pointer lock (touch devices have none) */
@@ -439,10 +451,11 @@ export class Game {
 
   onEnemyKilled(e: Enemy): void {
     this.kills++;
-    this.hud.killMarker();
+    this.hud.killMarker(e.lastHitHead);
     this.punchFOV(0.8);
     // score: kill value scaled by the combo chain (kills within 2.5s of each other)
-    const points = e.kind === 'brute' ? 300 : e.kind === 'sentinel' ? 150 : e.kind === 'ticker' ? 75 : 100;
+    let points = e.kind === 'brute' ? 300 : e.kind === 'sentinel' ? 150 : e.kind === 'ticker' ? 75 : 100;
+    if (e.lastHitHead) points += 50; // headshot kill bonus
     this.comboChain = this.comboTimer > 0 ? this.comboChain + 1 : 1;
     this.comboTimer = 2.5;
     const mult = Math.min(5, this.comboChain);
@@ -615,6 +628,9 @@ export class Game {
       return;
     }
 
+    // the automap only lives inside active play
+    if (this.state !== 'playing' && this.automap.visible) this.automap.setVisible(false);
+
     const playing = this.state === 'playing' || this.state === 'dead';
     if (playing) {
       this.update(dt);
@@ -697,6 +713,7 @@ export class Game {
     this.pickups.update(dt, this.time, this);
     this.hud.updateAmmo(this.player, this.weapons);
     this.hud.updateBuffs(this.player);
+    this.automap.update(dt, this);
 
     // combo window closes: chain resets, HUD drops the multiplier
     if (this.comboTimer > 0) {

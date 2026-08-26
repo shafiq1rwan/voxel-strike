@@ -27,7 +27,7 @@ node scripts/e2e.mjs        # plays the whole 3-sector campaign: aggro, barrels,
 node scripts/movement.mjs   # WASD displacement must match camera basis vectors at 5 yaw angles
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, walk-on elevator ride
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 ```
 
@@ -110,7 +110,10 @@ node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into 
   more within 7u (LOS-checked, ×0.7 damage per hop), drawn as jagged teal
   tracer segments (`Tracers.fire` takes color + life; pool sized for it).
   Adding a weapon means updating BOTH `ORDER` arrays (weapons.ts + hud.ts)
-  and the Digit list in input.ts.
+  and the Digit list in input.ts. Hitscan headshots: husk/brute hits above
+  `pos.y + half.y * 0.45` deal ×2 (gold marker, +50 kill bonus via
+  `Enemy.lastHitHead`, which damage() clears after each hit so splash kills
+  don't inherit it).
 - `src/core/audio.ts` — every sound is WebAudio synthesis; positional pan/gain;
   self-healing autoplay resume on any gesture.
 - `src/core/music.ts` — optional soundtrack: menu/ambient/combat loop slots
@@ -125,6 +128,11 @@ node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into 
 - `src/ui/hud.ts` — DOM HUD + all screens; the voxel wordmark renderer
   (`startVoxelLogo`) draws 5×7 glyphs as extruded blocks (add glyphs to
   `GLYPHS` before using new letters in a wordmark).
+- `src/ui/automap.ts` — Tab/M (MAP button on touch) overlay canvas; reveal is
+  LOS-checked per cell (rooms behind walls stay dark), doors draw in their
+  lock color, exit pads green, the un-taken red key blinks. Its canvas rule
+  must out-rank index.html's `#app canvas { width:100% }` — that's why the
+  CSS selector is `#hud #automap-wrap #automap-canvas`.
 
 ## Conventions & gotchas
 

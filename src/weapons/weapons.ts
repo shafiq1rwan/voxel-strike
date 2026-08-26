@@ -505,9 +505,25 @@ export class WeaponSystem {
     const eHit = game.enemies.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, wallT);
     if (eHit) {
       const t = eHit.t;
-      game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
-      eHit.enemy.damage(damage, dir.x, dir.z, game);
-      game.hud.hitMarker();
+      const e = eHit.enemy;
+      const hitY = origin.y + dir.y * t;
+      // headshot: creatures with heads take double damage in the top slice
+      const headshot = (e.kind === 'husk' || e.kind === 'brute') && hitY > e.pos.y + e.half.y * 0.45;
+      game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, origin.x + dir.x * t, hitY, origin.z + dir.z * t);
+      e.lastHitHead = headshot;
+      if (headshot) {
+        game.audio.play('headshot', e.pos);
+        game.hud.headshotMarker();
+        // extra spray from the skull
+        game.particles.blood(
+          e.pos.x, hitY, e.pos.z, dir.x, 0.4, dir.z,
+          e.tuning.bloodColor[0], e.tuning.bloodColor[1], e.tuning.bloodColor[2], 8
+        );
+        e.damage(damage * 2, dir.x, dir.z, game);
+      } else {
+        game.hud.hitMarker();
+        e.damage(damage, dir.x, dir.z, game);
+      }
       return;
     }
     if (wHit && wHit.t <= wallT) {

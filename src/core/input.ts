@@ -14,16 +14,21 @@ export class Input {
   switchRequest: number | null = null;
   locked = false;
   onLockChange: ((locked: boolean) => void) | null = null;
+  /** Tab / M — automap toggle */
+  onToggleMap: (() => void) | null = null;
   onFirstInteract: (() => void) | null = null;
   private interacted = false;
 
   constructor(private lockTarget: HTMLElement) {
     window.addEventListener('keydown', (e) => {
+      // Tab must never move browser focus, even on key repeat
+      if (e.code === 'Tab') e.preventDefault();
       if (e.repeat) return;
       this.fireInteract(); // keyboard counts as the first gesture too (audio init)
       this.keys.add(e.code);
       const num = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code);
       if (num >= 0) this.switchRequest = num;
+      if (e.code === 'Tab' || e.code === 'KeyM') this.onToggleMap?.();
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
