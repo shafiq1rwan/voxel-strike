@@ -27,7 +27,7 @@ node scripts/e2e.mjs        # plays the whole 3-sector campaign: aggro, barrels,
 node scripts/movement.mjs   # WASD displacement must match camera basis vectors at 5 yaw angles
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, quad/shield/haste powerups, score + combo
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, walk-on elevator ride
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 ```
 
@@ -65,22 +65,36 @@ node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into 
   `blockHP`, and `drawTile` must stay in sync when adding a block.**
 - `src/world/levelgen.ts` — rooms + MST corridors, doors (exit door always
   red-locked, forced placement), secret room behind cracked blocks, exit ledge
-  + elevator, barrels/crates/lamps/pickups/enemies. Every layout is validated
-  by a BFS walkability check (key reachable *without* the key, exit reachable
-  *with* it) and regenerated from fallback seeds if broken.
+  + elevator, barrels/crates/lamps/pickups/enemies. One big `arena` room per
+  sector is placed FIRST (while the map is empty, so it always fits) and is
+  never spawn/exit/key — it holds the arc caster + cells, brute guard(s), and
+  a diagonal pillar ring (axes left clear as charge lanes). Every layout is
+  validated by a BFS walkability check (key reachable *without* the key, exit
+  reachable *with* it) and regenerated from fallback seeds if broken.
 - `src/core/physics.ts` — axis-by-axis AABB vs voxels + dynamic boxes (doors,
   elevator). The voxel resolver only corrects penetration caused by *this
   frame's movement* (`maxPen` guard) — deep pre-existing embeds must never be
   face-snapped or bodies ratchet through the world. Dynamic boxes are exempt
-  (rising elevators legitimately push bodies).
+  from `maxPen` (rising elevators legitimately push bodies) but resolve ONLY
+  along the axis of least penetration: an axis-blind snap used to eject a
+  walking rider sideways off the rising lift (0.03u vertical overlap "fixed"
+  by a 1u horizontal shove), soft-locking the campaign. `features.mjs` has a
+  walk-on ride regression for this.
 - `src/entities/` — player (movement/health/keys, timed `buffs`:
   quad ×4 damage / shield full absorb / haste ×1.35 move+fire), enemies
-  (state machines: idle/patrol/chase/attack/pain/dead; husks have jointed
-  rigs + serpentine chase; tickers sprint, arm at <1.8u, and ALWAYS detonate
-  on death via `queueExplosion` — even sniped at range; deaths burst into
-  per-part gibs), doors/elevator, pickups (magnetism, full-bright + glow
-  discs; powerups set player buff timers), pooled projectiles (rockets carry
-  a `dmgMult` for quad).
+  (state machines: idle/patrol/chase/attack/charge/pain/dead; husks have
+  jointed rigs + serpentine chase; tickers sprint, arm at <1.8u, and ALWAYS
+  detonate on death via `queueExplosion` — even sniped at range; brutes share
+  the husk rig/gait at heavier proportions, telegraph a 4.2× charge that
+  smashes destructibles in its path, get stunned 1.3s on a wall slam via
+  `stunTime`, and always drop a powerup; deaths burst into per-part gibs),
+  doors/elevator, pickups (magnetism, full-bright + glow discs; powerups set
+  player buff timers), pooled projectiles (rockets carry a `dmgMult` for
+  quad). Hit feedback fires the SAME frame as the damage — `applyFlash()`
+  sets materials white-hot immediately (the 0.08s `updateLighting` tick then
+  maintains/restores it), plus a jolt tilt + scale pop on the mesh, a
+  'fleshHit' thwack, micro-stagger, and knockback (brutes ×0.25) — routing it
+  through the light tick alone makes hits feel like nothing.
 - `src/entities/sprites.ts` — optional Doom-style billboard skins for enemies.
   `public/sprites/manifest.json` maps enemy kinds to sheets with a fixed row
   order (idle/walk/attack/pain/death; death plays once, last frame = corpse,
@@ -91,7 +105,12 @@ node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into 
   voxel rigs unless the files are re-added).
 - `src/fx/` — pooled particles (one InstancedMesh), tracers, dynamic light pool.
 - `src/weapons/weapons.ts` — defs, hold-to-fire with a 0.25s click buffer,
-  hitscan + rockets, viewmodels, muzzle flash.
+  hitscan + rockets, viewmodels, muzzle flash. Slot 5 is the ARC CASTER
+  (cells ammo): `fireArc` raycasts the first target then chains to up to 3
+  more within 7u (LOS-checked, ×0.7 damage per hop), drawn as jagged teal
+  tracer segments (`Tracers.fire` takes color + life; pool sized for it).
+  Adding a weapon means updating BOTH `ORDER` arrays (weapons.ts + hud.ts)
+  and the Digit list in input.ts.
 - `src/core/audio.ts` — every sound is WebAudio synthesis; positional pan/gain;
   self-healing autoplay resume on any gesture.
 - `src/core/music.ts` — optional soundtrack: menu/ambient/combat loop slots

@@ -215,6 +215,181 @@ try {
   check(ambush.allAwake, 'ambush spawns come in already hunting');
   check(ambush.totalGrew, 'kill-stat total includes ambush spawns');
   await page.screenshot({ path: 'scripts/shots/features-2-ambush.png' });
+
+  // --- 6. arena hall: big room, arc caster prize, brute guard ---------------
+  const arena = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    const a = g.level.rooms.find((r) => r.kind === 'arena');
+    if (!a) return { found: false };
+    // clear a straight test lane through the arena center (stray crates or
+    // barrels in the lane would eat shots meant for the chain targets)
+    for (let x = a.cx - 7; x <= a.cx + 5; x++) {
+      for (let y = 1; y <= 2; y++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          if (g.world.get(x, y, a.cz + dz) !== 0) g.world.set(x, y, a.cz + dz, 0);
+        }
+      }
+    }
+    return {
+      found: true, w: a.w, d: a.d,
+      hasArc: g.level.pickups.some((p) => p.kind === 'weaponArc'),
+      hasBrute: g.enemies.list.some((q) => q.kind === 'brute'),
+    };
+  });
+  check(arena.found && arena.w >= 15, `arena hall generated (${arena.w}x${arena.d})`);
+  check(arena.hasArc, 'arc caster placed in the arena');
+  check(arena.hasBrute, 'a brute guards the arena');
+
+  // --- 7. brute: telegraphed charge, trample, and guaranteed powerup drop ----
+  const brute = await page.evaluate(async () => {
+    const g = window.__voxelstrike;
+    g.input.locked = true;
+    const b = g.enemies.list.find((q) => q.alive && q.kind === 'brute');
+    if (!b) return { found: false };
+    for (const o of g.enemies.list) {
+      if (o !== b && o.alive) { o.pos.set(4, o.pos.y, 4); o.awake = false; o.state = 'idle'; o.vel.set(0, 0, 0); }
+    }
+    const a = g.level.rooms.find((r) => r.kind === 'arena');
+    g.player.health = 400;
+    g.player.dead = false;
+    g.player.pos.set(a.cx + 0.5 - 6, 2.0, a.cz + 0.5);
+    g.player.vel.set(0, 0, 0);
+    b.pos.set(a.cx + 0.5 + 3, b.pos.y, a.cz + 0.5);
+    b.mesh.position.copy(b.pos);
+    b.vel.set(0, 0, 0);
+    b.wake(g);
+    // wait for the charge to trigger, then for it to land or slam out
+    let charged = false;
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      if (b.state === 'charge') { charged = true; break; }
+    }
+    let hurt = false, slammed = false;
+    for (let i = 0; i < 30 && !(hurt || slammed); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      hurt = g.player.health < 400;
+      slammed = b.state === 'pain';
+    }
+    // killing the pit boss must drop a powerup
+    const powerCount = () => g.pickups.items.filter(
+      (p) => !p.taken && p.spec.kind.startsWith('power')
+    ).length;
+    const dropsBefore = powerCount();
+    b.damage(9999, 0, 0, g);
+    await new Promise((r) => setTimeout(r, 200));
+    return { found: true, charged, hurt, slammed, dead: !b.alive, dropped: powerCount() > dropsBefore };
+  });
+  check(brute.found, 'a live brute available for the charge test');
+  if (brute.found) {
+    check(brute.charged, 'brute launched a charge at the player');
+    check(brute.hurt || brute.slammed, `charge resolved (trampled=${brute.hurt}, wall-slam stun=${brute.slammed})`);
+    check(brute.dead && brute.dropped, 'dead brute dropped a powerup');
+  }
+
+  // --- 8. arc caster chains across a cluster --------------------------------
+  const arc = await page.evaluate(async () => {
+    const g = window.__voxelstrike;
+    g.input.locked = true;
+    g.player.health = 200;
+    g.player.dead = false;
+    for (const o of g.enemies.list) {
+      if (o.alive) { o.pos.set(4, o.pos.y, 4); o.awake = false; o.state = 'idle'; o.vel.set(0, 0, 0); o.wake = () => {}; }
+    }
+    const husks = g.enemies.list.filter((q) => q.alive && q.kind === 'husk').slice(0, 3);
+    if (husks.length < 3) return { found: false };
+    const a = g.level.rooms.find((r) => r.kind === 'arena');
+    g.player.pos.set(a.cx + 0.5 - 6, 2.0, a.cz + 0.5);
+    g.player.vel.set(0, 0, 0);
+    g.player.pitch = 0;
+    g.player.yaw = -Math.PI / 2; // face +x, down the cleared lane
+    const spots = [[0, 0], [1.5, 1], [3, -1]];
+    husks.forEach((h, i) => {
+      h.pos.set(a.cx + 0.5 + spots[i][0], h.pos.y, a.cz + 0.5 + spots[i][1]);
+      h.mesh.position.copy(h.pos);
+    });
+    g.weapons.give('arc');
+    g.player.ammo.cells = 20;
+    await new Promise((r) => setTimeout(r, 500)); // weapon raise animation
+    const before = husks.map((h) => h.hp);
+    g.input.pressFire();
+    await new Promise((r) => setTimeout(r, 300));
+    const hit = husks.filter((h, i) => h.hp < before[i]).length;
+    return { found: true, hit, cells: g.player.ammo.cells };
+  });
+  check(arc.found, 'three husks available for the chain test');
+  if (arc.found) {
+    check(arc.cells < 20, `arc caster fired (cells ${arc.cells})`);
+    check(arc.hit >= 2, `lightning chained across the cluster (${arc.hit}/3 hit)`);
+  }
+  await page.screenshot({ path: 'scripts/shots/features-3-arc.png' });
+
+  // --- 5. elevator carries a player who WALKS on (not a zero-velocity teleport)
+  // Regression: the dynamic-box resolver used to eject a rider sideways when
+  // the rising platform overlapped their feet while they carried any leftover
+  // horizontal velocity — the lift went up alone and the campaign soft-locked.
+  const approach = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.input.locked = true;
+    for (const e of g.enemies.list) if (e.alive) e.damage(9999, 0, 0, g);
+    g.player.health = 200;
+    g.player.dead = false;
+    const el = g.elevator;
+    const ex = el.spec.x + 1, ez = el.spec.z + 1;
+    // find an axis-aligned OPEN walking lane onto the platform. Prefer a lane
+    // whose far side is the ledge wall: the walker can then hold W the whole
+    // ride, pinned against the wall with live forward velocity — the exact
+    // situation that used to eject riders sideways.
+    const open = (x, z) => g.world.get(Math.floor(x), 1, Math.floor(z)) === 0 &&
+      g.world.get(Math.floor(x), 2, Math.floor(z)) === 0;
+    let dir = null;
+    let walled = false;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (!(open(ex + dx * 1.6, ez + dz * 1.6) && open(ex + dx * 2.6, ez + dz * 2.6) && open(ex + dx * 3.4, ez + dz * 3.4))) continue;
+      const farBlocked = !open(ex - dx * 1.6, ez - dz * 1.6);
+      if (!dir || (farBlocked && !walled)) {
+        dir = [dx, dz];
+        walled = farBlocked;
+      }
+    }
+    if (!dir) return { ok: false };
+    g.player.pos.set(ex + dir[0] * 3, 2.0, ez + dir[1] * 3);
+    g.player.vel.set(0, 0, 0);
+    g.player.pitch = 0;
+    g.player.yaw = Math.atan2(-(ex - g.player.pos.x), -(ez - g.player.pos.z));
+    return { ok: true, walled };
+  });
+  check(approach.ok, `walk-on: found an open lane to the platform (walled=${approach.walled})`);
+  // walk forward until actually standing on the platform (not just near it)
+  await page.keyboard.down('KeyW');
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 80));
+    const aboard = await page.evaluate(() => {
+      const g = window.__voxelstrike;
+      const el = g.elevator;
+      return g.player.pos.x > el.spec.x + 0.25 && g.player.pos.x < el.spec.x + 1.75 &&
+        g.player.pos.z > el.spec.z + 0.25 && g.player.pos.z < el.spec.z + 1.75;
+    });
+    if (aboard) break;
+  }
+  if (approach.walled) {
+    // keep pushing into the ledge wall for the entire ride — hardest case
+  } else {
+    // open floor beyond the platform: stop on it like a player would
+    await page.keyboard.up('KeyW');
+    await page.evaluate(() => {
+      const g = window.__voxelstrike;
+      const el = g.elevator;
+      g.player.pos.set(el.spec.x + 1, g.player.pos.y, el.spec.z + 1);
+    });
+  }
+  await new Promise((r) => setTimeout(r, 2600)); // 0.4s trigger + ~1.4s ride + margin
+  await page.keyboard.up('KeyW');
+  const ride = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    return { topY: g.elevator.topY, playerY: g.player.pos.y };
+  });
+  check(ride.topY >= 3.9, `walk-on: elevator rose (topY=${ride.topY.toFixed(2)})`);
+  check(ride.playerY > 4.3, `walk-on: rider carried to the top (y=${ride.playerY.toFixed(2)})`);
 } finally {
   await browser.close();
 }

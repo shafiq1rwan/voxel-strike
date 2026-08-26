@@ -4,11 +4,13 @@
  * the listener (set each frame by the game).
  */
 export type SoundName =
-  | 'pistol' | 'shotgun' | 'smg' | 'rocketLaunch' | 'explosion' | 'dryfire'
+  | 'pistol' | 'shotgun' | 'smg' | 'rocketLaunch' | 'arcFire' | 'explosion' | 'dryfire'
   | 'boltFire' | 'boltHit' | 'impact' | 'crateBreak' | 'wallBreak'
+  | 'fleshHit'
   | 'enemyPainA' | 'enemyPainB' | 'enemyDieA' | 'enemyDieB'
   | 'huskAlert' | 'huskBite' | 'huskStep' | 'huskGrowl' | 'sentinelAlert'
   | 'tickerAlert' | 'tickerBeep' | 'alarm'
+  | 'bruteRoar' | 'bruteStep' | 'bruteSlam'
   | 'playerPain' | 'playerDie'
   | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup' | 'secret'
   | 'doorOpen' | 'doorClose' | 'doorLocked' | 'elevator'
@@ -209,6 +211,12 @@ export class AudioMan {
         this.noise(out, 0.8, 0.02, 0.4, 'lowpass', 500, 2400);
         this.tone(out, 'sawtooth', 0.3, 0.01, 0.3, 90, 50);
         break;
+      case 'arcFire':
+        // electric discharge: crackle + descending zap + shimmer
+        this.noise(out, 0.5, 0.003, 0.16, 'highpass', 2600, 900);
+        this.tone(out, 'sawtooth', 0.4, 0.004, 0.16, 1200, 300);
+        this.tone(out, 'square', 0.22, 0.002, 0.1, 2400, 1500, 0.02);
+        break;
       case 'explosion':
         this.noise(out, 1.1, 0.008, 0.7, 'lowpass', 1600, 90);
         this.tone(out, 'sine', 0.9, 0.005, 0.5, 90, 30);
@@ -234,6 +242,14 @@ export class AudioMan {
       case 'wallBreak':
         this.noise(out, 0.9, 0.005, 0.5, 'lowpass', 1000, 120);
         break;
+      case 'fleshHit': {
+        // meaty thwack on every landed hit — slight pitch spread so automatic
+        // fire doesn't sound like a stuck sample
+        const p = 0.9 + Math.random() * 0.25;
+        this.noise(out, 0.45, 0.003, 0.09, 'lowpass', 900 * p, 250);
+        this.tone(out, 'triangle', 0.3, 0.003, 0.07, 160 * p, 60);
+        break;
+      }
       case 'enemyPainA':
         this.tone(out, 'sawtooth', 0.5, 0.01, 0.16, 160, 90);
         break;
@@ -278,6 +294,22 @@ export class AudioMan {
       case 'tickerBeep':
         // sharp arming beep
         this.tone(out, 'square', 0.45, 0.003, 0.07, 1970);
+        break;
+      case 'bruteRoar':
+        // deep chesty bellow
+        this.tone(out, 'sawtooth', 0.55, 0.06, 0.55, 65, 42);
+        this.tone(out, 'sawtooth', 0.4, 0.05, 0.45, 130, 82, 0.06);
+        this.noise(out, 0.3, 0.05, 0.4, 'lowpass', 700, 200);
+        break;
+      case 'bruteStep':
+        // heavy footfall thud
+        this.noise(out, 0.25, 0.004, 0.09, 'lowpass', 300, 120);
+        this.tone(out, 'sine', 0.3, 0.004, 0.09, 70, 42);
+        break;
+      case 'bruteSlam':
+        // wall-shaking impact
+        this.noise(out, 0.8, 0.006, 0.4, 'lowpass', 900, 100);
+        this.tone(out, 'sine', 0.6, 0.005, 0.32, 75, 30);
         break;
       case 'alarm':
         // facility klaxon: two-tone whoop, repeated

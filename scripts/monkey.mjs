@@ -41,6 +41,10 @@ try {
     g.player.ammo.bullets = 240;
     g.player.ammo.shells = 60;
     g.player.ammo.rockets = 30;
+    // overshield for the whole run: ticker packs can burst 150hp between the
+    // periodic heals, and a death-screen click navigates the page away.
+    // Damage is absorbed but knockback/aggro still exercise every code path.
+    g.player.buffs.shield = 9999;
   });
 
   const KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
@@ -84,6 +88,7 @@ try {
     // invariants
     const inv = await page.evaluate(() => {
       const g = window.__voxelstrike;
+      if (!g) return { bad: ['game handle gone — page navigated (death-screen restart?)'], hp: 0, dead: true, enemies: 0, state: '?' };
       const p = g.player;
       const bad = [];
       if (!Number.isFinite(p.pos.x + p.pos.y + p.pos.z)) bad.push(`pos NaN: ${p.pos.toArray()}`);

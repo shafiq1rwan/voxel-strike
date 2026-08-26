@@ -102,9 +102,18 @@ function moveAxis(
     if (!collided) break;
   }
 
-  // dynamic boxes
+  // dynamic boxes — resolve along the axis of LEAST penetration only. An
+  // axis-blind snap ejects a rider sideways through the whole platform when a
+  // rising elevator overlaps their feet by a hair while they still carry any
+  // horizontal velocity (the "elevator slides you off" bug): the X pass would
+  // "fix" a 0.03 vertical overlap with a 1-unit horizontal shove.
   for (const b of extraBoxes) {
     if (overlapsBox(pos.x, pos.y, pos.z, half.x, half.y, half.z, b)) {
+      const penX = Math.min(pos.x + half.x - b.minX, b.maxX - (pos.x - half.x));
+      const penY = Math.min(pos.y + half.y - b.minY, b.maxY - (pos.y - half.y));
+      const penZ = Math.min(pos.z + half.z - b.minZ, b.maxZ - (pos.z - half.z));
+      const pen = axis === 'x' ? penX : axis === 'y' ? penY : penZ;
+      if (pen > Math.min(penX, penY, penZ) + 1e-6) continue; // another axis owns this overlap
       const boxMin = axis === 'x' ? b.minX : axis === 'y' ? b.minY : b.minZ;
       const boxMax = axis === 'x' ? b.maxX : axis === 'y' ? b.maxY : b.maxZ;
       resolve(boxMin, boxMax);

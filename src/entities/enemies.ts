@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { EnemySpec, RoomDef } from '../types';
+import { isDestructible } from '../world/blocks';
 import { moveBody, rayBox } from '../core/physics';
 import { SpriteDef, SpriteRowName, SPRITE_ROWS } from './sprites';
 import type { Game } from '../game';
 
-export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'pain' | 'dead';
+export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'charge' | 'pain' | 'dead';
 
 interface EnemyTuning {
   hp: number;
@@ -21,10 +22,13 @@ const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
   // fragile suicide crawler: sprints at the player and self-destructs — and
   // its corpse explodes even when shot at range, so prioritize it near barrels
   ticker: { hp: 20, speed: 6.6, halfX: 0.3, halfY: 0.32, painChance: 0.1, bloodColor: [0.75, 0.85, 0.2] },
+  // arena pit boss: slow tank that telegraphs a wall-smashing charge; stunned
+  // when it slams a wall, always drops a powerup on death
+  brute: { hp: 170, speed: 2.3, halfX: 0.62, halfY: 1.05, painChance: 0.12, bloodColor: [0.85, 0.4, 0.1] },
 };
 
-const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'tickerAlert'> = {
-  husk: 'huskAlert', sentinel: 'sentinelAlert', ticker: 'tickerAlert',
+const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'tickerAlert' | 'bruteRoar'> = {
+  husk: 'huskAlert', sentinel: 'sentinelAlert', ticker: 'tickerAlert', brute: 'bruteRoar',
 };
 
 function part(parent: THREE.Object3D, w: number, h: number, d: number, color: number, fullBright = false): THREE.Mesh {
@@ -74,6 +78,13 @@ export class Enemy {
   private lastStride = 0;
   /** ticker arming beeps played so far this attack */
   private beepCount = 0;
+  /** brute charge: locked direction, cooldown, and post-slam stun length */
+  private cdx = 0;
+  private cdz = 0;
+  private chargeCooldown = 0;
+  private stunTime = 0.32;
+  /** which way the whole model jolts on the current hit flash */
+  private flinchSign = 1;
   private growlCd = 2 + Math.random() * 4;
   // billboard sprite skin (optional, from SpriteLibrary)
   private spriteMesh: THREE.Mesh | null = null;
@@ -95,6 +106,7 @@ export class Enemy {
     this.mesh.add(this.body);
     if (spec.kind === 'husk') this.buildHusk();
     else if (spec.kind === 'ticker') this.buildTicker();
+    else if (spec.kind === 'brute') this.buildBrute();
     else this.buildSentinel();
     this.mesh.position.copy(this.pos);
     if (startPatrolling) this.state = 'patrol';
@@ -160,6 +172,73 @@ export class Enemy {
       fore.rotation.x = -0.25;
       const claw = part(g, 0.18, 0.12, 0.24, 0x2e2018);
       claw.position.set(0, -0.6, -0.16);
+      this.torsoG!.add(g);
+      return g;
+    };
+    this.armLG = mkArm(-1);
+    this.armRG = mkArm(1);
+  }
+
+  private buildBrute(): void {
+    // a husk scaled into a wall of meat: same jointed-group skeleton so the
+    // husk gait animation drives it, but heavier proportions + bone plating
+    const mkLeg = (side: number): THREE.Group => {
+      const g = new THREE.Group();
+      g.position.set(0.28 * side, -0.3, 0);
+      const thigh = part(g, 0.26, 0.46, 0.28, 0x4a2418);
+      thigh.position.y = -0.19;
+      const shin = part(g, 0.2, 0.38, 0.22, 0x381a10);
+      shin.position.set(0, -0.54, -0.03);
+      const foot = part(g, 0.26, 0.1, 0.36, 0x2a1c12);
+      foot.position.set(0, -0.72, -0.07);
+      this.body.add(g);
+      return g;
+    };
+    this.legLG = mkLeg(-1);
+    this.legRG = mkLeg(1);
+
+    this.torsoG = new THREE.Group();
+    this.torsoG.position.y = -0.1;
+    this.body.add(this.torsoG);
+    const torso = part(this.torsoG, 0.95, 0.82, 0.6, 0x7a3018);
+    torso.position.y = 0.44;
+    torso.rotation.x = 0.16;
+    const belly = part(this.torsoG, 0.8, 0.42, 0.55, 0x64280f);
+    belly.position.y = 0.02;
+    // bone plating across the shoulders and back
+    const plateL = part(this.torsoG, 0.3, 0.16, 0.4, 0xc8bfa0);
+    plateL.position.set(-0.34, 0.78, 0.05);
+    const plateR = part(this.torsoG, 0.3, 0.16, 0.4, 0xc8bfa0);
+    plateR.position.set(0.34, 0.78, 0.05);
+    const spine = part(this.torsoG, 0.14, 0.4, 0.14, 0x3a1c10);
+    spine.position.set(0, 0.9, 0.2);
+    spine.rotation.x = 0.5;
+
+    this.headG = new THREE.Group();
+    this.headG.position.set(0, 0.86, -0.26);
+    this.torsoG.add(this.headG);
+    const skull = part(this.headG, 0.5, 0.34, 0.46, 0x60250f);
+    skull.position.y = 0.1;
+    const eye = part(this.headG, 0.4, 0.07, 0.06, 0xff8030, true);
+    eye.position.set(0, 0.13, -0.25);
+    this.glowParts.push(eye);
+    this.jaw = part(this.headG, 0.42, 0.14, 0.4, 0x4a2418);
+    this.jaw.position.set(0, -0.09, -0.1);
+    const tuskL = part(this.headG, 0.07, 0.16, 0.07, 0xd8cfa0, true);
+    tuskL.position.set(-0.16, -0.02, -0.3);
+    const tuskR = part(this.headG, 0.07, 0.16, 0.07, 0xd8cfa0, true);
+    tuskR.position.set(0.16, -0.02, -0.3);
+
+    const mkArm = (side: number): THREE.Group => {
+      const g = new THREE.Group();
+      g.position.set(0.56 * side, 0.62, -0.02);
+      const upper = part(g, 0.24, 0.5, 0.24, 0x64280f);
+      upper.position.y = -0.22;
+      const fore = part(g, 0.2, 0.44, 0.2, 0x55220d);
+      fore.position.set(0, -0.6, -0.08);
+      fore.rotation.x = -0.25;
+      const slab = part(g, 0.3, 0.18, 0.36, 0x2a1c12);
+      slab.position.set(0, -0.86, -0.18);
       this.torsoG!.add(g);
       return g;
     };
@@ -236,11 +315,17 @@ export class Enemy {
   damage(dmg: number, dx: number, dz: number, game: Game): void {
     if (!this.alive) return;
     this.hp -= dmg;
-    this.flashTime = 0.12;
+    // hit feedback fires the same frame: white-hot flash, a sideways jolt,
+    // a meaty thwack, and blood — waiting for the next lighting tick made
+    // hits read as nothing happening
+    this.flashTime = 0.15;
+    this.flinchSign = Math.random() < 0.5 ? -1 : 1;
+    this.applyFlash();
+    game.audio.play('fleshHit', this.pos);
     game.particles.blood(
       this.pos.x, this.pos.y + 0.2, this.pos.z, dx, 0, dz,
       this.tuning.bloodColor[0], this.tuning.bloodColor[1], this.tuning.bloodColor[2],
-      Math.min(14, 4 + Math.floor(dmg / 4))
+      Math.min(16, 5 + Math.floor(dmg / 3))
     );
     this.wake(game);
     game.enemies.alertAt(this.pos.x, this.pos.z, 9, game);
@@ -248,23 +333,35 @@ export class Enemy {
       this.die(game);
       return;
     }
-    // knockback
-    const kb = Math.min(6, dmg * 0.12);
+    // micro-stagger + knockback: the hit interrupts momentum, then shoves
+    // (brutes are too heavy to shove far)
+    const mass = this.kind === 'brute' ? 0.25 : 1;
+    if (this.state !== 'charge') {
+      this.vel.x *= 0.6;
+      this.vel.z *= 0.6;
+    }
+    const kb = Math.min(8, dmg * 0.2) * mass;
     this.vel.x += dx * kb;
     this.vel.z += dz * kb;
     if (Math.random() < this.tuning.painChance) {
       this.setState('pain');
-      game.audio.play(this.kind === 'husk' ? 'enemyPainA' : 'enemyPainB', this.pos);
+      game.audio.play(this.kind === 'husk' || this.kind === 'brute' ? 'enemyPainA' : 'enemyPainB', this.pos);
     }
   }
 
   private die(game: Game): void {
     this.setState('dead');
-    game.audio.play(this.kind === 'husk' ? 'enemyDieA' : 'enemyDieB', this.pos);
+    game.audio.play(this.kind === 'husk' || this.kind === 'brute' ? 'enemyDieA' : 'enemyDieB', this.pos);
     // tickers are walking bombs: death always detonates them (short fuse so a
     // sniped ticker still chains into barrels and packmates)
     if (this.kind === 'ticker') {
       game.queueExplosion(this.pos.x, this.pos.y, this.pos.z, 0.08, 55, 2.8);
+    }
+    // the pit boss always drops a powerup — killing it is the arena's reward
+    if (this.kind === 'brute') {
+      game.audio.play('bruteSlam', this.pos);
+      const drops = ['powerQuad', 'powerShield', 'powerHaste'] as const;
+      game.spawnPickup(drops[Math.floor(Math.random() * drops.length)], this.pos.x, this.pos.y + 0.3, this.pos.z);
     }
     // the body bursts apart into its own voxels: every part becomes a handful
     // of gibs in that part's color
@@ -287,6 +384,8 @@ export class Enemy {
     }
     // sprite skins keep the corpse and play their death frames instead
     if (!this.spriteMesh) this.mesh.visible = false;
+    this.mesh.rotation.z = 0; // corpses don't hold the hit jolt
+    this.mesh.scale.setScalar(1);
     game.onEnemyKilled(this);
   }
 
@@ -355,6 +454,7 @@ export class Enemy {
     this.stateTime += dt;
     this.attackCooldown = Math.max(0, this.attackCooldown - dt);
     this.lungeCooldown = Math.max(0, this.lungeCooldown - dt);
+    this.chargeCooldown = Math.max(0, this.chargeCooldown - dt);
     this.flashTime = Math.max(0, this.flashTime - dt);
     const pl = game.player;
 
@@ -404,10 +504,16 @@ export class Enemy {
       case 'attack':
         this.doAttack(dt, dist, toPlayer, game);
         break;
+      case 'charge':
+        this.doCharge(dt, game);
+        break;
       case 'pain':
         this.vel.x *= 0.85;
         this.vel.z *= 0.85;
-        if (this.stateTime > 0.32) this.setState('chase');
+        if (this.stateTime > this.stunTime) {
+          this.stunTime = 0.32;
+          this.setState('chase');
+        }
         break;
     }
 
@@ -427,6 +533,18 @@ export class Enemy {
       const f = Math.exp(-6 * dt);
       this.vel.x *= f;
       this.vel.z *= f;
+    }
+    // brute wall slam: a charge that hits a wall stuns it (punish window)
+    if (this.kind === 'brute' && this.state === 'charge' && this.stateTime > 0.6 && (res.hitX || res.hitZ)) {
+      game.audio.play('bruteSlam', this.pos);
+      game.particles.debris(this.pos.x + this.cdx, this.pos.y + 0.3, this.pos.z + this.cdz, 0.45, 0.42, 0.4, 12);
+      game.player.shake = Math.min(0.6, game.player.shake + 0.25);
+      game.enemies.alertAt(this.pos.x, this.pos.z, 14, game);
+      this.chargeCooldown = 4.5;
+      this.stunTime = 1.3; // dazed — free hits
+      this.setState('pain');
+      this.vel.x = -this.cdx * 3;
+      this.vel.z = -this.cdz * 3;
     }
     // wall jink: when blocked while chasing, sidestep for a moment
     if ((res.hitX || res.hitZ) && (this.state === 'chase' || this.state === 'patrol')) {
@@ -450,9 +568,19 @@ export class Enemy {
 
     this.animate(dt, game);
     this.mesh.position.copy(this.pos);
-    // hit reaction: quick scale pop while the damage flash runs
-    this.mesh.scale.setScalar(1 + this.flashTime * 1.2);
+    // hit reaction: quick scale pop + sideways jolt while the flash runs
+    this.mesh.scale.setScalar(1 + this.flashTime * 1.6);
+    this.mesh.rotation.z = this.flashTime * this.flinchSign * 1.4;
     this.updateLighting(game, dt);
+  }
+
+  /** immediate white-hot flash on every landed hit (restored by the light tick) */
+  private applyFlash(): void {
+    this.mesh.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      if (o.userData.fullBright) return;
+      (o.material as THREE.MeshBasicMaterial).color.setRGB(2.2, 1.9, 1.7);
+    });
   }
 
   private findFloor(game: Game): number {
@@ -542,6 +670,28 @@ export class Enemy {
       } else {
         this.steer(nx, nz, this.tuning.speed);
       }
+    } else if (this.kind === 'brute') {
+      this.growlCd -= dt;
+      if (this.growlCd <= 0) {
+        this.growlCd = 4 + Math.random() * 3;
+        game.audio.play('huskGrowl', this.pos);
+      }
+      if (dist < 2.4 && this.attackCooldown === 0) {
+        this.setState('attack');
+        return;
+      }
+      // telegraphed charge when it has a clear mid-range line to the player
+      if (
+        dist > 4 && dist < 15 && this.chargeCooldown === 0 &&
+        game.hasLOS(this.pos.x, this.pos.y + 0.3, this.pos.z, pl.pos.x, pl.pos.y, pl.pos.z)
+      ) {
+        this.setState('charge');
+        this.cdx = nx;
+        this.cdz = nz;
+        game.audio.play('bruteRoar', this.pos);
+        return;
+      }
+      this.steer(nx, nz, this.tuning.speed);
     } else if (this.kind === 'ticker') {
       // flat-out sprint with a nervous jitter; arm the charge on contact
       if (dist < 1.8) {
@@ -576,24 +726,95 @@ export class Enemy {
     }
   }
 
+  /** brute charge: rear back, then barrel forward smashing crates/barrels */
+  private doCharge(dt: number, game: Game): void {
+    const pl = game.player;
+    const TELEGRAPH = 0.55;
+    if (this.stateTime < TELEGRAPH) {
+      // dig in and track the player until launch
+      this.vel.x *= 0.7;
+      this.vel.z *= 0.7;
+      const dx = pl.pos.x - this.pos.x;
+      const dz = pl.pos.z - this.pos.z;
+      const d = Math.hypot(dx, dz) || 1;
+      this.cdx = dx / d;
+      this.cdz = dz / d;
+      return;
+    }
+    const speed = this.tuning.speed * 4.2; // outruns the player in a straight line
+    this.vel.x = this.cdx * speed;
+    this.vel.z = this.cdz * speed;
+    // dust kicked up behind it
+    if (Math.random() < dt * 18) {
+      game.particles.smoke(this.pos.x - this.cdx * 0.6, this.pos.y - 0.7, this.pos.z - this.cdz * 0.6, 1);
+    }
+    // smashes destructibles in its path (barrels explode ON it — its problem)
+    const fx = Math.floor(this.pos.x + this.cdx * 0.9);
+    const fz = Math.floor(this.pos.z + this.cdz * 0.9);
+    const footY = Math.floor(this.pos.y - this.half.y + 0.2);
+    for (let dy = 0; dy <= 1; dy++) {
+      if (!isDestructible(game.world.get(fx, footY + dy, fz))) continue;
+      const broke = game.world.damageVoxel(fx, footY + dy, fz, 200);
+      if (broke !== null) game.onVoxelBroken(fx, footY + dy, fz, broke);
+    }
+    // trampled the player: heavy hit + launch
+    const pdx = pl.pos.x - this.pos.x;
+    const pdz = pl.pos.z - this.pos.z;
+    const pd = Math.hypot(pdx, pdz);
+    if (!pl.dead && pd < this.half.x + 1.0) {
+      pl.damage(24 + Math.floor(Math.random() * 8), game, { x: this.pos.x, z: this.pos.z });
+      const d = pd || 1;
+      pl.vel.x += (pdx / d) * 13;
+      pl.vel.y += 5.5;
+      pl.vel.z += (pdz / d) * 13;
+      pl.shake = Math.min(0.7, pl.shake + 0.35);
+      game.audio.play('bruteSlam', this.pos);
+      game.punchFOV(2);
+      this.chargeCooldown = 4;
+      this.attackCooldown = 0.8;
+      this.vel.x *= 0.2;
+      this.vel.z *= 0.2;
+      this.setState('chase');
+      return;
+    }
+    // ran out of steam
+    if (this.stateTime > TELEGRAPH + 1.6) {
+      this.chargeCooldown = 3.5;
+      this.setState('chase');
+    }
+  }
+
   private doAttack(dt: number, dist: number, toPlayer: THREE.Vector3, game: Game): void {
     void dt;
     const pl = game.player;
     this.vel.x *= 0.8;
     this.vel.z *= 0.8;
-    if (this.kind === 'husk') {
-      // windup then bite — the bite must not reach through doors or walls
-      if (this.stateTime > 0.32 && this.attackCooldown === 0) {
-        this.attackCooldown = 1.1;
+    if (this.kind === 'husk' || this.kind === 'brute') {
+      // windup then strike — must not reach through doors or walls
+      const brute = this.kind === 'brute';
+      if (this.stateTime > (brute ? 0.45 : 0.32) && this.attackCooldown === 0) {
+        this.attackCooldown = brute ? 1.6 : 1.1;
         if (
-          dist < 2.1 && !pl.dead &&
+          dist < (brute ? 2.9 : 2.1) && !pl.dead &&
           game.hasLOS(this.pos.x, this.pos.y + 0.2, this.pos.z, pl.pos.x, pl.pos.y, pl.pos.z)
         ) {
-          pl.damage(8 + Math.floor(Math.random() * 8), game, { x: this.pos.x, z: this.pos.z });
-          game.audio.play('huskBite', this.pos);
+          pl.damage(
+            brute ? 18 + Math.floor(Math.random() * 10) : 8 + Math.floor(Math.random() * 8),
+            game, { x: this.pos.x, z: this.pos.z }
+          );
+          if (brute) {
+            // backhand shove
+            const d = Math.max(0.3, dist);
+            pl.vel.x += (toPlayer.x / d) * 7;
+            pl.vel.y += 3;
+            pl.vel.z += (toPlayer.z / d) * 7;
+            game.audio.play('bruteSlam', this.pos);
+          } else {
+            game.audio.play('huskBite', this.pos);
+          }
         }
       }
-      if (this.stateTime > 0.75) this.setState('chase');
+      if (this.stateTime > (brute ? 0.95 : 0.75)) this.setState('chase');
     } else if (this.kind === 'ticker') {
       // armed: it stops, beeps faster and faster, then self-destructs — no
       // backing out once the charge is lit, so kite away from it
@@ -636,7 +857,7 @@ export class Enemy {
     }
     const speed = Math.hypot(this.vel.x, this.vel.z);
     this.animPhase += dt * 2;
-    if (this.kind === 'husk') {
+    if (this.kind === 'husk' || this.kind === 'brute') {
       this.animateHusk(dt, speed, game);
     } else if (this.kind === 'ticker') {
       this.animateTicker(speed, game);
@@ -676,9 +897,9 @@ export class Enemy {
 
   private animateHusk(dt: number, speed: number, game: Game): void {
     const speedF = Math.min(1, speed / this.tuning.speed);
-    this.gait += dt * (2 + speed * 2.9);
+    this.gait += dt * (2 + speed * (this.kind === 'brute' ? 1.7 : 2.9));
     const g = this.gait;
-    const hunting = this.state === 'chase' || this.state === 'attack';
+    const hunting = this.state === 'chase' || this.state === 'attack' || this.state === 'charge';
 
     // strides swing from the hips; feet drive a bob and a side-to-side waddle
     const amp = 0.2 + speedF * 0.75;
@@ -719,8 +940,11 @@ export class Enemy {
       this.jaw!.rotation.x = 0.05;
     }
 
+    // charge: rear back during the telegraph, then bull forward
+    if (this.state === 'charge') lean += this.stateTime < 0.55 ? -0.3 : 0.45;
+
     // pain: recoil backward off the lean
-    if (this.state === 'pain') lean -= 0.5 * (1 - this.stateTime / 0.32);
+    if (this.state === 'pain') lean -= 0.5 * Math.max(0, 1 - this.stateTime / this.stunTime);
 
     this.torsoG!.rotation.x = lean;
     this.torsoG!.rotation.z = roll;
@@ -734,10 +958,10 @@ export class Enemy {
       this.headG!.rotation.x = -0.1;
     }
 
-    // chitin clicks on each footfall
+    // footfalls: chitin clicks for husks, ground-shaking thuds for brutes
     const stride = Math.sin(g);
-    if (speed > 1.6 && this.lastStride <= 0 !== stride <= 0) {
-      game.audio.play('huskStep', this.pos);
+    if (speed > (this.kind === 'brute' ? 0.9 : 1.6) && this.lastStride <= 0 !== stride <= 0) {
+      game.audio.play(this.kind === 'brute' ? 'bruteStep' : 'huskStep', this.pos);
     }
     this.lastStride = stride;
   }
@@ -760,7 +984,7 @@ export class Enemy {
       if (o.userData.fullBright) return;
       const m = o.material as THREE.MeshBasicMaterial;
       const base = o.userData.baseColor as THREE.Color;
-      if (flash) m.color.setRGB(1, 0.9, 0.85);
+      if (flash) m.color.setRGB(2.2, 1.9, 1.7);
       else m.color.setRGB(base.r * r, base.g * g, base.b * b);
     });
   }

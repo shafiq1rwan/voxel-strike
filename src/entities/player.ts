@@ -24,8 +24,8 @@ export class Player {
   readonly maxHealth = 100;
   readonly maxArmor = 100;
   readonly keys = new Set<KeyColor>();
-  readonly ammo: Record<AmmoType, number> = { bullets: 48, shells: 0, rockets: 0 };
-  readonly ammoMax: Record<AmmoType, number> = { bullets: 240, shells: 60, rockets: 30 };
+  readonly ammo: Record<AmmoType, number> = { bullets: 48, shells: 0, rockets: 0, cells: 0 };
+  readonly ammoMax: Record<AmmoType, number> = { bullets: 240, shells: 60, rockets: 30, cells: 60 };
   dead = false;
   /** recoil pitch offset applied by weapons, recovers over time */
   recoilPitch = 0;

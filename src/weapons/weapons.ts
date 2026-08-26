@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { AmmoType, WeaponId } from '../types';
 import { Input } from '../core/input';
 import { rayBox } from '../core/physics';
+import type { Enemy } from '../entities/enemies';
 import type { Game } from '../game';
 
 interface WeaponDef {
@@ -17,7 +18,7 @@ interface WeaponDef {
   projectile: boolean;
   recoil: number;
   kick: number;
-  sound: 'pistol' | 'shotgun' | 'smg' | 'rocketLaunch';
+  sound: 'pistol' | 'shotgun' | 'smg' | 'rocketLaunch' | 'arcFire';
   flashScale: number;
 }
 
@@ -42,9 +43,15 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damage: 0, pellets: 0, spread: 0, rate: 0.85,
     projectile: true, recoil: 0.08, kick: 0.2, sound: 'rocketLaunch', flashScale: 0.9,
   },
+  // chain lightning: hits arc to up to 3 more enemies near the first target
+  arc: {
+    id: 'arc', name: 'ARC CASTER', ammoType: 'cells', ammoPerShot: 1,
+    damage: 26, pellets: 1, spread: 0, rate: 2.4,
+    projectile: false, recoil: 0.03, kick: 0.09, sound: 'arcFire', flashScale: 0.7,
+  },
 };
 
-const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket'];
+const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
 
 function vmPart(parent: THREE.Object3D, w: number, h: number, d: number, color: number): THREE.Mesh {
   const m = new THREE.MeshBasicMaterial({ color, depthTest: false, fog: false });
@@ -55,16 +62,24 @@ function vmPart(parent: THREE.Object3D, w: number, h: number, d: number, color: 
   return mesh;
 }
 
-function makeFlashTexture(): THREE.CanvasTexture {
+function makeFlashTexture(cool = false): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 32;
   c.height = 32;
   const ctx = c.getContext('2d')!;
   const grad = ctx.createRadialGradient(16, 16, 1, 16, 16, 16);
-  grad.addColorStop(0, 'rgba(255,240,180,1)');
-  grad.addColorStop(0.35, 'rgba(255,180,60,0.9)');
-  grad.addColorStop(0.7, 'rgba(255,90,20,0.35)');
-  grad.addColorStop(1, 'rgba(255,60,0,0)');
+  if (cool) {
+    // electric-blue burst for the arc caster
+    grad.addColorStop(0, 'rgba(220,250,255,1)');
+    grad.addColorStop(0.35, 'rgba(110,215,255,0.9)');
+    grad.addColorStop(0.7, 'rgba(40,120,255,0.35)');
+    grad.addColorStop(1, 'rgba(20,80,255,0)');
+  } else {
+    grad.addColorStop(0, 'rgba(255,240,180,1)');
+    grad.addColorStop(0.35, 'rgba(255,180,60,0.9)');
+    grad.addColorStop(0.7, 'rgba(255,90,20,0.35)');
+    grad.addColorStop(1, 'rgba(255,60,0,0)');
+  }
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 32, 32);
   const tex = new THREE.CanvasTexture(c);
@@ -84,6 +99,8 @@ export class WeaponSystem {
   private flashTime = 0;
   private models = new Map<WeaponId, THREE.Group>();
   private flash: THREE.Mesh;
+  private warmFlashTex: THREE.CanvasTexture;
+  private coolFlashTex: THREE.CanvasTexture;
   private muzzleTips = new Map<WeaponId, number>(); // z of muzzle for flash placement
   /** seconds left in the buffered-click window */
   private queuedShot = 0;
@@ -93,8 +110,10 @@ export class WeaponSystem {
   constructor() {
     this.viewModel.position.set(0.3, -0.34, -0.62);
     this.buildModels();
+    this.warmFlashTex = makeFlashTexture(false);
+    this.coolFlashTex = makeFlashTexture(true);
     const flashMat = new THREE.MeshBasicMaterial({
-      map: makeFlashTexture(), transparent: true, blending: THREE.AdditiveBlending,
+      map: this.warmFlashTex, transparent: true, blending: THREE.AdditiveBlending,
       depthTest: false, depthWrite: false, fog: false,
     });
     this.flash = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5), flashMat);
@@ -170,6 +189,27 @@ export class WeaponSystem {
       g.position.set(0.04, -0.03, 0);
       this.models.set('rocket', g);
       this.muzzleTips.set('rocket', -0.5);
+    }
+    // ARC CASTER — coil gun with a forked emitter
+    {
+      const g = new THREE.Group();
+      const body = vmPart(g, 0.12, 0.13, 0.4, 0x3a4452);
+      body.position.set(0, -0.02, -0.05);
+      const coilA = vmPart(g, 0.16, 0.16, 0.07, 0x55e0ff);
+      coilA.position.set(0, 0, -0.22);
+      const coilB = vmPart(g, 0.14, 0.14, 0.06, 0x2898c8);
+      coilB.position.set(0, 0, -0.32);
+      const core = vmPart(g, 0.05, 0.05, 0.44, 0xd8f8ff);
+      core.position.set(0, 0, -0.2);
+      const prongL = vmPart(g, 0.03, 0.05, 0.16, 0x8a94a8);
+      prongL.position.set(-0.06, 0.01, -0.46);
+      const prongR = vmPart(g, 0.03, 0.05, 0.16, 0x8a94a8);
+      prongR.position.set(0.06, 0.01, -0.46);
+      const grip = vmPart(g, 0.07, 0.15, 0.09, 0x2a2e38);
+      grip.position.set(0, -0.14, 0.08);
+      grip.rotation.x = 0.25;
+      this.models.set('arc', g);
+      this.muzzleTips.set('arc', -0.5);
     }
     for (const [, g] of this.models) {
       g.visible = false;
@@ -263,6 +303,8 @@ export class WeaponSystem {
     pl.recoilPitch += def.recoil;
     this.kickZ += def.kick;
     this.flashTime = 0.055;
+    (this.flash.material as THREE.MeshBasicMaterial).map =
+      def.id === 'arc' ? this.coolFlashTex : this.warmFlashTex;
     const tipZ = this.muzzleTips.get(def.id)!;
     this.flash.position.set(0, 0.02, tipZ - 0.06);
     this.flash.rotation.z = Math.random() * Math.PI * 2;
@@ -293,10 +335,19 @@ export class WeaponSystem {
       pl.shake = Math.min(0.5, pl.shake + 0.05);
     } else if (def.id === 'rocket') {
       game.punchFOV(1.0);
+    } else if (def.id === 'arc') {
+      game.punchFOV(0.6);
     }
 
     // quad damage powerup
     const dmgMult = pl.buffs.quad > 0 ? 4 : 1;
+
+    if (def.id === 'arc') {
+      // muzzle light is electric blue
+      game.dynLights.flash(pl.pos.x, pl.eyeY(), pl.pos.z, 0.4, 0.85, 1, 1.4, 9, 0.09);
+      this.fireArc(origin, fwd, def.damage * dmgMult, game, muzzle);
+      return;
+    }
 
     if (def.projectile) {
       const start = origin.clone().addScaledVector(fwd, 0.7);
@@ -352,6 +403,93 @@ export class WeaponSystem {
       best = to.clone();
     }
     if (best) fwd.copy(best);
+  }
+
+  /**
+   * ARC CASTER: a lightning bolt to the first enemy hit, then chains to up to
+   * 3 more enemies near each previous target (LOS-checked, decaying damage).
+   */
+  private fireArc(origin: THREE.Vector3, fwd: THREE.Vector3, damage: number, game: Game, muzzle: THREE.Vector3): void {
+    const MAX = 40;
+    const CHAIN_RANGE = 7;
+    const wHit = game.world.raycast(origin.x, origin.y, origin.z, fwd.x, fwd.y, fwd.z, MAX);
+    let wallT = wHit ? wHit.t : MAX;
+    for (const d of game.doors) {
+      if (d.isOpen) continue;
+      const t = rayBox(origin.x, origin.y, origin.z, fwd.x, fwd.y, fwd.z, wallT, d.box());
+      if (t !== null && t < wallT) wallT = t;
+    }
+    const eHit = game.enemies.raycast(origin.x, origin.y, origin.z, fwd.x, fwd.y, fwd.z, wallT);
+
+    if (!eHit) {
+      // ground the bolt on whatever it hit
+      const hx = origin.x + fwd.x * wallT;
+      const hy = origin.y + fwd.y * wallT;
+      const hz = origin.z + fwd.z * wallT;
+      this.lightning(game, muzzle.x, muzzle.y, muzzle.z, hx, hy, hz);
+      if (wHit && wHit.t <= wallT) {
+        game.particles.impact(hx, hy, hz, wHit.nx, wHit.ny, wHit.nz, 0.4, 0.85, 1);
+        game.dynLights.flash(hx + wHit.nx * 0.2, hy + wHit.ny * 0.2, hz + wHit.nz * 0.2, 0.35, 0.85, 1, 0.7, 4, 0.09);
+        const broke = game.world.damageVoxel(wHit.x, wHit.y, wHit.z, damage);
+        if (broke !== null) game.onVoxelBroken(wHit.x, wHit.y, wHit.z, broke);
+      }
+      return;
+    }
+
+    // build the chain: nearest visible enemy to each previous target
+    const targets: Enemy[] = [eHit.enemy];
+    while (targets.length < 4) {
+      const last = targets[targets.length - 1];
+      let best: Enemy | null = null;
+      let bestD = CHAIN_RANGE;
+      for (const e of game.enemies.list) {
+        if (!e.alive || targets.includes(e)) continue;
+        const d = Math.sqrt(
+          (e.pos.x - last.pos.x) ** 2 + (e.pos.y - last.pos.y) ** 2 + (e.pos.z - last.pos.z) ** 2
+        );
+        if (d >= bestD) continue;
+        if (!game.hasLOS(last.pos.x, last.pos.y + 0.2, last.pos.z, e.pos.x, e.pos.y + 0.2, e.pos.z)) continue;
+        best = e;
+        bestD = d;
+      }
+      if (!best) break;
+      targets.push(best);
+    }
+
+    let px = muzzle.x, py = muzzle.y, pz = muzzle.z;
+    let dmg = damage;
+    for (const e of targets) {
+      const ty = e.pos.y + 0.2;
+      this.lightning(game, px, py, pz, e.pos.x, ty, e.pos.z);
+      game.dynLights.flash(e.pos.x, e.pos.y + 0.4, e.pos.z, 0.35, 0.85, 1, 1.4, 6, 0.12);
+      game.audio.play('boltHit', e.pos);
+      const ddx = e.pos.x - px, ddz = e.pos.z - pz;
+      const dl = Math.hypot(ddx, ddz) || 1;
+      e.damage(dmg, ddx / dl, ddz / dl, game);
+      px = e.pos.x; py = ty; pz = e.pos.z;
+      dmg = Math.max(6, Math.round(dmg * 0.7)); // each hop hits softer
+    }
+    game.hud.hitMarker();
+  }
+
+  /** jagged electric bolt drawn as a run of short teal tracer segments */
+  private lightning(game: Game, ax: number, ay: number, az: number, bx: number, by: number, bz: number): void {
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const segs = Math.max(2, Math.min(6, Math.floor(len / 1.2)));
+    const jitter = Math.min(0.5, len * 0.1);
+    let px = ax, py = ay, pz = az;
+    for (let i = 1; i <= segs; i++) {
+      const t = i / segs;
+      let nx = ax + dx * t, ny = ay + dy * t, nz = az + dz * t;
+      if (i < segs) {
+        nx += (Math.random() - 0.5) * 2 * jitter;
+        ny += (Math.random() - 0.5) * 2 * jitter;
+        nz += (Math.random() - 0.5) * 2 * jitter;
+      }
+      game.tracers.fire(px, py, pz, nx, ny, nz, 0x7ee8ff, 0.13);
+      px = nx; py = ny; pz = nz;
+    }
   }
 
   private hitscan(origin: THREE.Vector3, dir: THREE.Vector3, damage: number, game: Game, muzzle: THREE.Vector3): void {

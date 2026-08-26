@@ -3,7 +3,7 @@ import { WeaponSystem, WEAPONS } from '../weapons/weapons';
 import { WeaponId } from '../types';
 import { GameSettings, RESOLUTIONS } from '../core/settings';
 
-const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket'];
+const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
 
 const CSS = `
 #hud, #hud * { box-sizing: border-box; font-family: 'Courier New', Courier, monospace; }
@@ -411,7 +411,7 @@ export class HUD {
     this.scoreNumEl = this.root.querySelector('#score-num')!;
     this.scoreMultEl = this.root.querySelector('#score-mult')!;
     this.buffsEl = this.root.querySelector('#buffs')!;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < ORDER.length; i++) {
       const s = document.createElement('div');
       s.className = 'slot';
       s.textContent = String(i + 1);
@@ -571,7 +571,7 @@ export class HUD {
           <b>MOUSE</b><span>Aim</span>
           <b>LEFT CLICK</b><span>Fire (hold to keep firing)</span>
           <b>SPACE</b><span>Jump</span>
-          <b>1&ndash;4 / WHEEL</b><span>Switch weapon</span>
+          <b>1&ndash;5 / WHEEL</b><span>Switch weapon</span>
           <b>ESC</b><span>Release mouse, pause</span>
           <span class="tip">Green barrels explode and chain. Crates break open.</span>
           <span class="tip">A cracked wall hides a secret in every sector.</span>

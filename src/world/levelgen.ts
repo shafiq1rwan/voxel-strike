@@ -63,6 +63,25 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
 
   // -- place rooms ----------------------------------------------------------
   const rooms: RoomDef[] = [];
+
+  // the arena goes first while the map is empty so a big hall always fits:
+  // a pillared fight pit holding the arc caster, guarded by a brute
+  {
+    let placed = false;
+    for (let attempt = 0; attempt < 120 && !placed; attempt++) {
+      const w = rng.int(17, 21);
+      const d = rng.int(15, 19);
+      const x = rng.int(6, WORLD_X - 7 - w);
+      const z = rng.int(6, WORLD_Z - 7 - d);
+      rooms.push({
+        id: 0, x, z, w, d, h: 6,
+        cx: x + Math.floor(w / 2), cz: z + Math.floor(d / 2),
+        kind: 'arena', dist: 0,
+      });
+      placed = true;
+    }
+  }
+
   const targetRooms = rng.int(10, 12) + Math.min(2, difficulty - 1);
   for (let attempt = 0; attempt < 300 && rooms.length < targetRooms; attempt++) {
     const w = rng.int(8, 15);
@@ -84,13 +103,13 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     });
   }
 
-  // -- pick spawn + exit ----------------------------------------------------
-  const spawnRoom = rooms[0];
+  // -- pick spawn + exit (never the arena — it stays a mid-run set piece) ----
+  const spawnRoom = rooms.find((r) => r.kind !== 'arena')!;
   spawnRoom.kind = 'spawn';
-  let exitRoom = rooms[1];
+  let exitRoom = rooms.find((r) => r !== spawnRoom && r.kind !== 'arena')!;
   let best = -1;
   for (const r of rooms) {
-    if (r === spawnRoom) continue;
+    if (r === spawnRoom || r.kind === 'arena') continue;
     const dd = (r.cx - spawnRoom.cx) ** 2 + (r.cz - spawnRoom.cz) ** 2;
     if (dd > best) {
       best = dd;
@@ -470,6 +489,7 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     let lamp: Block;
     if (r.kind === 'key') lamp = Block.LampRed;
     else if (r.kind === 'exit') lamp = Block.LampTeal;
+    else if (r.kind === 'arena') lamp = rng.chance(0.5) ? Block.LampTeal : Block.LampRed;
     else lamp = rng.chance(0.28) ? Block.LampTeal : rng.chance(0.14) ? Block.LampRed : Block.LampWarm;
     for (let x = r.x + 2; x < r.x + r.w - 1; x += 4) {
       for (let z = r.z + 2; z < r.z + r.d - 1; z += 4) {
@@ -505,6 +525,17 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     ]) {
       for (let y = 1; y <= r.h; y++) world.set(px, y, pz, Block.Pillar);
       world.set(px, 2, pz, Block.LampWarm);
+    }
+    // arena: an inner diagonal ring around the prize (axes stay clear so the
+    // brute has charge lanes)
+    if (r.kind === 'arena') {
+      for (const [px, pz] of [
+        [r.cx - 5, r.cz - 5], [r.cx + 5, r.cz - 5],
+        [r.cx - 5, r.cz + 5], [r.cx + 5, r.cz + 5],
+      ]) {
+        for (let y = 1; y <= r.h; y++) world.set(px, y, pz, Block.Pillar);
+        world.set(px, 2, pz, Block.LampWarm);
+      }
     }
   }
 
@@ -576,6 +607,15 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     const [x, z] = freeSpot(rng.pick(midRooms));
     pickups.push({ kind: 'weaponSMG', x, y: 1.4, z });
   }
+  // the arc caster waits in the middle of the arena, with cells nearby
+  const arenaRoom = rooms.find((r) => r.kind === 'arena');
+  if (arenaRoom) {
+    pickups.push(
+      { kind: 'weaponArc', x: arenaRoom.cx + 0.5, y: 1.5, z: arenaRoom.cz + 0.5 },
+      { kind: 'ammoCells', x: arenaRoom.cx - 1.5, y: 1.4, z: arenaRoom.cz + 0.5 },
+      { kind: 'ammoCells', x: arenaRoom.cx + 2.5, y: 1.4, z: arenaRoom.cz + 0.5 }
+    );
+  }
   // rocket launcher + goodies in the secret room (or key room fallback)
   if (secretRect) {
     pickups.push(
@@ -589,8 +629,8 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
   }
   // scattered supplies
   const supplyTable: Array<[PickupSpec['kind'], number]> = [
-    ['ammoBullets', 0.28], ['ammoShells', 0.26], ['healthSmall', 0.2],
-    ['armorShard', 0.14], ['healthBig', 0.06], ['ammoRockets', 0.06],
+    ['ammoBullets', 0.25], ['ammoShells', 0.23], ['healthSmall', 0.2],
+    ['armorShard', 0.14], ['ammoCells', 0.06], ['healthBig', 0.06], ['ammoRockets', 0.06],
   ];
   const pickSupply = (): PickupSpec['kind'] => {
     let roll = rng.next();
@@ -633,6 +673,14 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
       for (let i = 0; i < pack; i++) {
         const [x, z] = freeSpot(r);
         enemies.push({ kind: 'ticker', x, z, roomId: r.id });
+      }
+    }
+    // the arena's pit boss guards the arc caster (two of them by sector 3)
+    if (r.kind === 'arena') {
+      const brutes = difficulty >= 3 ? 2 : 1;
+      for (let i = 0; i < brutes; i++) {
+        const [x, z] = freeSpot(r);
+        enemies.push({ kind: 'brute', x, z, roomId: r.id });
       }
     }
   }

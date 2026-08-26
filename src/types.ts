@@ -7,14 +7,15 @@ export type PickupKind =
   | 'armorShard' | 'armorVest'
   | 'ammoBullets' | 'ammoShells' | 'ammoRockets'
   | 'keyRed' | 'keyBlue' | 'keyYellow'
-  | 'weaponShotgun' | 'weaponSMG' | 'weaponRocket'
+  | 'weaponShotgun' | 'weaponSMG' | 'weaponRocket' | 'weaponArc'
+  | 'ammoCells'
   | 'powerQuad' | 'powerShield' | 'powerHaste';
 
-export type EnemyKind = 'husk' | 'sentinel' | 'ticker';
+export type EnemyKind = 'husk' | 'sentinel' | 'ticker' | 'brute';
 
-export type WeaponId = 'pistol' | 'shotgun' | 'smg' | 'rocket';
+export type WeaponId = 'pistol' | 'shotgun' | 'smg' | 'rocket' | 'arc';
 
-export type AmmoType = 'bullets' | 'shells' | 'rockets';
+export type AmmoType = 'bullets' | 'shells' | 'rockets' | 'cells';
 
 export interface RoomDef {
   id: number;
@@ -25,7 +26,7 @@ export interface RoomDef {
   h: number;
   cx: number;
   cz: number;
-  kind: 'spawn' | 'exit' | 'key' | 'normal';
+  kind: 'spawn' | 'exit' | 'key' | 'normal' | 'arena';
   /** graph distance from spawn room */
   dist: number;
 }

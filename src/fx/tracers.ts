@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const MAX_TRACERS = 24;
+const MAX_TRACERS = 48; // chain lightning draws many short segments per shot
 
 /** Pooled additive streaks drawn from muzzle to hit point for hitscan shots. */
 export class Tracers {
@@ -32,10 +32,14 @@ export class Tracers {
     }
   }
 
-  fire(fx: number, fy: number, fz: number, tx: number, ty: number, tz: number): void {
+  fire(
+    fx: number, fy: number, fz: number, tx: number, ty: number, tz: number,
+    color = 0xffd890, life = 0.085
+  ): void {
     const dx = tx - fx, dy = ty - fy, dz = tz - fz;
     const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (len < 0.6) return;
+    // short segments are allowed (lightning bolts are drawn as jagged pieces)
+    if (len < 0.15) return;
     const i = this.cursor;
     this.cursor = (this.cursor + 1) % MAX_TRACERS;
     const m = this.meshes[i];
@@ -43,8 +47,9 @@ export class Tracers {
     m.scale.set(0.035, 0.035, len);
     m.lookAt(tx, ty, tz);
     m.visible = true;
-    this.life[i] = 0.085;
-    this.maxLife[i] = 0.085;
+    this.life[i] = life;
+    this.maxLife[i] = life;
+    this.mats[i].color.setHex(color);
     this.mats[i].opacity = 0.8;
   }
 

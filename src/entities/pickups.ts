@@ -24,6 +24,8 @@ const GLOW_COLORS: Record<PickupKind, number> = {
   weaponShotgun: 0x70d8ff,
   weaponSMG: 0x70d8ff,
   weaponRocket: 0x70d8ff,
+  weaponArc: 0x55e0ff,
+  ammoCells: 0x55e0ff,
   powerQuad: 0xffd028,
   powerShield: 0x55e0ff,
   powerHaste: 0xff8030,
@@ -37,6 +39,7 @@ const DYN_GLOW: Partial<Record<PickupKind, [number, number, number]>> = {
   weaponShotgun: [0.4, 0.7, 0.9],
   weaponSMG: [0.4, 0.7, 0.9],
   weaponRocket: [0.4, 0.9, 0.5],
+  weaponArc: [0.3, 0.85, 1],
   healthBig: [1, 0.3, 0.3],
   armorVest: [0.3, 1, 0.4],
   powerQuad: [1, 0.8, 0.15],
@@ -191,6 +194,33 @@ const BUILDERS: Record<PickupKind, () => THREE.Object3D> = {
     g.add(tube, muzzle, grip);
     return g;
   },
+  weaponArc: () => {
+    const g = new THREE.Group();
+    const body = box(0.2, 0.22, 0.66, 0x3a4452);
+    const coilA = box(0.28, 0.28, 0.12, 0x55e0ff);
+    coilA.position.z = -0.28;
+    const coilB = box(0.24, 0.24, 0.1, 0x2898c8);
+    coilB.position.z = -0.44;
+    const core = box(0.08, 0.08, 0.7, 0xd8f8ff);
+    const grip = box(0.1, 0.22, 0.14, 0x2a2e38);
+    grip.position.set(0, -0.2, 0.14);
+    g.add(body, coilA, coilB, core, grip);
+    return g;
+  },
+  // energy cells: teal battery brick with charge pips
+  ammoCells: () => {
+    const g = new THREE.Group();
+    const brick = box(0.34, 0.24, 0.24, 0x1e3844);
+    for (let i = 0; i < 3; i++) {
+      const pip = box(0.06, 0.14, 0.26, 0x55e0ff);
+      pip.position.set(-0.1 + i * 0.1, 0.02, 0);
+      g.add(pip);
+    }
+    const cap = box(0.36, 0.06, 0.26, 0x2898c8);
+    cap.position.y = 0.14;
+    g.add(brick, cap);
+    return g;
+  },
   // powerups: floating energy constructs, unmistakably not supplies
   powerQuad: () => {
     const g = new THREE.Group();
@@ -325,6 +355,8 @@ export class PickupManager {
         return pl.ammo.shells < pl.ammoMax.shells;
       case 'ammoRockets':
         return pl.ammo.rockets < pl.ammoMax.rockets;
+      case 'ammoCells':
+        return pl.ammo.cells < pl.ammoMax.cells;
       default:
         return true;
     }
@@ -407,6 +439,10 @@ export class PickupManager {
         if (!pl.addAmmo('rockets', 4)) return false;
         sfx('pickup', 'Picked up rockets.');
         return true;
+      case 'ammoCells':
+        if (!pl.addAmmo('cells', 12)) return false;
+        sfx('pickup', 'Picked up energy cells.');
+        return true;
       case 'keyRed':
         pl.keys.add('red');
         sfx('pickupKey', 'Picked up the RED keycard!');
@@ -434,6 +470,11 @@ export class PickupManager {
         game.weapons.give('rocket');
         pl.addAmmo('rockets', 4);
         sfx('pickupWeapon', 'You got the THUMPER launcher!');
+        return true;
+      case 'weaponArc':
+        game.weapons.give('arc');
+        pl.addAmmo('cells', 20);
+        sfx('pickupWeapon', 'You got the ARC CASTER! Lightning chains between enemies.');
         return true;
       case 'powerQuad':
         pl.buffs.quad = 20;

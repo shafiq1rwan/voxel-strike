@@ -431,12 +431,18 @@ export class Game {
     this.pendingExplosions.push({ x, y, z, t: fuse, dmg, radius });
   }
 
+  /** drop a pickup into the live level (brute rewards, scripted drops) */
+  spawnPickup(kind: PickupKind, x: number, y: number, z: number): void {
+    this.pickups.add({ kind, x, y, z }, this.world);
+    this.dynLights.flash(x, y + 0.4, z, 1, 0.9, 0.4, 1.4, 6, 0.3);
+  }
+
   onEnemyKilled(e: Enemy): void {
     this.kills++;
     this.hud.killMarker();
     this.punchFOV(0.8);
     // score: kill value scaled by the combo chain (kills within 2.5s of each other)
-    const points = e.kind === 'sentinel' ? 150 : e.kind === 'ticker' ? 75 : 100;
+    const points = e.kind === 'brute' ? 300 : e.kind === 'sentinel' ? 150 : e.kind === 'ticker' ? 75 : 100;
     this.comboChain = this.comboTimer > 0 ? this.comboChain + 1 : 1;
     this.comboTimer = 2.5;
     const mult = Math.min(5, this.comboChain);

@@ -74,6 +74,9 @@ Tips:
   near them, but keep your distance.
 - One wall in each level has visible **cracks** — break it to find a secret
   stash (the rocket launcher lives there).
+- Every sector has one huge pillared **arena** — the ARC CASTER floats in the
+  middle, and the Brute guarding it always drops a powerup. The lightning
+  chains between enemies, so save your cells for crowds.
 - Grabbing the keycard trips the alarm — a **security response** teleports in
   around you. Have an exit route (or a barrel) ready before you take it.
 - Glowing **powerups** are rare and timed: QUAD DAMAGE (yellow, ×4 damage),
@@ -99,6 +102,7 @@ Tips:
 | 2 | **SCATTERGUN** | 7-pellet hitscan shotgun | Pickup, room-clearer |
 | 3 | **RIPPER** | Automatic hitscan SMG | Pickup, chews bullets |
 | 4 | **THUMPER** | Rocket launcher | Secret pickup; splash damage, destroys crates and cracked walls |
+| 5 | **ARC CASTER** | Chain lightning | Arena prize; the bolt arcs to up to 3 more enemies near the first hit |
 
 All weapons have recoil, muzzle flash (sprite + dynamic light on the walls),
 per-type ammo pools, and box-modeled first-person view models.
@@ -115,6 +119,10 @@ per-type ammo pools, and box-modeled first-person view models.
   Killing it at range still detonates the corpse — which makes tickers
   wonderful when they die next to their friends, and terrible when they die
   next to you.
+- **Brute** — the arena pit boss: a bone-plated wall of meat with tusks. It
+  rears back with a roar, then charges in a straight line faster than you can
+  run, smashing crates and barrels on the way. Sidestep it: a brute that hits
+  the wall is stunned and wide open. It always drops a powerup when it dies.
 
 All of them run a full state machine — **idle / patrol / chase / attack / pain /
 death** — wake on line-of-sight or nearby gunfire, alert each other, and
