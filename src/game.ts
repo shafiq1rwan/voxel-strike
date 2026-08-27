@@ -21,12 +21,25 @@ import { DynLights } from './fx/dynlights';
 import { WeaponSystem } from './weapons/weapons';
 import { HUD } from './ui/hud';
 import { Automap } from './ui/automap';
+import { Netplay } from './net/netplay';
 import { GameSettings, loadSettings, saveSettings } from './core/settings';
 import { EnemySpec, KeyColor, PickupKind } from './types';
 
 type GameState = 'title' | 'playing' | 'paused' | 'dead' | 'intermission' | 'won';
 
 const TOTAL_SECTORS = 3;
+
+/** what enemy AI / explosions / bolts need from "a player" — the local
+ *  Player and the co-op partner's RemotePlayer both satisfy this shape */
+export interface PlayerTarget {
+  pos: THREE.Vector3;
+  half: THREE.Vector3;
+  vel: THREE.Vector3;
+  shake: number;
+  dead: boolean;
+  eyeY(): number;
+  damage(amount: number, game: Game, source?: { x: number; z: number }): void;
+}
 
 export class Game {
   readonly rendererSys: Renderer;
@@ -46,20 +59,22 @@ export class Game {
   readonly settings: GameSettings = loadSettings();
   readonly isTouch = isTouchDevice();
   private automap!: Automap;
+  /** co-op session (null in single-player) */
+  net: Netplay | null = null;
 
   world!: VoxelWorld;
   level!: LevelData;
   doors: Door[] = [];
   elevator: Elevator | null = null;
   private chunks: ChunkManager | null = null;
-  private pickups!: PickupManager;
+  pickups!: PickupManager;
 
   private state: GameState = 'title';
   private clock = new THREE.Clock();
   private time = 0;
   private baseSeed: number;
   levelIndex = 1;
-  private kills = 0;
+  kills = 0;
   private totalKills = 0;
   private totalEnemiesSoFar = 0;
   private secretsFound = 0;
@@ -123,17 +138,66 @@ export class Game {
     // debug hook for automated smoke tests
     (window as unknown as Record<string, unknown>).__voxelstrike = this;
 
+    // co-op auto-start from URL (used by tests and shareable join links):
+    // ?role=host|join&room=CODE[&mp=local]
+    const q = new URLSearchParams(location.search);
+    const role = q.get('role');
+    const room = q.get('room');
+    if ((role === 'host' || role === 'join') && room) {
+      void this.startCoop(role, room, q.get('mp') === 'local');
+    }
+
     this.clock.start();
     const loop = (): void => {
       requestAnimationFrame(loop);
       this.frame();
     };
     requestAnimationFrame(loop);
+    // background heartbeat: rAF freezes in hidden tabs, which would freeze the
+    // whole co-op world whenever the host alt-tabs. Keep simulating on a timer
+    // while hidden (browsers may throttle it, but the world stays alive).
+    window.setInterval(() => {
+      if (document.hidden) this.frame();
+    }, 50);
   }
 
   /** seed for the current sector, derived from the base seed */
   private levelSeed(): number {
     return (this.baseSeed + (this.levelIndex - 1) * 104729) >>> 0;
+  }
+
+  get isNetClient(): boolean {
+    return this.net !== null && !this.net.isHost;
+  }
+
+  get isNetHost(): boolean {
+    return this.net !== null && this.net.isHost;
+  }
+
+  baseSeedValue(): number {
+    return this.baseSeed;
+  }
+
+  /** everyone the enemies can hunt: the local player + the co-op partner */
+  playerTargets(): PlayerTarget[] {
+    return this.net && this.net.connected
+      ? [this.player, this.net.remote]
+      : [this.player];
+  }
+
+  /** authoritative numbers for the co-op snapshot */
+  netStats(): { score: number; mult: number; kills: number; total: number } {
+    return {
+      score: this.score,
+      mult: Math.min(5, this.comboChain) || 1,
+      kills: this.kills,
+      total: this.level.totalEnemies,
+    };
+  }
+
+  detachNet(): void {
+    this.net?.dispose();
+    this.net = null;
   }
 
   private teardownLevel(): void {
@@ -210,7 +274,87 @@ export class Game {
 
     this.hud.updateStats(this.player);
     this.hud.updateWeapon(this.weapons);
+    this.net?.onLevelBuilt();
     console.log(`[voxelstrike] sector ${this.levelIndex} ready: ${this.level.rooms.length} rooms, ${this.level.enemies.length} enemies, ${this.doors.length} doors`);
+  }
+
+  // ---- co-op session management -------------------------------------------
+
+  openCoop(): void {
+    const local = new URLSearchParams(location.search).get('mp') === 'local';
+    this.hud.showCoop({
+      onHost: () => {
+        const code = Array.from({ length: 4 }, () =>
+          'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]
+        ).join('');
+        this.hud.coopShowCode(code);
+        this.hud.coopStatus('Share the code with your partner — waiting for them to join...');
+        void this.startCoop('host', code, local);
+      },
+      onJoin: (code) => {
+        this.hud.coopStatus('Connecting...');
+        void this.startCoop('join', code, local);
+      },
+      onBack: () => {
+        this.detachNet();
+        this.showTitleScreen();
+      },
+    });
+  }
+
+  private async startCoop(role: 'host' | 'join', room: string, local: boolean): Promise<void> {
+    try {
+      this.detachNet();
+      this.net = new Netplay(this, role, room, local);
+      await this.net.ready;
+      this.net.connected = true;
+      if (this.net.isHost) {
+        this.net.sendHello(this.baseSeed);
+        this.startGame();
+      } else {
+        const seed = await this.net.waitHello();
+        this.baseSeed = seed >>> 0;
+        this.levelIndex = 1;
+        this.buildLevel();
+        this.startGame();
+      }
+      this.hud.message(this.net.isHost
+        ? 'Partner connected — watch each other\'s backs.'
+        : 'Linked up with the host — watch each other\'s backs.');
+    } catch (err) {
+      console.warn('[coop] connection failed', err);
+      this.hud.coopStatus('Connection failed — check the room code and try again.');
+      this.detachNet();
+    }
+  }
+
+  /** co-op client: the host cleared the sector / finished the campaign */
+  netShowWin(final: boolean, heading: string, stats: string): void {
+    this.audio.play('win');
+    this.audio.setHeartbeat(false);
+    this.lowHealth = false;
+    this.hud.setLowHealth(false);
+    document.exitPointerLock();
+    if (final) {
+      this.state = 'won';
+      this.hud.showWin(stats, () => {
+        location.href = location.pathname;
+      });
+    } else {
+      this.state = 'intermission';
+      this.hud.showWaiting(heading, stats, 'WAITING FOR THE HOST TO DESCEND...');
+    }
+  }
+
+  /** co-op client: the host started the next sector */
+  netNextLevel(): void {
+    this.levelIndex++;
+    this.buildLevel();
+    this.hud.hideScreen();
+    this.state = 'playing';
+    this.levelStartTime = this.time;
+    if (!this.isTouch) this.input.requestLock();
+    this.hud.message(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — it gets worse down here.`);
   }
 
   private startGame(): void {
@@ -241,6 +385,7 @@ export class Game {
   private nextLevel(): void {
     this.levelIndex++;
     this.buildLevel();
+    this.net?.sendNextLevel();
     this.hud.hideScreen();
     this.state = 'playing';
     this.levelStartTime = this.time;
@@ -264,6 +409,7 @@ export class Game {
       seed: this.baseSeed,
       best: this.bestScoreForSeed(),
       onStart: () => this.startGame(),
+      onCoop: () => this.openCoop(),
       onSettings: () => this.openSettings('title'),
     });
   }
@@ -370,10 +516,57 @@ export class Game {
     return true;
   }
 
-  explode(x: number, y: number, z: number, damage: number, radius: number): void {
+  /** visual-only explosion (co-op clients; FX echoes of remote explosions) */
+  explodeFX(x: number, y: number, z: number, radius = 3.2): void {
     this.particles.explosion(x, y, z);
     this.audio.play('explosion', { x, y, z });
     this.dynLights.flash(x, y, z, 1, 0.6, 0.25, 3, 14, 0.35);
+    const pd = Math.sqrt((this.player.pos.x - x) ** 2 + (this.player.pos.y - y) ** 2 + (this.player.pos.z - z) ** 2);
+    if (pd < radius + 4) this.punchFOV(3.5 * Math.max(0, 1 - pd / (radius + 4)));
+    this.player.shake = Math.min(0.7, this.player.shake + 0.2);
+  }
+
+  /** rocket detonation router: clients ask the host to run the real thing */
+  detonate(x: number, y: number, z: number, damage: number, radius: number): void {
+    if (this.isNetClient) {
+      this.explodeFX(x, y, z, radius);
+      this.net?.sendBoomReq(x, y, z, damage, radius);
+    } else {
+      this.explode(x, y, z, damage, radius);
+    }
+  }
+
+  /** hit an enemy with authority routing (host applies, client requests) */
+  applyEnemyHit(e: Enemy, dmg: number, dx: number, dz: number, headshot: boolean): void {
+    if (this.isNetClient) {
+      e.hitFeedback(dmg, dx, dz, this);
+      this.net?.sendHit(this.enemies.list.indexOf(e), dmg, dx, dz, headshot);
+    } else {
+      e.lastHitHead = headshot;
+      e.damage(dmg, dx, dz, this);
+    }
+  }
+
+  /** damage a voxel with authority routing */
+  applyVoxelDamage(x: number, y: number, z: number, dmg: number): void {
+    if (this.isNetClient) {
+      this.net?.sendVoxelDamage(x, y, z, dmg);
+      return;
+    }
+    const broke = this.world.damageVoxel(x, y, z, dmg);
+    if (broke !== null) this.onVoxelBroken(x, y, z, broke);
+  }
+
+  explode(x: number, y: number, z: number, damage: number, radius: number, fxEcho = true): void {
+    if (this.isNetClient) {
+      // clients never simulate explosions — this is a stray call, show FX only
+      this.explodeFX(x, y, z, radius);
+      return;
+    }
+    this.particles.explosion(x, y, z);
+    this.audio.play('explosion', { x, y, z });
+    this.dynLights.flash(x, y, z, 1, 0.6, 0.25, 3, 14, 0.35);
+    if (fxEcho) this.net?.sendBoomFx(x, y, z, radius);
 
     // destroy destructible voxels in range (barrels hit here chain via the fuse queue)
     const r = Math.ceil(radius * 0.7);
@@ -399,38 +592,43 @@ export class Game {
         e.damage(damage * f, (e.pos.x - x) / Math.max(0.3, d), (e.pos.z - z) / Math.max(0.3, d), this);
       }
     }
-    // player splash — also occluded by geometry
-    const pd = Math.sqrt((this.player.pos.x - x) ** 2 + (this.player.pos.y - y) ** 2 + (this.player.pos.z - z) ** 2);
-    // view punch scales with proximity even when a wall blocks the damage
-    if (pd < radius + 4) this.punchFOV(3.5 * Math.max(0, 1 - pd / (radius + 4)));
-    if (pd < radius && !this.player.dead && this.hasLOS(x, y, z, this.player.pos.x, this.player.pos.y, this.player.pos.z)) {
-      const f = 1 - pd / radius;
-      this.player.damage(Math.round(damage * 0.55 * f), this, { x, z });
-      // rocket-jump style push
-      this.player.vel.x += ((this.player.pos.x - x) / Math.max(0.3, pd)) * 9 * f;
-      this.player.vel.y += 6 * f;
-      this.player.vel.z += ((this.player.pos.z - z) / Math.max(0.3, pd)) * 9 * f;
+    // player splash (both players in co-op) — also occluded by geometry
+    for (const t of this.playerTargets()) {
+      const pd = Math.sqrt((t.pos.x - x) ** 2 + (t.pos.y - y) ** 2 + (t.pos.z - z) ** 2);
+      // view punch scales with proximity even when a wall blocks the damage
+      if (t === (this.player as PlayerTarget) && pd < radius + 4) {
+        this.punchFOV(3.5 * Math.max(0, 1 - pd / (radius + 4)));
+      }
+      if (pd < radius && !t.dead && this.hasLOS(x, y, z, t.pos.x, t.pos.y, t.pos.z)) {
+        const f = 1 - pd / radius;
+        t.damage(Math.round(damage * 0.55 * f), this, { x, z });
+        // rocket-jump style push (the partner's push is applied on their side)
+        if (t === (this.player as PlayerTarget)) {
+          t.vel.x += ((t.pos.x - x) / Math.max(0.3, pd)) * 9 * f;
+          t.vel.y += 6 * f;
+          t.vel.z += ((t.pos.z - z) / Math.max(0.3, pd)) * 9 * f;
+        }
+      }
     }
     this.player.shake = Math.min(0.7, this.player.shake + 0.3);
     this.enemies.alertAt(x, z, 20, this);
   }
 
   onVoxelBroken(x: number, y: number, z: number, block: Block): void {
+    this.net?.sendVoxelBroken(x, y, z, block); // host → client echo (no-op on client)
     if (block === Block.Crate) {
       this.particles.debris(x + 0.5, y + 0.5, z + 0.5, 0.5, 0.38, 0.2);
       this.audio.play('crateBreak', { x, y, z });
-      // crates sometimes drop supplies
-      if (Math.random() < 0.35) {
+      // crates sometimes drop supplies (host decides in co-op)
+      if (!this.isNetClient && Math.random() < 0.35) {
         const drops: PickupKind[] = ['ammoBullets', 'ammoShells', 'healthSmall', 'armorShard'];
-        this.pickups.add(
-          { kind: drops[Math.floor(Math.random() * drops.length)], x: x + 0.5, y: y + 0.4, z: z + 0.5 },
-          this.world
-        );
+        this.spawnPickup(drops[Math.floor(Math.random() * drops.length)], x + 0.5, y + 0.4, z + 0.5);
       }
     } else if (block === Block.Barrel) {
       // short fuse so chains ripple instead of detonating in the same frame
+      // (host owns the actual blast in co-op; clients just see the debris)
       this.particles.debris(x + 0.5, y + 0.5, z + 0.5, 0.35, 0.5, 0.2, 8);
-      this.queueExplosion(x + 0.5, y + 0.5, z + 0.5, 0.14, 70, 3.2);
+      if (!this.isNetClient) this.queueExplosion(x + 0.5, y + 0.5, z + 0.5, 0.14, 70, 3.2);
     } else {
       this.particles.debris(x + 0.5, y + 0.5, z + 0.5, 0.36, 0.4, 0.47);
       this.audio.play('wallBreak', { x, y, z });
@@ -443,13 +641,19 @@ export class Game {
     this.pendingExplosions.push({ x, y, z, t: fuse, dmg, radius });
   }
 
-  /** drop a pickup into the live level (brute rewards, scripted drops) */
+  /** drop a pickup into the live level (brute rewards, crate drops) */
   spawnPickup(kind: PickupKind, x: number, y: number, z: number): void {
     this.pickups.add({ kind, x, y, z }, this.world);
     this.dynLights.flash(x, y + 0.4, z, 1, 0.9, 0.4, 1.4, 6, 0.3);
+    this.net?.sendPickupSpawn(this.pickups.items.length - 1, kind, x, y, z);
   }
 
   onEnemyKilled(e: Enemy): void {
+    if (this.isNetClient) {
+      // visuals only — kills/score/combo are the host's ledger
+      this.punchFOV(0.8);
+      return;
+    }
     this.kills++;
     this.hud.killMarker(e.lastHitHead);
     this.punchFOV(0.8);
@@ -469,6 +673,7 @@ export class Game {
 
   /** grabbing the red keycard springs a security response around the player */
   onKeyPickup(): void {
+    if (this.isNetClient) return; // the host owns the ambush
     const keyRoom = this.level.rooms.find((r) => r.kind === 'key');
     if (!keyRoom) return;
     const specs: EnemySpec[] = [];
@@ -498,6 +703,7 @@ export class Game {
       this.particles.smoke(e.pos.x, e.pos.y, e.pos.z, 6);
     }
     this.level.totalEnemies += specs.length;
+    this.net?.sendEnemySpawn(specs);
     this.audio.play('alarm');
     this.hud.message('WARNING — security response inbound!');
     this.punchFOV(1.5);
@@ -557,6 +763,7 @@ export class Game {
 
     if (this.levelIndex < TOTAL_SECTORS) {
       this.state = 'intermission';
+      this.net?.sendWin(false, `SECTOR ${this.levelIndex} CLEARED`, levelStats);
       this.hud.showIntermission(this.levelIndex, levelStats, () => this.nextLevel());
     } else {
       this.state = 'won';
@@ -576,6 +783,7 @@ export class Game {
         `Total kills: ${this.totalKills} / ${this.totalEnemiesSoFar} &nbsp;·&nbsp; ` +
         `Secrets: ${this.totalSecretsFound} / ${this.totalSecretsSoFar} &nbsp;·&nbsp; ` +
         `Total time: ${this.formatTime(this.totalPlayTime)}<br><br>${scoreLine}`;
+      this.net?.sendWin(true, 'CAMPAIGN COMPLETE', totals);
       this.hud.showWin(totals, () => {
         location.href = location.pathname;
       });
@@ -631,7 +839,9 @@ export class Game {
     // the automap only lives inside active play
     if (this.state !== 'playing' && this.automap.visible) this.automap.setVisible(false);
 
-    const playing = this.state === 'playing' || this.state === 'dead';
+    // co-op never pauses the world — the pause menu just overlays it
+    const playing = this.state === 'playing' || this.state === 'dead' ||
+      (this.net !== null && this.state === 'paused');
     if (playing) {
       this.update(dt);
     }
@@ -662,6 +872,7 @@ export class Game {
 
   private update(dt: number): void {
     const boxes = this.solidBoxes();
+    this.net?.update(dt);
 
     // barrel chain-reaction fuses
     for (let i = this.pendingExplosions.length - 1; i >= 0; i--) {
@@ -673,31 +884,42 @@ export class Game {
       }
     }
 
-    // doors: player + alive enemies can trigger them
-    const actors: Array<{ x: number; z: number; isPlayer: boolean }> = [
-      { x: this.player.pos.x, z: this.player.pos.z, isPlayer: true },
-    ];
-    for (const e of this.enemies.list) {
-      if (e.alive && e.awake) actors.push({ x: e.pos.x, z: e.pos.z, isPlayer: false });
-    }
-    for (const d of this.doors) {
-      d.update(
-        dt, actors,
-        (c: KeyColor) => this.player.hasKey(c),
-        (c: KeyColor) => {
-          this.hud.message(`Used the ${c.toUpperCase()} keycard.`);
-          this.audio.play('doorOpen', { x: d.centerX(), y: 2, z: d.centerZ() });
-        },
-        (c: KeyColor) => {
-          this.hud.message(`You need the ${c.toUpperCase()} keycard!`);
-          this.audio.play('doorLocked');
-        },
-        this.audio
-      );
-    }
-    if (this.elevator) {
-      const onTop = this.elevator.isOnTop(this.player.pos.x, this.player.pos.y, this.player.pos.z, this.player.half.y);
-      this.elevator.update(dt, onTop, this.audio);
+    // doors + elevator run on the authority only (clients get snapshots)
+    if (!this.isNetClient) {
+      // doors: players + alive enemies can trigger them
+      const actors: Array<{ x: number; z: number; isPlayer: boolean }> = [
+        { x: this.player.pos.x, z: this.player.pos.z, isPlayer: true },
+      ];
+      if (this.net?.connected) {
+        // keys are shared in co-op, so the partner opens locked doors too
+        actors.push({ x: this.net.remote.pos.x, z: this.net.remote.pos.z, isPlayer: true });
+      }
+      for (const e of this.enemies.list) {
+        if (e.alive && e.awake) actors.push({ x: e.pos.x, z: e.pos.z, isPlayer: false });
+      }
+      for (const d of this.doors) {
+        d.update(
+          dt, actors,
+          (c: KeyColor) => this.player.hasKey(c),
+          (c: KeyColor) => {
+            this.hud.message(`Used the ${c.toUpperCase()} keycard.`);
+            this.audio.play('doorOpen', { x: d.centerX(), y: 2, z: d.centerZ() });
+          },
+          (c: KeyColor) => {
+            this.hud.message(`You need the ${c.toUpperCase()} keycard!`);
+            this.audio.play('doorLocked');
+          },
+          this.audio
+        );
+      }
+      if (this.elevator) {
+        let onTop = this.elevator.isOnTop(this.player.pos.x, this.player.pos.y, this.player.pos.z, this.player.half.y);
+        if (this.net?.connected) {
+          const r = this.net.remote;
+          onTop = onTop || this.elevator.isOnTop(r.pos.x, r.pos.y, r.pos.z, r.half.y);
+        }
+        this.elevator.update(dt, onTop, this.audio);
+      }
     }
 
     this.player.update(dt, this.input, this, boxes);
@@ -759,20 +981,38 @@ export class Game {
       }
     }
 
-    // exit pad check: standing on an ExitPad block
-    if (this.state === 'playing') {
+    // exit pad check: standing on an ExitPad block (either player in co-op;
+    // the host is the judge)
+    if (this.state === 'playing' && !this.isNetClient) {
       const under = this.world.get(
         Math.floor(this.player.pos.x),
         Math.floor(this.player.pos.y - this.player.half.y - 0.1),
         Math.floor(this.player.pos.z)
       );
       if (under === Block.ExitPad && this.player.onGround) this.win();
+      else if (this.net?.connected) {
+        const r = this.net.remote;
+        const rUnder = this.world.get(
+          Math.floor(r.pos.x), Math.floor(r.pos.y - r.half.y - 0.1), Math.floor(r.pos.z)
+        );
+        if (rUnder === Block.ExitPad && !r.dead) this.win();
+      }
     }
 
-    // death screen after a beat
     if (this.state === 'dead') {
       this.deathTimer += dt;
-      if (this.deathTimer > 1.4 && this.deathTimer - dt <= 1.4) {
+      if (this.net) {
+        // co-op: no game over — respawn at the entrance after a beat
+        if (this.deathTimer > 2.5) {
+          this.player.health = 100;
+          this.player.dead = false;
+          this.player.spawnAt(this.level.spawn.x, this.level.spawn.y, this.level.spawn.z);
+          this.state = 'playing';
+          this.hud.updateStats(this.player);
+          this.hud.message('Back on your feet — your partner bought you time.');
+        }
+      } else if (this.deathTimer > 1.4 && this.deathTimer - dt <= 1.4) {
+        // solo: death screen after a beat
         document.exitPointerLock();
         this.hud.showDeath(
           `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,

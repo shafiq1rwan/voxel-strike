@@ -96,6 +96,35 @@ export class ProjectilePool {
     }
   }
 
+  /** co-op host: compact list of live projectiles for the snapshot */
+  liveList(): Array<[number, number, number, number]> {
+    const out: Array<[number, number, number, number]> = [];
+    for (const p of this.rockets) {
+      if (p.alive) out.push([0, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)]);
+    }
+    for (const p of this.bolts) {
+      if (p.alive) out.push([1, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)]);
+    }
+    return out;
+  }
+
+  /** co-op client: display the host's projectiles as position-driven puppets */
+  syncRemote(list: Array<[number, number, number, number]>): void {
+    for (const pool of [this.rockets, this.bolts]) {
+      for (const p of pool) p.mesh.visible = false;
+    }
+    let ri = 0;
+    let bi = 0;
+    for (const [kind, x, y, z] of list) {
+      const pool = kind === 0 ? this.rockets : this.bolts;
+      const idx = kind === 0 ? ri++ : bi++;
+      if (idx >= pool.length) continue;
+      const p = pool[idx];
+      p.mesh.visible = true;
+      p.mesh.position.set(x, y, z);
+    }
+  }
+
   update(dt: number, game: Game): void {
     for (const pool of [this.rockets, this.bolts]) {
       for (const p of pool) {
@@ -128,7 +157,7 @@ export class ProjectilePool {
           const eh = game.enemies.raycast(p.x, p.y, p.z, p.dx, p.dy, p.dz, Math.min(step, hitT));
           if (eh) {
             if (p.kind === 'rocket') {
-              game.explode(p.x + p.dx * eh.t, p.y + p.dy * eh.t, p.z + p.dz * eh.t, 90 * p.dmgMult, 3.5);
+              game.detonate(p.x + p.dx * eh.t, p.y + p.dy * eh.t, p.z + p.dz * eh.t, 90 * p.dmgMult, 3.5);
             } else {
               eh.enemy.damage(10, p.dx, p.dz, game);
             }
@@ -136,16 +165,24 @@ export class ProjectilePool {
             continue;
           }
         } else {
-          const pl = game.player;
-          const t = rayBox(p.x, p.y, p.z, p.dx, p.dy, p.dz, Math.min(step, hitT), {
-            minX: pl.pos.x - pl.half.x, maxX: pl.pos.x + pl.half.x,
-            minY: pl.pos.y - pl.half.y, maxY: pl.pos.y + pl.half.y,
-            minZ: pl.pos.z - pl.half.z, maxZ: pl.pos.z + pl.half.z,
-          });
-          if (t !== null) {
-            pl.damage(10, game, { x: p.x - p.dx * 2, z: p.z - p.dz * 2 });
-            game.particles.impact(p.x, p.y, p.z, -p.dx, -p.dy, -p.dz, 0.4, 0.8, 1);
-            game.audio.play('boltHit', { x: p.x, y: p.y, z: p.z });
+          // enemy bolts can hit either player (host + co-op partner)
+          let struck = false;
+          for (const pl of game.playerTargets()) {
+            if (pl.dead) continue;
+            const t = rayBox(p.x, p.y, p.z, p.dx, p.dy, p.dz, Math.min(step, hitT), {
+              minX: pl.pos.x - pl.half.x, maxX: pl.pos.x + pl.half.x,
+              minY: pl.pos.y - pl.half.y, maxY: pl.pos.y + pl.half.y,
+              minZ: pl.pos.z - pl.half.z, maxZ: pl.pos.z + pl.half.z,
+            });
+            if (t !== null) {
+              pl.damage(10, game, { x: p.x - p.dx * 2, z: p.z - p.dz * 2 });
+              game.particles.impact(p.x, p.y, p.z, -p.dx, -p.dy, -p.dz, 0.4, 0.8, 1);
+              game.audio.play('boltHit', { x: p.x, y: p.y, z: p.z });
+              struck = true;
+              break;
+            }
+          }
+          if (struck) {
             this.kill(p);
             continue;
           }
@@ -156,7 +193,7 @@ export class ProjectilePool {
           const hy = p.y + p.dy * hitT;
           const hz = p.z + p.dz * hitT;
           if (p.kind === 'rocket') {
-            game.explode(hx - p.dx * 0.1, hy - p.dy * 0.1, hz - p.dz * 0.1, 90 * p.dmgMult, 3.5);
+            game.detonate(hx - p.dx * 0.1, hy - p.dy * 0.1, hz - p.dz * 0.1, 90 * p.dmgMult, 3.5);
           } else {
             game.particles.impact(hx, hy, hz, -p.dx, -p.dy, -p.dz, 0.4, 0.8, 1);
             game.audio.play('boltHit', { x: hx, y: hy, z: hz });

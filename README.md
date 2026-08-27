@@ -61,6 +61,28 @@ Touch play also gets **aim assist** — near-miss shots bend onto the target
 and look sensitivity eases while tracking an enemy (toggle in Settings;
 never active with a mouse).
 
+## Co-op
+
+The campaign is playable **2-player online co-op** — no accounts, no server
+setup. One player clicks **CO-OP → HOST** on the title screen and reads out
+the 4-character room code; the other clicks **JOIN** and types it in
+(the connection is peer-to-peer WebRTC via PeerJS's free broker). Then:
+
+- You both fight through the **same dungeon** — the host's seed is shared, so
+  the worlds are identical.
+- Enemies hunt **whichever player is closer**; all AI runs on the host and
+  streams to the partner.
+- **Keycards are shared** (either of you can grab the red key), score and
+  kills are pooled, and either player standing on the exit pad clears the
+  sector for both.
+- Ammo, health, armor, weapons, and powerups are **personal** — call dibs on
+  the arena.
+- Death isn't the end: in co-op you **respawn at the sector entrance** after a
+  few seconds while your partner holds the line. No friendly fire.
+- The host owns the world: if the host leaves, the run ends for the partner.
+  (Tip for testing without a friend: open two tabs of the same browser with
+  `?mp=local&role=host&room=AAAA` and `?mp=local&role=join&room=AAAA`.)
+
 It's also an installable **PWA**: on the deployed site, use your browser's
 "Add to Home Screen" / install prompt. The installed app launches fullscreen,
 locked to landscape, and works offline after the first visit (network-first

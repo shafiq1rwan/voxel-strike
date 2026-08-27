@@ -29,6 +29,7 @@ node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55; desktop unaffected
 node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
+node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 ```
 
 `?seed=N` on the URL reproduces a layout deterministically. `window.__voxelstrike`
@@ -62,7 +63,15 @@ node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into 
   Runtime block changes mark chunks dirty; `ChunkManager.update()` remeshes.
 - `src/world/blocks.ts` — Block enum + procedural 16px texture atlas.
   **The `Block`/`Tile` enums, `tileFor`, `LAMP_COLORS`, `isDestructible`,
-  `blockHP`, and `drawTile` must stay in sync when adding a block.**
+  `blockHP`, and `drawTile` must stay in sync when adding a block — and new
+  blocks are APPEND-ONLY (tests hardcode ids like Barrel=15, ExitPad=13).**
+  Deco variants (WallRust/WallVent/WallPipes/WallWorn/CeilPipes/CeilPipesZ/
+  CeilVent/Chain) are cosmetic-only: same physics as Wall/Ceil. Ceiling UVs
+  map tile-x to world X, so direction-locked art needs a rotated twin —
+  CeilPipes runs along X, CeilPipesZ along Z; levelgen picks per lane. The cosmetic WallWorn
+  cracks must stay visually SOFTER than the secret-marking `Cracked` tile
+  (which has a deep black fracture + amber gleam) or players lose the
+  secret-room language.
 - `src/world/levelgen.ts` — rooms + MST corridors, doors (exit door always
   red-locked, forced placement), secret room behind cracked blocks, exit ledge
   + elevator, barrels/crates/lamps/pickups/enemies. One big `arena` room per
@@ -71,6 +80,11 @@ node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into 
   a diagonal pillar ring (axes left clear as charge lanes). Every layout is
   validated by a BFS walkability check (key reachable *without* the key, exit
   reachable *with* it) and regenerated from fallback seeds if broken.
+  The deco pass (rust/vents/pipe columns/ceiling runs) and hanging chain-lamps
+  use `dhash` (position-hashed) instead of the layout RNG, so tuning deco
+  never reshuffles rooms/enemies/pickups for a given seed. Hanging fixtures
+  only spawn in rooms h>=5 and never in the exit room (a lamp block over the
+  ledge walkway would block the path to the pad).
 - `src/core/physics.ts` — axis-by-axis AABB vs voxels + dynamic boxes (doors,
   elevator). The voxel resolver only corrects penetration caused by *this
   frame's movement* (`maxPen` guard) — deep pre-existing embeds must never be
@@ -122,6 +136,19 @@ node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into 
   the manifest ships empty so the no-asset build stays silent with zero 404s.
   Music files are git-ignored (license safety) — only manifest + README are
   tracked.
+- `src/net/` — 2-player co-op, HOST-AUTHORITATIVE: the host runs the whole
+  sim (AI, doors, elevator, explosions, pickups, score) and streams 12Hz
+  snapshots; the client simulates only its own movement/weapon feel — enemies
+  are `puppet` interpolators (`Enemy.netSet`) and every gameplay consequence
+  of client actions routes through the host (`Game.applyEnemyHit`,
+  `applyVoxelDamage`, `detonate`, pickup claims) and echoes back as events.
+  `transport.ts` = PeerJS (room codes, lazy-loaded chunk) or BroadcastChannel
+  (`?mp=local`, same-browser tabs — what coop.mjs uses). Keys are shared,
+  score pooled, co-op death = respawn (no death screen), pause doesn't stop
+  the world. Enemy AI targets `Game.playerTargets()` (nearest non-dead) —
+  never `game.player` directly. A hidden tab freezes rAF, so Game runs a
+  50ms `document.hidden` heartbeat (the coop test also disables Chromium
+  background throttling). URL auto-join: `?role=host|join&room=CODE[&mp=local]`.
 - `src/core/settings.ts` — persisted options (sensitivity, master + music
   volume, FOV, resolution, shake, aim assist); `Game.applySettings()` pushes
   them into systems.

@@ -387,7 +387,53 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     }
   }
 
-  // -- crack the secret wall (after paint so it isn't overwritten) ----------
+  // -- deco pass: rust, vents, pipes, worn plating (cosmetic, same physics) --
+  // position-hashed instead of drawing from the layout RNG, so adding or
+  // tuning deco never reshuffles rooms/enemies/pickups for a given seed
+  const dhash = (x: number, y: number, z: number): number => {
+    let h = (x * 374761393 + y * 668265263 + z * 1103515245 + seed * 2246822519) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  };
+  for (let z = 0; z < WORLD_Z; z++) {
+    for (let x = 0; x < WORLD_X; x++) {
+      // occasional full-height conduit column on a wall
+      if (world.get(x, 1, z) === Block.Wall && world.get(x, 2, z) === Block.Wall && dhash(x, 99, z) < 0.045) {
+        for (let y = 1; y <= 7 && world.get(x, y, z) === Block.Wall; y++) world.set(x, y, z, Block.WallPipes);
+        continue;
+      }
+      for (let y = 1; y <= 7; y++) {
+        const b = world.get(x, y, z);
+        if (b === Block.Wall) {
+          const n = dhash(x, y, z);
+          if (n < 0.04 && y >= 2) world.set(x, y, z, Block.WallVent);
+          else if (n < 0.11) world.set(x, y, z, Block.WallRust);
+          else if (n < 0.2) world.set(x, y, z, Block.WallWorn);
+        } else if (b === Block.Ceil && dhash(x, y, z) < 0.035) {
+          world.set(x, y, z, Block.CeilVent);
+        }
+      }
+    }
+  }
+  // conduit runs across room ceilings (straight lanes read as intentional)
+  for (const r of rooms) {
+    if (dhash(r.id, 77, 5) > 0.7) continue;
+    const alongX = dhash(r.id, 88, 6) < 0.5;
+    const lanes = dhash(r.id, 91, 7) < 0.35 ? 2 : 1;
+    // the tile art is direction-locked: pick the variant whose pipes run WITH the lane
+    const pipeBlock = alongX ? Block.CeilPipes : Block.CeilPipesZ;
+    for (let l = 0; l < lanes; l++) {
+      const off = 2 + Math.floor(dhash(r.id, 93 + l, 8) * ((alongX ? r.d : r.w) - 4));
+      const len = alongX ? r.w : r.d;
+      for (let i = 0; i < len; i++) {
+        const x = alongX ? r.x + i : r.x + off;
+        const z = alongX ? r.z + off : r.z + i;
+        if (world.get(x, r.h + 1, z) === Block.Ceil) world.set(x, r.h + 1, z, pipeBlock);
+      }
+    }
+  }
+
+  // -- crack the secret wall (after paint AND deco so it isn't overwritten) --
   for (const [x, y, z] of crackCells) {
     if (world.isSolid(x, y, z)) world.set(x, y, z, Block.Cracked);
   }
@@ -500,6 +546,26 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
       // green glow over the ledge
       for (const [x, z] of ledgeCells) {
         if ((x + z) % 3 === 0 && world.isSolid(x, r.h + 1, z)) world.set(x, r.h + 1, z, Block.LampGreen);
+      }
+    }
+    // hanging fixtures in tall rooms: a chain stem with a lamp swinging below
+    // the ceiling (skip the exit room — a fixture over the ledge walkway
+    // would block the path to the pad)
+    if (r.h >= 5 && r.kind !== 'exit') {
+      const hangs = 2 + (r.w * r.d > 200 ? 2 : 0);
+      for (let i = 0; i < hangs; i++) {
+        const hx = r.x + 2 + Math.floor(dhash(r.id, i * 3 + 1, 501) * (r.w - 4));
+        const hz = r.z + 2 + Math.floor(dhash(r.id, i * 3 + 2, 502) * (r.d - 4));
+        const lampY = r.h - 1 - (r.h >= 6 ? 1 : 0); // hang deeper under high ceilings
+        const above = world.get(hx, r.h + 1, hz);
+        if (above !== Block.Ceil && above !== Block.CeilPipes && above !== Block.CeilPipesZ) continue;
+        let clear = true;
+        for (let y = lampY; y <= r.h && clear; y++) {
+          if (world.get(hx, y, hz) !== Block.Air) clear = false;
+        }
+        if (!clear) continue;
+        for (let y = lampY + 1; y <= r.h; y++) world.set(hx, y, hz, Block.Chain);
+        world.set(hx, lampY, hz, lamp);
       }
     }
   }

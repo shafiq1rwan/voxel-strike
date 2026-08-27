@@ -62,6 +62,13 @@ export class Door {
     return this.openT > 0.95;
   }
 
+  /** co-op client: doors are driven by host snapshots, not local logic */
+  netSet(openT: number, locked: boolean): void {
+    this.openT = openT;
+    if (!locked) this.locked = null;
+    this.mesh.position.y = this.baseY + this.openT * (DOOR_H - 0.2);
+  }
+
   centerX(): number {
     return this.mesh.position.x;
   }
@@ -177,6 +184,13 @@ export class Elevator {
       minZ: this.spec.z,
       maxZ: this.spec.z + 2,
     };
+  }
+
+  /** co-op client: platform height comes from host snapshots */
+  netSet(topY: number): void {
+    this.dy = topY - this.topY;
+    this.topY = topY;
+    this.updateMesh();
   }
 
   /** true if the given AABB body is standing on the platform */

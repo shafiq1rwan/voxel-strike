@@ -3,7 +3,7 @@ import { EnemySpec, RoomDef } from '../types';
 import { isDestructible } from '../world/blocks';
 import { moveBody, rayBox } from '../core/physics';
 import { SpriteDef, SpriteRowName, SPRITE_ROWS } from './sprites';
-import type { Game } from '../game';
+import type { Game, PlayerTarget } from '../game';
 
 export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'charge' | 'pain' | 'dead';
 
@@ -87,6 +87,15 @@ export class Enemy {
   private flinchSign = 1;
   /** set by hitscan right before damage() when the shot landed in the head zone */
   lastHitHead = false;
+  /** co-op client: this enemy is a network puppet — no AI, interpolate only */
+  puppet = false;
+  private ntx = 0;
+  private nty = 0;
+  private ntz = 0;
+  private nyaw = 0;
+  private netInit = false;
+  /** the player this enemy is currently hunting (local or co-op partner) */
+  private tgt: PlayerTarget | null = null;
   private growlCd = 2 + Math.random() * 4;
   // billboard sprite skin (optional, from SpriteLibrary)
   private spriteMesh: THREE.Mesh | null = null;
@@ -358,12 +367,13 @@ export class Enemy {
     this.setState('dead');
     game.audio.play(this.kind === 'husk' || this.kind === 'brute' ? 'enemyDieA' : 'enemyDieB', this.pos);
     // tickers are walking bombs: death always detonates them (short fuse so a
-    // sniped ticker still chains into barrels and packmates)
-    if (this.kind === 'ticker') {
+    // sniped ticker still chains into barrels and packmates).
+    // Co-op clients skip the gameplay side effects — the host owns those.
+    if (this.kind === 'ticker' && !game.isNetClient) {
       game.queueExplosion(this.pos.x, this.pos.y, this.pos.z, 0.08, 55, 2.8);
     }
     // the pit boss always drops a powerup — killing it is the arena's reward
-    if (this.kind === 'brute') {
+    if (this.kind === 'brute' && !game.isNetClient) {
       game.audio.play('bruteSlam', this.pos);
       const drops = ['powerQuad', 'powerShield', 'powerHaste'] as const;
       game.spawnPickup(drops[Math.floor(Math.random() * drops.length)], this.pos.x, this.pos.y + 0.3, this.pos.z);
@@ -456,31 +466,25 @@ export class Enemy {
   }
 
   update(dt: number, game: Game): void {
+    if (this.puppet) {
+      this.puppetUpdate(dt, game);
+      return;
+    }
     this.stateTime += dt;
     this.attackCooldown = Math.max(0, this.attackCooldown - dt);
     this.lungeCooldown = Math.max(0, this.lungeCooldown - dt);
     this.chargeCooldown = Math.max(0, this.chargeCooldown - dt);
     this.flashTime = Math.max(0, this.flashTime - dt);
-    const pl = game.player;
+    // hunt whichever player is closest (co-op adds the partner as a target)
+    const pl = this.pickTarget(game);
+    this.tgt = pl;
 
     if (this.alive) this.maybeAdoptSprite(game);
 
     // dead: voxel rigs burst into gibs in die(); sprite skins play their
     // death animation and remain as a corpse
     if (this.state === 'dead') {
-      if (this.spriteMesh) {
-        // the corpse drops to the floor (hovering enemies die mid-air)
-        if (!this.corpseGrounded) {
-          this.vel.x *= 0.9;
-          this.vel.z *= 0.9;
-          this.vel.y -= 20 * dt;
-          const res = moveBody(game.world, this.pos, this.half, this.vel, dt, game.solidBoxes());
-          this.mesh.position.copy(this.pos);
-          if (res.onGround) this.corpseGrounded = true;
-        }
-        this.spriteAnimate(dt, game);
-        this.updateLighting(game, dt);
-      }
+      this.deadUpdate(dt, game);
       return;
     }
 
@@ -579,6 +583,113 @@ export class Enemy {
     this.updateLighting(game, dt);
   }
 
+  /** nearest non-dead player-like target (falls back to the local player) */
+  private pickTarget(game: Game): PlayerTarget {
+    const ts = game.playerTargets();
+    let best: PlayerTarget = ts[0];
+    let bestD = Infinity;
+    for (const t of ts) {
+      if (t.dead) continue;
+      const d = (t.pos.x - this.pos.x) ** 2 + (t.pos.z - this.pos.z) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** shared corpse handling for sprite skins (voxel rigs vanish into gibs) */
+  private deadUpdate(dt: number, game: Game): void {
+    if (!this.spriteMesh) return;
+    // the corpse drops to the floor (hovering enemies die mid-air)
+    if (!this.corpseGrounded) {
+      this.vel.x *= 0.9;
+      this.vel.z *= 0.9;
+      this.vel.y -= 20 * dt;
+      const res = moveBody(game.world, this.pos, this.half, this.vel, dt, game.solidBoxes());
+      this.mesh.position.copy(this.pos);
+      if (res.onGround) this.corpseGrounded = true;
+    }
+    this.spriteAnimate(dt, game);
+    this.updateLighting(game, dt);
+  }
+
+  /** co-op client: interpolate toward the host's snapshot; no AI, no physics */
+  private puppetUpdate(dt: number, game: Game): void {
+    this.stateTime += dt;
+    this.flashTime = Math.max(0, this.flashTime - dt);
+    if (this.alive) this.maybeAdoptSprite(game);
+    if (this.state === 'dead') {
+      this.deadUpdate(dt, game);
+      return;
+    }
+    if (!this.netInit) return;
+    const k = 1 - Math.exp(-10 * dt);
+    const prevX = this.pos.x;
+    const prevZ = this.pos.z;
+    this.pos.x += (this.ntx - this.pos.x) * k;
+    this.pos.y += (this.nty - this.pos.y) * k;
+    this.pos.z += (this.ntz - this.pos.z) * k;
+    // derived velocity drives the walk animation + footstep sounds
+    this.vel.x = (this.pos.x - prevX) / Math.max(dt, 0.001);
+    this.vel.z = (this.pos.z - prevZ) / Math.max(dt, 0.001);
+    this.mesh.rotation.y = lerpAngle(this.mesh.rotation.y, this.nyaw, Math.min(1, dt * 10));
+    // arming beeps are a survival cue — replicate them for the client
+    if (this.kind === 'ticker' && this.state === 'attack') {
+      const beepsDue = Math.floor(this.stateTime / 0.16);
+      if (beepsDue > this.beepCount) {
+        this.beepCount = beepsDue;
+        game.audio.play('tickerBeep', this.pos);
+      }
+    }
+    this.animate(dt, game);
+    this.mesh.position.copy(this.pos);
+    this.mesh.scale.setScalar(1 + this.flashTime * 1.6);
+    this.mesh.rotation.z = this.flashTime * this.flinchSign * 1.4;
+    this.updateLighting(game, dt);
+  }
+
+  /** co-op client: apply the host's latest snapshot row */
+  netSet(x: number, y: number, z: number, yaw: number, state: EState, hp: number, game: Game): void {
+    this.ntx = x;
+    this.nty = y;
+    this.ntz = z;
+    this.nyaw = yaw;
+    if (!this.netInit) {
+      this.netInit = true;
+      this.pos.set(x, y, z);
+      this.mesh.position.copy(this.pos);
+    }
+    this.hp = hp;
+    if (state !== this.state && this.state !== 'dead') {
+      if (state === 'dead') {
+        this.pos.set(x, y, z);
+        this.mesh.position.copy(this.pos);
+        this.die(game); // visuals + sound; scoring/explosions are host-side
+      } else {
+        this.state = state;
+        this.stateTime = 0;
+        if (state === 'attack') this.beepCount = 0;
+      }
+    }
+    this.awake = state !== 'idle' && state !== 'patrol' && state !== 'dead';
+  }
+
+  /** co-op client: local juice for a hit whose damage the host will apply */
+  hitFeedback(dmg: number, dx: number, dz: number, game: Game): void {
+    if (!this.alive) return;
+    this.flashTime = 0.15;
+    this.flinchSign = Math.random() < 0.5 ? -1 : 1;
+    this.applyFlash();
+    game.audio.play('fleshHit', this.pos);
+    game.particles.blood(
+      this.pos.x, this.pos.y + 0.2, this.pos.z, dx, 0, dz,
+      this.tuning.bloodColor[0], this.tuning.bloodColor[1], this.tuning.bloodColor[2],
+      Math.min(16, 5 + Math.floor(dmg / 3))
+    );
+  }
+
   /** immediate white-hot flash on every landed hit (restored by the light tick) */
   private applyFlash(): void {
     this.mesh.traverse((o) => {
@@ -634,7 +745,7 @@ export class Enemy {
   }
 
   private doChase(dt: number, dist: number, toPlayer: THREE.Vector3, game: Game): void {
-    const pl = game.player;
+    const pl = this.tgt ?? game.player;
     if (pl.dead) {
       this.setState('idle');
       this.awake = false;
@@ -733,7 +844,7 @@ export class Enemy {
 
   /** brute charge: rear back, then barrel forward smashing crates/barrels */
   private doCharge(dt: number, game: Game): void {
-    const pl = game.player;
+    const pl = this.tgt ?? game.player;
     const TELEGRAPH = 0.55;
     if (this.stateTime < TELEGRAPH) {
       // dig in and track the player until launch
@@ -791,7 +902,7 @@ export class Enemy {
 
   private doAttack(dt: number, dist: number, toPlayer: THREE.Vector3, game: Game): void {
     void dt;
-    const pl = game.player;
+    const pl = this.tgt ?? game.player;
     this.vel.x *= 0.8;
     this.vel.z *= 0.8;
     if (this.kind === 'husk' || this.kind === 'brute') {

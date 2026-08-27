@@ -326,7 +326,7 @@ function findFloorY(world: VoxelWorld, x: number, y: number, z: number): number 
 
 export class PickupManager {
   readonly group = new THREE.Group();
-  private items: Pickup[] = [];
+  readonly items: Pickup[] = [];
 
   constructor(specs: PickupSpec[], world: VoxelWorld) {
     for (const s of specs) this.add(s, world);
@@ -383,10 +383,12 @@ export class PickupManager {
         p.glow.position.z = p.obj.position.z;
       }
       if (d2 < 1.1) {
-        if (this.tryCollect(p.spec.kind, game)) {
-          p.taken = true;
-          this.group.remove(p.obj);
-          this.group.remove(p.glow);
+        if (game.isNetClient) {
+          // the host owns pickups: ask for it, apply on the echo
+          if (this.wouldCollect(p.spec.kind, game)) game.net?.claimPickup(this.items.indexOf(p));
+        } else if (this.tryCollect(p.spec.kind, game)) {
+          this.take(p);
+          game.net?.sendPickupTaken(this.items.indexOf(p), false, p.spec.kind);
         }
       }
     }
@@ -397,6 +399,30 @@ export class PickupManager {
       if (glow) {
         game.dynLights.submit(p.obj.position.x, p.obj.position.y + 0.3, p.obj.position.z, glow[0], glow[1], glow[2], 0.35, 3);
       }
+    }
+  }
+
+  private take(p: Pickup): void {
+    p.taken = true;
+    this.group.remove(p.obj);
+    this.group.remove(p.glow);
+  }
+
+  /** co-op host: the partner claimed item `idx`. Keys are shared loot. */
+  claimForRemote(idx: number, game: Game): PickupKind | null {
+    const p = this.items[idx];
+    if (!p || p.taken) return null;
+    if (p.spec.kind.startsWith('key')) this.tryCollect(p.spec.kind, game); // both get keys
+    this.take(p);
+    return p.spec.kind;
+  }
+
+  /** co-op client: the host confirmed item `idx` is gone */
+  applyTaken(idx: number, byMe: boolean, kind: PickupKind, game: Game): void {
+    const p = this.items[idx];
+    if (p && !p.taken) this.take(p);
+    if (byMe || kind.startsWith('key')) {
+      this.tryCollect(kind, game); // my loot — or a shared key
     }
   }
 

@@ -21,6 +21,10 @@ export class Input {
 
   constructor(private lockTarget: HTMLElement) {
     window.addEventListener('keydown', (e) => {
+      // typing in a form field (co-op room code) must reach the field —
+      // never swallow WASD/Tab/etc. there
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
       // Tab must never move browser focus, even on key repeat
       if (e.code === 'Tab') e.preventDefault();
       if (e.repeat) return;

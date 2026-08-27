@@ -300,6 +300,7 @@ export class WeaponSystem {
     pl.ammo[def.ammoType] -= def.ammoPerShot;
     game.hud.updateStats(pl);
     game.audio.play(def.sound);
+    game.net?.sendShot(def.sound, pl.pos.x, pl.eyeY(), pl.pos.z);
     pl.recoilPitch += def.recoil;
     this.kickZ += def.kick;
     this.flashTime = 0.055;
@@ -430,8 +431,7 @@ export class WeaponSystem {
       if (wHit && wHit.t <= wallT) {
         game.particles.impact(hx, hy, hz, wHit.nx, wHit.ny, wHit.nz, 0.4, 0.85, 1);
         game.dynLights.flash(hx + wHit.nx * 0.2, hy + wHit.ny * 0.2, hz + wHit.nz * 0.2, 0.35, 0.85, 1, 0.7, 4, 0.09);
-        const broke = game.world.damageVoxel(wHit.x, wHit.y, wHit.z, damage);
-        if (broke !== null) game.onVoxelBroken(wHit.x, wHit.y, wHit.z, broke);
+        game.applyVoxelDamage(wHit.x, wHit.y, wHit.z, damage);
       }
       return;
     }
@@ -465,7 +465,7 @@ export class WeaponSystem {
       game.audio.play('boltHit', e.pos);
       const ddx = e.pos.x - px, ddz = e.pos.z - pz;
       const dl = Math.hypot(ddx, ddz) || 1;
-      e.damage(dmg, ddx / dl, ddz / dl, game);
+      game.applyEnemyHit(e, dmg, ddx / dl, ddz / dl, false);
       px = e.pos.x; py = ty; pz = e.pos.z;
       dmg = Math.max(6, Math.round(dmg * 0.7)); // each hop hits softer
     }
@@ -510,7 +510,6 @@ export class WeaponSystem {
       // headshot: creatures with heads take double damage in the top slice
       const headshot = (e.kind === 'husk' || e.kind === 'brute') && hitY > e.pos.y + e.half.y * 0.45;
       game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, origin.x + dir.x * t, hitY, origin.z + dir.z * t);
-      e.lastHitHead = headshot;
       if (headshot) {
         game.audio.play('headshot', e.pos);
         game.hud.headshotMarker();
@@ -519,11 +518,10 @@ export class WeaponSystem {
           e.pos.x, hitY, e.pos.z, dir.x, 0.4, dir.z,
           e.tuning.bloodColor[0], e.tuning.bloodColor[1], e.tuning.bloodColor[2], 8
         );
-        e.damage(damage * 2, dir.x, dir.z, game);
       } else {
         game.hud.hitMarker();
-        e.damage(damage, dir.x, dir.z, game);
       }
+      game.applyEnemyHit(e, headshot ? damage * 2 : damage, dir.x, dir.z, headshot);
       return;
     }
     if (wHit && wHit.t <= wallT) {
@@ -534,9 +532,8 @@ export class WeaponSystem {
       game.particles.impact(hx, hy, hz, wHit.nx, wHit.ny, wHit.nz);
       game.dynLights.flash(hx + wHit.nx * 0.2, hy + wHit.ny * 0.2, hz + wHit.nz * 0.2, 1, 0.7, 0.35, 0.5, 3, 0.07);
       if (Math.random() < 0.4) game.audio.play('impact', { x: hx, y: hy, z: hz });
-      // destructible voxels
-      const broke = game.world.damageVoxel(wHit.x, wHit.y, wHit.z, damage);
-      if (broke !== null) game.onVoxelBroken(wHit.x, wHit.y, wHit.z, broke);
+      // destructible voxels (host-authoritative in co-op)
+      game.applyVoxelDamage(wHit.x, wHit.y, wHit.z, damage);
     } else if (wallT < MAX) {
       // hit a door
       const hx = origin.x + dir.x * wallT;

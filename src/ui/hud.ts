@@ -280,6 +280,25 @@ input[type=range].tslider::-moz-range-thumb {
 }
 input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-offset: 3px; }
 .tbtn-mini { font-size: 11px; padding: 7px 16px; min-width: 92px; }
+.coop-input {
+  font-family: 'Courier New', Courier, monospace; font-weight: bold; font-size: 15px;
+  letter-spacing: .4em; text-transform: uppercase; text-align: center; width: 110px;
+  background: #1a1f2b; color: #ffd028; border: 1px solid #39404f; padding: 7px 4px;
+}
+.coop-input:focus-visible { outline: 2px solid #ffd028; outline-offset: 2px; }
+.coop-status {
+  margin-top: 22px; font-size: 13px; letter-spacing: .14em; color: #cfd6e4;
+  min-height: 18px; text-align: center;
+}
+.coop-code-display {
+  /* same footprint as the HOST button beside it — just gold and glowing */
+  font-family: 'Courier New', Courier, monospace; font-weight: bold; font-size: 12px;
+  letter-spacing: .3em; text-indent: .3em; color: #ffd028;
+  background: #1a1f2b; border: 1px solid #ffd028; padding: 9px 14px; min-width: 92px;
+  text-align: center; box-sizing: border-box;
+  text-shadow: 0 0 10px rgba(255,208,40,.55);
+}
+.coop-code-display[hidden] { display: none; }
 .sethint { font-size: 10px; letter-spacing: .12em; color: #566076; text-transform: none; }
 .status-line {
   margin-top: 18px; font-size: 12px; letter-spacing: .18em; color: #566076;
@@ -552,7 +571,7 @@ export class HUD {
     return this.root;
   }
 
-  showTitle(opts: { seed: number; best?: number; onStart: () => void; onSettings: () => void }): void {
+  showTitle(opts: { seed: number; best?: number; onStart: () => void; onCoop?: () => void; onSettings: () => void }): void {
     this.hideScreen();
     const el = document.createElement('div');
     el.id = 'title-screen';
@@ -566,6 +585,7 @@ export class HUD {
         <div class="title-menu">
           <button id="start-btn" class="tbtn tbtn-primary">Enter the facility</button>
           <div class="title-menu-row">
+            <button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button>
             <button id="howto-btn" class="tbtn tbtn-quiet">How to play</button>
             <button id="title-settings-btn" class="tbtn tbtn-quiet">Settings</button>
           </div>
@@ -603,6 +623,7 @@ export class HUD {
 
     el.querySelector('#start-btn')!.addEventListener('click', () => opts.onStart());
     el.querySelector('#title-settings-btn')!.addEventListener('click', () => opts.onSettings());
+    el.querySelector('#coop-btn')!.addEventListener('click', () => opts.onCoop?.());
     const howto = el.querySelector('#howto-panel') as HTMLElement;
     const brief = el.querySelector('#title-brief') as HTMLElement;
     el.querySelector('#howto-btn')!.addEventListener('click', () => {
@@ -614,6 +635,96 @@ export class HUD {
       if (ev.code === 'Enter' || ev.code === 'NumpadEnter') opts.onStart();
     };
     window.addEventListener('keydown', this.titleKey);
+  }
+
+  /** co-op lobby: host with a room code, or join a partner's code */
+  showCoop(opts: { onHost: () => void; onJoin: (code: string) => void; onBack: () => void }): void {
+    this.hideScreen();
+    const el = document.createElement('div');
+    el.id = 'coop-screen';
+    el.className = 'tscreen';
+    el.innerHTML = `
+      <div class="title-center">
+        <canvas id="coop-logo"></canvas>
+        <div class="title-tag">Two Guns Are Better</div>
+        <div class="setlist">
+          <div class="setrow">
+            <label>Host a run</label>
+            <div class="setctl">
+              <span id="coop-mycode" class="coop-code-display" hidden></span>
+              <button id="coop-host" class="tbtn tbtn-quiet tbtn-mini">HOST</button>
+            </div>
+          </div>
+          <div class="setrow">
+            <label for="coop-code">Join a partner</label>
+            <div class="setctl">
+              <input id="coop-code" class="coop-input" maxlength="4" placeholder="CODE" autocomplete="off">
+              <button id="coop-join" class="tbtn tbtn-quiet tbtn-mini">JOIN</button>
+            </div>
+          </div>
+        </div>
+        <div id="coop-status" class="coop-status">Play the same dungeon together — enemies hunt you both.</div>
+        <div class="title-menu">
+          <button id="coop-back" class="tbtn tbtn-primary">Back</button>
+        </div>
+      </div>
+      <div class="title-foot">
+        <span>CO-OP CAMPAIGN &middot; KEYS ARE SHARED &middot; NO FRIENDLY FIRE</span>
+        <span>VOXELSTRIKE 0.2</span>
+      </div>
+    `;
+    document.body.appendChild(el);
+    this.screenEl = el;
+    this.root.style.visibility = 'hidden';
+    this.logoStop = startVoxelLogo(el.querySelector('#coop-logo') as HTMLCanvasElement, 'COOP', [110, 220, 255]);
+    const codeInput = el.querySelector('#coop-code') as HTMLInputElement;
+    codeInput.addEventListener('input', () => {
+      codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    });
+    el.querySelector('#coop-host')!.addEventListener('click', () => opts.onHost());
+    el.querySelector('#coop-join')!.addEventListener('click', () => {
+      if (codeInput.value.length >= 4) opts.onJoin(codeInput.value);
+      else this.coopStatus('Enter the 4-character room code first.');
+    });
+    el.querySelector('#coop-back')!.addEventListener('click', () => opts.onBack());
+    this.titleKey = (ev: KeyboardEvent) => {
+      if (ev.code === 'Escape') opts.onBack();
+      if ((ev.code === 'Enter' || ev.code === 'NumpadEnter') && codeInput.value.length >= 4) opts.onJoin(codeInput.value);
+    };
+    window.addEventListener('keydown', this.titleKey);
+  }
+
+  coopStatus(text: string): void {
+    const el = document.querySelector('#coop-status');
+    if (el) el.textContent = text;
+  }
+
+  /** show the generated room code big and bright, right beside HOST */
+  coopShowCode(code: string): void {
+    const el = document.querySelector('#coop-mycode') as HTMLElement | null;
+    if (el) {
+      el.textContent = code;
+      el.hidden = false;
+    }
+    const btn = document.querySelector('#coop-host') as HTMLButtonElement | null;
+    if (btn) {
+      btn.textContent = 'WAITING';
+      btn.disabled = true;
+    }
+  }
+
+  /** co-op client between-levels screen — no button, the host drives */
+  showWaiting(heading: string, stats: string, prompt: string): void {
+    this.hideScreen();
+    const el = document.createElement('div');
+    el.className = 'screen';
+    el.innerHTML = `<div class="panel">
+      <h1 class="win">${heading}</h1>
+      <p>${stats}</p>
+      <div class="prompt">${prompt}</div>
+    </div>`;
+    document.body.appendChild(el);
+    this.screenEl = el;
   }
 
   showDeath(stats: string, onRestart: () => void): void {
@@ -866,6 +977,7 @@ const GLYPHS: Record<string, string[]> = {
   I: ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
   K: ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
   P: ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+  C: ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
   A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
   U: ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
   D: ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],

@@ -18,9 +18,19 @@ export const enum Block {
   ExitPad = 13,
   Pillar = 14,
   Barrel = 15,
+  // cosmetic wall/ceiling variants — same physics as Wall/Ceil. Append-only:
+  // tests and saves rely on the ids above staying stable.
+  WallRust = 16,
+  WallVent = 17,
+  WallPipes = 18,
+  WallWorn = 19,
+  CeilPipes = 20, // pipes running along world X
+  CeilVent = 21,
+  Chain = 22,
+  CeilPipesZ = 23, // pipes running along world Z (rotated tile)
 }
 
-export const BLOCK_COUNT = 16;
+export const BLOCK_COUNT = 24;
 
 /** Which lamp blocks emit light, and their color (0-255 per channel). */
 export const LAMP_COLORS: Partial<Record<Block, [number, number, number]>> = {
@@ -69,9 +79,17 @@ export const enum Tile {
   RockTop = 15,
   Barrel = 16,
   BarrelTop = 17,
+  WallRust = 18,
+  WallVent = 19,
+  WallPipes = 20,
+  WallWorn = 21,
+  CeilPipes = 22,
+  CeilVent = 23,
+  Chain = 24,
+  CeilPipesZ = 25,
 }
 
-export const TILE_COUNT = 18;
+export const TILE_COUNT = 26;
 
 /** Face dirs: 0:+x 1:-x 2:+y(top) 3:-y(bottom) 4:+z 5:-z */
 export function tileFor(block: Block, dir: number): Tile {
@@ -108,6 +126,22 @@ export function tileFor(block: Block, dir: number): Tile {
       return top || bottom ? Tile.Metal : Tile.Pillar;
     case Block.Barrel:
       return top || bottom ? Tile.BarrelTop : Tile.Barrel;
+    case Block.WallRust:
+      return top ? Tile.RockTop : bottom ? Tile.Ceil : Tile.WallRust;
+    case Block.WallVent:
+      return top ? Tile.RockTop : bottom ? Tile.Ceil : Tile.WallVent;
+    case Block.WallPipes:
+      return top ? Tile.RockTop : bottom ? Tile.Ceil : Tile.WallPipes;
+    case Block.WallWorn:
+      return top ? Tile.RockTop : bottom ? Tile.Ceil : Tile.WallWorn;
+    case Block.CeilPipes:
+      return bottom ? Tile.CeilPipes : Tile.Rock;
+    case Block.CeilPipesZ:
+      return bottom ? Tile.CeilPipesZ : Tile.Rock;
+    case Block.CeilVent:
+      return bottom ? Tile.CeilVent : Tile.Rock;
+    case Block.Chain:
+      return top || bottom ? Tile.Metal : Tile.Chain;
     default:
       return Tile.Rock;
   }
@@ -267,6 +301,9 @@ function drawTile(ctx: Ctx2D, tile: Tile): void {
           px(ctx, ox, oy, cx - 1, y, shade([28, 30, 40], 1));
           px(ctx, ox, oy, cx - 2, y, shade([40, 44, 56], 1));
         }
+        // faint amber gleam seeping through — keeps the SECRET wall clearly
+        // distinct from the cosmetic worn/rusty wall variants
+        if (y === 4 || y === 9 || y === 13) px(ctx, ox, oy, cx, y, shade([210, 170, 60], 0.9));
       }
       break;
     }
@@ -342,6 +379,142 @@ function drawTile(ctx: Ctx2D, tile: Tile): void {
           px(ctx, ox, oy, x, y, shade([48, 52, 64], 1));
           px(ctx, ox, oy, x + 1, y, shade([120, 128, 146], 1));
         }
+      }
+      break;
+    }
+    case Tile.WallRust: {
+      // standard wall panel stained by rust runs bleeding down from the seams
+      fillNoise(ctx, ox, oy, [88, 96, 112], 0.22, 41);
+      for (let i = 0; i < TILE_PX; i++) {
+        px(ctx, ox, oy, i, 0, shade([54, 60, 74], 1));
+        px(ctx, ox, oy, i, 8, shade([54, 60, 74], 1));
+        px(ctx, ox, oy, 0, i, shade([54, 60, 74], 1));
+      }
+      for (const [sx, sy, len] of [[3, 1, 6], [11, 1, 10], [7, 9, 5], [13, 9, 4]] as const) {
+        px(ctx, ox, oy, sx, sy, shade([168, 104, 48], 1));
+        for (let y = sy + 1; y < Math.min(TILE_PX, sy + len); y++) {
+          const f = 0.6 + hnoise(sx, y, 201) * 0.5;
+          px(ctx, ox, oy, sx, y, shade([140, 84, 40], f));
+          if (hnoise(sx + 3, y, 202) > 0.6) px(ctx, ox, oy, sx + 1, y, shade([110, 66, 34], f));
+        }
+      }
+      break;
+    }
+    case Tile.WallVent: {
+      // recessed extraction vent with horizontal slats
+      fillNoise(ctx, ox, oy, [88, 96, 112], 0.22, 41);
+      for (let i = 0; i < TILE_PX; i++) {
+        px(ctx, ox, oy, i, 0, shade([54, 60, 74], 1));
+        px(ctx, ox, oy, 0, i, shade([54, 60, 74], 1));
+      }
+      for (let y = 3; y <= 12; y++) {
+        for (let x = 2; x <= 13; x++) {
+          const frame = y === 3 || y === 12 || x === 2 || x === 13;
+          if (frame) px(ctx, ox, oy, x, y, shade([116, 124, 142], 1));
+          else px(ctx, ox, oy, x, y, y % 2 === 0 ? shade([24, 28, 36], 1) : shade([58, 64, 78], 0.9));
+        }
+      }
+      px(ctx, ox, oy, 2, 3, shade([150, 158, 176], 1));
+      px(ctx, ox, oy, 13, 12, shade([150, 158, 176], 1));
+      break;
+    }
+    case Tile.WallPipes: {
+      // two vertical conduits with clamps (placed as full wall columns)
+      fillNoise(ctx, ox, oy, [80, 88, 104], 0.2, 43);
+      for (const p of [3, 10] as const) {
+        for (let y = 0; y < TILE_PX; y++) {
+          px(ctx, ox, oy, p, y, shade([60, 66, 80], 1));
+          px(ctx, ox, oy, p + 1, y, shade([134, 142, 160], 1));
+          px(ctx, ox, oy, p + 2, y, shade([96, 102, 118], 1));
+        }
+      }
+      for (const cy of [2, 9] as const) {
+        for (let x = 2; x <= 6; x++) px(ctx, ox, oy, x, cy, shade([46, 50, 62], 1));
+        for (let x = 9; x <= 13; x++) px(ctx, ox, oy, x, cy + 3, shade([46, 50, 62], 1));
+      }
+      break;
+    }
+    case Tile.WallWorn: {
+      // scuffed plating with hairline wear — deliberately SOFTER than the
+      // secret Cracked tile (seam-dark lines only, no deep black fracture)
+      fillNoise(ctx, ox, oy, [84, 92, 108], 0.26, 45);
+      for (let i = 0; i < TILE_PX; i++) {
+        px(ctx, ox, oy, i, 0, shade([54, 60, 74], 1));
+        px(ctx, ox, oy, 0, i, shade([54, 60, 74], 1));
+      }
+      let wx = 4;
+      for (let y = 3; y < 11; y++) {
+        wx += hnoise(2, y, 210) > 0.5 ? 1 : 0;
+        px(ctx, ox, oy, wx, y, shade([58, 64, 78], 1));
+      }
+      let wy = 12;
+      for (let x = 8; x < 15; x++) {
+        wy += hnoise(x, 3, 211) > 0.6 ? -1 : 0;
+        px(ctx, ox, oy, x, wy, shade([58, 64, 78], 1));
+      }
+      for (const [cxp, cyp] of [[12, 4], [5, 13], [2, 7]] as const) {
+        px(ctx, ox, oy, cxp, cyp, shade([106, 114, 130], 1));
+        px(ctx, ox, oy, cxp + 1, cyp, shade([64, 70, 84], 1));
+      }
+      break;
+    }
+    case Tile.CeilPipes: {
+      // conduit runs strapped under the ceiling
+      fillNoise(ctx, ox, oy, [46, 46, 56], 0.3, 61);
+      for (const p of [2, 9] as const) {
+        for (let x = 0; x < TILE_PX; x++) {
+          px(ctx, ox, oy, x, p, shade([88, 92, 106], 1));
+          px(ctx, ox, oy, x, p + 1, shade([120, 126, 142], 1));
+          px(ctx, ox, oy, x, p + 2, shade([64, 68, 82], 1));
+        }
+      }
+      for (const cx2 of [4, 12] as const) {
+        for (let y = 1; y <= 12; y++) px(ctx, ox, oy, cx2, y, shade([38, 40, 50], 1));
+      }
+      break;
+    }
+    case Tile.CeilPipesZ: {
+      // same conduits rotated 90° — ceiling UVs map tile-x to world X, so a
+      // run laid along Z needs this twin or the pipes read as chopped ribs
+      fillNoise(ctx, ox, oy, [46, 46, 56], 0.3, 61);
+      for (const p of [2, 9] as const) {
+        for (let y = 0; y < TILE_PX; y++) {
+          px(ctx, ox, oy, p, y, shade([88, 92, 106], 1));
+          px(ctx, ox, oy, p + 1, y, shade([120, 126, 142], 1));
+          px(ctx, ox, oy, p + 2, y, shade([64, 68, 82], 1));
+        }
+      }
+      for (const cy of [4, 12] as const) {
+        for (let x = 1; x <= 12; x++) px(ctx, ox, oy, x, cy, shade([38, 40, 50], 1));
+      }
+      break;
+    }
+    case Tile.CeilVent: {
+      // circular extraction fan set into the ceiling
+      fillNoise(ctx, ox, oy, [46, 46, 56], 0.3, 61);
+      for (let y = 0; y < TILE_PX; y++) {
+        for (let x = 0; x < TILE_PX; x++) {
+          const dx = x - 7.5, dy = y - 7.5;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d < 6.5) {
+            const blade = Math.abs(dx) < 1.2 || Math.abs(dy) < 1.2;
+            px(ctx, ox, oy, x, y, blade ? shade([76, 80, 94], 1) : shade([20, 22, 30], 1));
+          } else if (d < 7.4) {
+            px(ctx, ox, oy, x, y, shade([96, 102, 118], 1));
+          }
+        }
+      }
+      px(ctx, ox, oy, 7, 7, shade([120, 126, 142], 1));
+      px(ctx, ox, oy, 8, 8, shade([120, 126, 142], 1));
+      break;
+    }
+    case Tile.Chain: {
+      // hanging-light stem: dark shaft with bright chain links
+      fillNoise(ctx, ox, oy, [30, 32, 42], 0.35, 220);
+      for (let y = 0; y < TILE_PX; y++) {
+        const link = Math.floor(y / 2) % 2 === 0;
+        px(ctx, ox, oy, 7, y, shade(link ? [150, 158, 176] : [92, 98, 114], 1));
+        px(ctx, ox, oy, 8, y, shade(link ? [104, 110, 128] : [64, 70, 84], 1));
       }
       break;
     }
