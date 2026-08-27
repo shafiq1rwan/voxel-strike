@@ -24,7 +24,7 @@ const POSE_HZ = 20;
 
 export class Netplay {
   readonly isHost: boolean;
-  readonly remote = new RemotePlayer();
+  readonly remote: RemotePlayer;
   connected = false;
   /** client: latest elevator target from the host */
   private elTarget: number | null = null;
@@ -33,12 +33,18 @@ export class Netplay {
   private transport: Transport;
   private helloResolve: ((seed: number) => void) | null = null;
   private helloSeed: number | null = null;
+  /** keepalive + dead-link watchdog (runs even when the game loop doesn't,
+   *  e.g. during intermissions) */
+  private lastRecv = performance.now();
+  private watchdog: number;
   /** pool that renders the HOST's projectiles on the client */
   private remoteProjectiles: ProjectilePool | null = null;
   private pendingClaims = new Map<number, number>();
 
   constructor(private game: Game, role: 'host' | 'join', room: string, local: boolean) {
     this.isHost = role === 'host';
+    // the avatar I render is my PARTNER: hosts see P2, clients see P1
+    this.remote = new RemotePlayer(this.isHost ? 'P2' : 'P1');
     this.transport = local
       ? new LocalTransport(room, this.isHost)
       : new PeerTransport(room, this.isHost);
@@ -52,6 +58,14 @@ export class Netplay {
       this.remoteProjectiles = new ProjectilePool();
       this.game.rendererSys.scene.add(this.remoteProjectiles.group);
     }
+    // a crashed tab or dropped network often never fires a clean close event —
+    // ping every second and declare the link dead after 6s of silence
+    this.watchdog = window.setInterval(() => {
+      this.send({ t: 'ping' });
+      if (this.connected && performance.now() - this.lastRecv > 6000) {
+        this.onDisconnect();
+      }
+    }, 1000);
   }
 
   get ready(): Promise<void> {
@@ -224,7 +238,10 @@ export class Netplay {
 
   private handle(m: NetMsg): void {
     const g = this.game;
+    this.lastRecv = performance.now();
     switch (m.t) {
+      case 'ping':
+        break;
       case 'hello':
         this.connected = true;
         this.helloSeed = m.seed as number;
@@ -349,19 +366,11 @@ export class Netplay {
   private onDisconnect(): void {
     if (!this.connected) return;
     this.connected = false;
-    const g = this.game;
-    g.hud.message('PARTNER DISCONNECTED');
-    if (this.isHost) {
-      // keep playing solo — we were the authority all along
-      g.detachNet();
-    } else {
-      window.setTimeout(() => {
-        location.href = location.pathname + `?seed=${g.baseSeedValue()}`;
-      }, 2500);
-    }
+    this.game.netConnectionLost(this.isHost);
   }
 
   dispose(): void {
+    window.clearInterval(this.watchdog);
     this.transport.onClose = null;
     this.transport.close();
     this.game.rendererSys.scene.remove(this.remote.mesh);

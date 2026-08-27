@@ -7,6 +7,31 @@ import type { Game } from '../game';
  * (pos / eyeY / dead / damage / half), so host-side AI can hunt both players.
  */
 
+/** crisp little name tag billboard (always faces the camera) */
+function makeTag(text: string, color: string): THREE.Sprite {
+  const c = document.createElement('canvas');
+  c.width = 96;
+  c.height = 40;
+  const ctx = c.getContext('2d')!;
+  ctx.font = 'bold 26px "Courier New", Courier, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 7;
+  ctx.strokeStyle = '#05060a';
+  ctx.strokeText(text, 48, 21);
+  ctx.fillStyle = color;
+  ctx.fillText(text, 48, 20);
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.NoColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const s = new THREE.Sprite(mat);
+  s.scale.set(0.78, 0.32, 1);
+  s.position.y = 1.18; // floats above the helmet
+  return s;
+}
+
 function part(parent: THREE.Object3D, w: number, h: number, d: number, color: number, fullBright = false): THREE.Mesh {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(w, h, d),
@@ -41,9 +66,11 @@ export class RemotePlayer {
   /** wired by Netplay: applying damage means telling the peer they got hit */
   onDamage: ((amount: number, sx: number, sz: number) => void) | null = null;
 
-  constructor() {
+  constructor(readonly label: string) {
     const body = new THREE.Group();
     this.mesh.add(body);
+    // P1 = the host (gold), P2 = the partner (teal)
+    this.mesh.add(makeTag(label, label === 'P1' ? '#ffd028' : '#55e0ff'));
     const mkLeg = (side: number): THREE.Group => {
       const g = new THREE.Group();
       g.position.set(0.13 * side, -0.28, 0);
@@ -160,6 +187,9 @@ export class RemotePlayer {
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
         (o.material as THREE.Material).dispose();
+      } else if (o instanceof THREE.Sprite) {
+        o.material.map?.dispose();
+        o.material.dispose();
       }
     });
   }

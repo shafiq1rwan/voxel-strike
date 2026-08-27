@@ -735,6 +735,15 @@ export class HUD {
     `, onRestart);
   }
 
+  /** co-op client: the host's connection is gone — the run is over */
+  showDisconnected(onLeave: () => void): void {
+    this.showScreen(`
+      <h1>LINK LOST</h1>
+      <p>The host's connection dropped. The facility can't run without them.</p>
+      <div class="prompt">RETURNING TO THE MENU...</div>
+    `, onLeave);
+  }
+
   showSettings(opts: {
     seed: number;
     settings: GameSettings;

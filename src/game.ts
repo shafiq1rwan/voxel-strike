@@ -134,6 +134,11 @@ export class Game {
     this.showTitleScreen();
     this.input.onLockChange = (locked) => this.onLockChange(locked);
     this.input.onFirstInteract = () => this.audio.init();
+    // pointer lock fails when the game starts long after the last click
+    // (a co-op host waiting for a partner) — any in-game click recaptures it
+    this.input.onUnlockedClick = () => {
+      if (this.state === 'playing' && !this.isTouch) this.input.requestLock();
+    };
 
     // debug hook for automated smoke tests
     (window as unknown as Record<string, unknown>).__voxelstrike = this;
@@ -198,6 +203,27 @@ export class Game {
   detachNet(): void {
     this.net?.dispose();
     this.net = null;
+  }
+
+  /** the co-op link died (clean close OR 6s of silence) */
+  netConnectionLost(iAmHost: boolean): void {
+    this.detachNet();
+    if (iAmHost) {
+      // the host owns the sim — carry on solo, just say so
+      this.hud.message('P2 DISCONNECTED — continuing solo.');
+      return;
+    }
+    // the client's world is dead without the host: say why, then kick to menu
+    this.audio.setHeartbeat(false);
+    this.hud.setLowHealth(false);
+    this.state = 'won'; // terminal: stops the sim, hides the automap
+    document.exitPointerLock();
+    this.hud.showDisconnected(() => {
+      location.href = location.pathname;
+    });
+    window.setTimeout(() => {
+      location.href = location.pathname;
+    }, 4000);
   }
 
   private teardownLevel(): void {
@@ -312,6 +338,7 @@ export class Game {
         this.net.sendHello(this.baseSeed);
         this.startGame();
       } else {
+        this.hud.coopStatus('Found the host — syncing the world...');
         const seed = await this.net.waitHello();
         this.baseSeed = seed >>> 0;
         this.levelIndex = 1;
@@ -319,8 +346,8 @@ export class Game {
         this.startGame();
       }
       this.hud.message(this.net.isHost
-        ? 'Partner connected — watch each other\'s backs.'
-        : 'Linked up with the host — watch each other\'s backs.');
+        ? 'Partner connected — you are P1. Watch each other\'s backs.'
+        : 'Linked up with the host — you are P2. Watch each other\'s backs.');
     } catch (err) {
       console.warn('[coop] connection failed', err);
       this.hud.coopStatus('Connection failed — check the room code and try again.');
@@ -380,6 +407,15 @@ export class Game {
         this.hud.message('Audio is blocked by the browser — click or press any key to enable it.');
       }
     }, 900);
+    // pointer lock can be refused when the start happened without a fresh
+    // click (co-op host / client waiting on the connection) — tell the player
+    if (!this.isTouch) {
+      window.setTimeout(() => {
+        if (this.state === 'playing' && !this.input.locked) {
+          this.hud.message('Click the screen to capture the mouse.');
+        }
+      }, 700);
+    }
   }
 
   private nextLevel(): void {

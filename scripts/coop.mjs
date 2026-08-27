@@ -94,6 +94,14 @@ try {
   const drift = Math.hypot(avatar[0].x - avatar[1].x, avatar[0].z - avatar[1].z);
   check(avatar[1].visible && drift < 1.5, `host avatar visible on client, drift ${drift.toFixed(2)}u`);
 
+  // player tags: the host's partner is P2, the client's partner is P1
+  const tags = await Promise.all([
+    host.evaluate(() => window.__voxelstrike.net.remote.label),
+    client.evaluate(() => window.__voxelstrike.net.remote.label),
+  ]);
+  check(tags[0] === 'P2' && tags[1] === 'P1',
+    `name tags assigned (host sees ${tags[0]}, client sees ${tags[1]})`);
+
   // look at the partner and grab a screenshot
   await client.bringToFront();
   await client.evaluate(() => {
@@ -260,6 +268,24 @@ try {
   check(respawn.state === 'playing' && !respawn.dead && respawn.hp === 100,
     `client respawned after death (hp ${respawn.hp})`);
 
+  // --- mouse recapture: a click while unlocked re-engages pointer lock -------
+  // (the co-op host starts long after their last click, so the automatic
+  // lock at startGame is refused by the browser)
+  await host.bringToFront();
+  await host.evaluate(() => {
+    document.exitPointerLock();
+    window.__voxelstrike.input.locked = false;
+  });
+  const ammoBefore = await host.evaluate(() => window.__voxelstrike.player.ammo.bullets);
+  await host.mouse.click(640, 360);
+  await sleep(400);
+  const recapture = await host.evaluate(() => ({
+    locked: document.pointerLockElement !== null,
+    ammo: window.__voxelstrike.player.ammo.bullets,
+  }));
+  check(recapture.locked, 'clicking mid-game recaptures the mouse');
+  check(recapture.ammo === ammoBefore, 'the recapture click did not fire the gun');
+
   // --- lobby UX: WASD is typeable in the code field, code shows beside HOST --
   const lobby = await browser.newPage();
   await lobby.goto(`${BASE}/?seed=1`, { waitUntil: 'networkidle0', timeout: 30000 });
@@ -294,6 +320,29 @@ try {
   );
   await lobby.screenshot({ path: 'scripts/shots/coop-lobby.png' });
   await lobby.close();
+
+  // --- host vanishes mid-run: the client must be told and kicked out ---------
+  // closing the page simulates a crash/network drop — no clean close event
+  // ever reaches the client, so this exercises the silence watchdog
+  await host.close();
+  let sawScreen = false;
+  for (let i = 0; i < 40 && !sawScreen; i++) {
+    await sleep(250);
+    sawScreen = await client.evaluate(() =>
+      !!document.querySelector('.screen') && document.body.textContent.includes('LINK LOST')
+    ).catch(() => false);
+  }
+  check(sawScreen, 'client shown a LINK LOST screen after the host vanished');
+  await client.screenshot({ path: 'scripts/shots/coop-linklost.png' });
+  let kicked = false;
+  for (let i = 0; i < 30 && !kicked; i++) {
+    await sleep(300);
+    kicked = await client.evaluate(() => {
+      const g = window.__voxelstrike;
+      return location.search === '' && !!g && g.state === 'title';
+    }).catch(() => false);
+  }
+  check(kicked, 'client kicked back to the title menu');
 } finally {
   await browser.close();
 }

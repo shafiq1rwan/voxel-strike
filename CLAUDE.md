@@ -184,6 +184,11 @@ node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into 
 - Pointer lock **does** engage in headless Chrome: while locked, real mouse
   clicks hit the canvas, not DOM buttons. Tests must `document.exitPointerLock()`
   (or use JS `.click()`) before clicking menu buttons mid-game.
+- Pointer lock needs a FRESH user gesture: a co-op host's game starts whenever
+  the partner joins (long after the HOST click), so the automatic lock is
+  refused. `Input.onUnlockedClick` → `requestLock()` recaptures on any
+  mid-game click (that click must not fire the gun — firing is gated on
+  `locked`), and startGame shows a "click to capture" hint if lock is absent.
 - Touch devices (`src/core/touch.ts`, detected via pointer:coarse) get a
   virtual joystick + look-drag + FIRE/JUMP/pause buttons feeding the same
   `Input` abstraction; pointer lock is skipped entirely and pause runs through

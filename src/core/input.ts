@@ -16,6 +16,8 @@ export class Input {
   onLockChange: ((locked: boolean) => void) | null = null;
   /** Tab / M — automap toggle */
   onToggleMap: (() => void) | null = null;
+  /** clicked while the pointer isn't locked (mid-game = recapture the mouse) */
+  onUnlockedClick: (() => void) | null = null;
   onFirstInteract: (() => void) | null = null;
   private interacted = false;
 
@@ -50,6 +52,10 @@ export class Input {
       if (this.locked) {
         this.buttons.add(e.button);
         if (e.button === 0) this.firePressed = true;
+      } else {
+        // mid-game without pointer lock (e.g. the co-op host whose game
+        // started long after the HOST click) — clicking recaptures the mouse
+        this.onUnlockedClick?.();
       }
     });
     document.addEventListener('mouseup', (e) => this.buttons.delete(e.button));
