@@ -123,17 +123,32 @@ export class RemotePlayer {
     this.onDamage?.(amount, source?.x ?? this.pos.x, source?.z ?? this.pos.z);
   }
 
-  /** feed the latest network state */
-  netUpdate(x: number, y: number, z: number, yaw: number, pitch: number, dead: boolean): void {
+  /** feed the latest network state; returns true when the partner just
+   *  MATERIALIZED (first appearance, respawn, new level) — cue the spawn FX */
+  netUpdate(x: number, y: number, z: number, yaw: number, pitch: number, dead: boolean): boolean {
     this.tx = x; this.ty = y; this.tz = z;
     this.tyaw = yaw; this.tpitch = pitch;
-    this.dead = dead;
+    let appeared = false;
     if (!this.hasTarget) {
       this.hasTarget = true;
       this.pos.set(x, y, z);
       this.yaw = yaw;
       this.mesh.visible = true;
+      appeared = true;
     }
+    if (this.dead && !dead) {
+      // respawned — snap to the new spot instead of lerping across the map
+      this.pos.set(x, y, z);
+      appeared = true;
+    }
+    this.dead = dead;
+    return appeared && !dead;
+  }
+
+  /** forget the last position (level change) so the next pose re-materializes */
+  resetSpawn(): void {
+    this.hasTarget = false;
+    this.mesh.visible = false;
   }
 
   update(dt: number, game: Game): void {

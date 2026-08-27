@@ -194,6 +194,33 @@ export class Particles {
     );
   }
 
+  /** co-op teleport materialize: rising energy column + ground ring burst */
+  teleport(x: number, y: number, z: number): void {
+    // column of motes spawned along the body height, accelerating upward
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rad = 0.15 + Math.random() * 0.35;
+      const bright = Math.random() < 0.35;
+      this.emit(
+        x + Math.cos(a) * rad, y - 0.8 + Math.random() * 1.8, z + Math.sin(a) * rad,
+        Math.cos(a) * 0.4, 1.2 + Math.random() * 1.8, Math.sin(a) * 0.4,
+        0.5 + Math.random() * 0.4, 0.05 + Math.random() * 0.05,
+        bright ? 0.9 : 0.3, bright ? 1 : 0.85, 1,
+        -1.5 // anti-gravity
+      );
+    }
+    // ring bursting outward along the floor
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      this.emit(
+        x + Math.cos(a) * 0.3, y - 0.8, z + Math.sin(a) * 0.3,
+        Math.cos(a) * 3.5, 0.4, Math.sin(a) * 3.5,
+        0.35 + Math.random() * 0.2, 0.06,
+        0.4, 0.9, 1, 6, true
+      );
+    }
+  }
+
   /** kill every particle immediately (level teardown) */
   clear(): void {
     this.dummy.position.set(0, -999, 0);

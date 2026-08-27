@@ -205,6 +205,13 @@ export class Game {
     this.net = null;
   }
 
+  /** co-op teleport-in: rising energy column + teal flash + shimmer */
+  spawnFX(x: number, y: number, z: number): void {
+    this.particles.teleport(x, y, z);
+    this.dynLights.flash(x, y + 0.6, z, 0.35, 0.9, 1, 2.2, 9, 0.5);
+    this.audio.play('teleport', { x, y, z });
+  }
+
   /** the co-op link died (clean close OR 6s of silence) */
   netConnectionLost(iAmHost: boolean): void {
     this.detachNet();
@@ -348,6 +355,8 @@ export class Game {
       this.hud.message(this.net.isHost
         ? 'Partner connected — you are P1. Watch each other\'s backs.'
         : 'Linked up with the host — you are P2. Watch each other\'s backs.');
+      // materialize with some ceremony
+      this.spawnFX(this.player.pos.x, this.player.pos.y, this.player.pos.z);
     } catch (err) {
       console.warn('[coop] connection failed', err);
       this.hud.coopStatus('Connection failed — check the room code and try again.');
@@ -1044,6 +1053,8 @@ export class Game {
           this.player.dead = false;
           this.player.spawnAt(this.level.spawn.x, this.level.spawn.y, this.level.spawn.z);
           this.state = 'playing';
+          this.spawnFX(this.player.pos.x, this.player.pos.y, this.player.pos.z);
+          this.punchFOV(2);
           this.hud.updateStats(this.player);
           this.hud.message('Back on your feet — your partner bought you time.');
         }

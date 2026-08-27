@@ -228,6 +228,9 @@ export class Netplay {
 
   /** re-flag puppets after a level rebuild */
   onLevelBuilt(): void {
+    // the partner re-materializes at the new sector's spawn — don't lerp
+    // their avatar across the map, and give them their teleport-in
+    this.remote.resetSpawn();
     if (this.isHost) return;
     for (const e of this.game.enemies.list) e.puppet = true;
     this.elTarget = null;
@@ -249,12 +252,16 @@ export class Netplay {
         break;
       case 'pose':
         this.connected = true;
-        this.remote.netUpdate(m.x as number, m.y as number, m.z as number, m.yaw as number, m.pitch as number, m.dead as boolean);
+        if (this.remote.netUpdate(m.x as number, m.y as number, m.z as number, m.yaw as number, m.pitch as number, m.dead as boolean)) {
+          g.spawnFX(this.remote.pos.x, this.remote.pos.y, this.remote.pos.z);
+        }
         break;
       case 'snap': {
         if (this.isHost) break;
         const p = m.p as number[];
-        this.remote.netUpdate(p[0], p[1], p[2], p[3], p[4], p[5] === 1);
+        if (this.remote.netUpdate(p[0], p[1], p[2], p[3], p[4], p[5] === 1)) {
+          g.spawnFX(this.remote.pos.x, this.remote.pos.y, this.remote.pos.z);
+        }
         for (const row of m.e as number[][]) {
           const e = g.enemies.list[row[0]];
           if (e) e.netSet(row[1], row[2], row[3], row[4], STATES[row[5]] ?? 'idle', row[6], g);

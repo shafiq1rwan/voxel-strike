@@ -321,6 +321,37 @@ try {
   await lobby.screenshot({ path: 'scripts/shots/coop-lobby.png' });
   await lobby.close();
 
+  // --- spawn FX: partner materialization emits the teleport effect ------------
+  const fx = await client.evaluate(async () => {
+    const g = window.__voxelstrike;
+    const r = g.net.remote;
+    // simulate the partner dying then reviving in the pose stream
+    r.netUpdate(r.pos.x, r.pos.y, r.pos.z, 0, 0, true);
+    const revived = r.netUpdate(r.pos.x, r.pos.y, r.pos.z, 0, 0, false);
+    // fire the effect somewhere visible and count live particles
+    const p = g.player;
+    const fxX = p.pos.x - Math.sin(p.yaw) * -4;
+    const fxZ = p.pos.z - Math.cos(p.yaw) * -4;
+    g.spawnFX(fxX, p.pos.y, fxZ);
+    await new Promise((res) => setTimeout(res, 100));
+    let alive = 0;
+    for (const q of g.particles.pool) if (q.alive) alive++;
+    return { revived, alive };
+  });
+  check(fx.revived === true, 'partner revive raises the materialize signal');
+  check(fx.alive >= 30, `teleport FX emits a particle column (${fx.alive} live)`);
+  // clean visual capture: dismiss any pause overlay, fire the FX in view
+  await client.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.state = 'playing';
+    g.hud.hideScreen();
+    const fxX = g.player.pos.x - Math.sin(g.player.yaw) * 4;
+    const fxZ = g.player.pos.z - Math.cos(g.player.yaw) * 4;
+    g.spawnFX(fxX, g.player.pos.y, fxZ);
+  });
+  await sleep(150);
+  await client.screenshot({ path: 'scripts/shots/coop-spawnfx.png' });
+
   // --- host vanishes mid-run: the client must be told and kicked out ---------
   // closing the page simulates a crash/network drop — no clean close event
   // ever reaches the client, so this exercises the silence watchdog

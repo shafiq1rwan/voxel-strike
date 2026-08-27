@@ -13,7 +13,7 @@ export type SoundName =
   | 'bruteRoar' | 'bruteStep' | 'bruteSlam'
   | 'playerPain' | 'playerDie'
   | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup' | 'secret'
-  | 'doorOpen' | 'doorClose' | 'doorLocked' | 'elevator'
+  | 'doorOpen' | 'doorClose' | 'doorLocked' | 'elevator' | 'teleport'
   | 'step' | 'clank'
   | 'win';
 
@@ -369,6 +369,12 @@ export class AudioMan {
       case 'doorLocked':
         this.tone(out, 'square', 0.35, 0.005, 0.12, 110);
         this.tone(out, 'square', 0.35, 0.005, 0.12, 104, undefined, 0.15);
+        break;
+      case 'teleport':
+        // shimmering rise-in
+        this.tone(out, 'sine', 0.35, 0.02, 0.4, 200, 950);
+        this.tone(out, 'triangle', 0.28, 0.03, 0.45, 400, 1900, 0.06);
+        this.noise(out, 0.18, 0.02, 0.35, 'highpass', 1800, 4200);
         break;
       case 'elevator':
         this.noise(out, 0.3, 0.1, 0.9, 'lowpass', 300);
