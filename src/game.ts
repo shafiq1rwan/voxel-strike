@@ -12,7 +12,6 @@ import { Block, isDestructible } from './world/blocks';
 import { Player } from './entities/player';
 import { Door, Elevator } from './entities/door';
 import { Enemy, EnemyManager } from './entities/enemies';
-import { SpriteLibrary } from './entities/sprites';
 import { PickupManager } from './entities/pickups';
 import { ProjectilePool } from './entities/projectiles';
 import { Particles } from './fx/particles';
@@ -53,7 +52,6 @@ export class Game {
   readonly tracers = new Tracers();
   readonly projectiles = new ProjectilePool();
   readonly enemies = new EnemyManager();
-  readonly sprites = new SpriteLibrary();
   readonly player = new Player();
   readonly weapons = new WeaponSystem();
   readonly settings: GameSettings = loadSettings();
@@ -127,7 +125,6 @@ export class Game {
       new TouchControls(this.hud.container, this.input, () => this.requestPause(), () => this.toggleMap());
     }
 
-    this.sprites.load();
     this.buildLevel();
     this.applySettings();
 
@@ -139,6 +136,17 @@ export class Game {
     this.input.onUnlockedClick = () => {
       if (this.state === 'playing' && !this.isTouch) this.input.requestLock();
     };
+
+    // WebGL context loss (iOS Safari under GPU memory pressure, or after the
+    // app is backgrounded): three.js preventDefaults it and re-uploads every
+    // resource on restore — we just pause so nobody dies behind a frozen frame
+    const canvas = this.rendererSys.renderer.domElement;
+    canvas.addEventListener('webglcontextlost', () => {
+      this.input.releaseLock();
+      this.requestPause();
+      this.hud.message('GRAPHICS RESET — RESTORING...');
+    });
+    canvas.addEventListener('webglcontextrestored', () => this.hud.message('GRAPHICS RESTORED'));
 
     // debug hook for automated smoke tests
     (window as unknown as Record<string, unknown>).__voxelstrike = this;
@@ -224,7 +232,7 @@ export class Game {
     this.audio.setHeartbeat(false);
     this.hud.setLowHealth(false);
     this.state = 'won'; // terminal: stops the sim, hides the automap
-    document.exitPointerLock();
+    this.input.releaseLock();
     this.hud.showDisconnected(() => {
       location.href = location.pathname;
     });
@@ -243,7 +251,9 @@ export class Game {
     for (const d of this.doors) {
       scene.remove(d.mesh);
       d.mesh.geometry.dispose();
-      (d.mesh.material as THREE.Material).dispose();
+      const dm = d.mesh.material as THREE.MeshBasicMaterial;
+      dm.map?.dispose(); // per-door canvas texture
+      dm.dispose();
     }
     this.doors = [];
     if (this.elevator) {
@@ -252,7 +262,10 @@ export class Game {
       (this.elevator.mesh.material as THREE.Material).dispose();
       this.elevator = null;
     }
-    if (this.pickups) scene.remove(this.pickups.group);
+    if (this.pickups) {
+      scene.remove(this.pickups.group);
+      this.pickups.dispose();
+    }
     scene.remove(this.enemies.group);
     this.enemies.reset();
     this.projectiles.reset();
@@ -370,7 +383,7 @@ export class Game {
     this.audio.setHeartbeat(false);
     this.lowHealth = false;
     this.hud.setLowHealth(false);
-    document.exitPointerLock();
+    this.input.releaseLock();
     if (final) {
       this.state = 'won';
       this.hud.showWin(stats, () => {
@@ -798,7 +811,7 @@ export class Game {
     this.audio.setHeartbeat(false);
     this.lowHealth = false;
     this.hud.setLowHealth(false);
-    document.exitPointerLock();
+    this.input.releaseLock();
 
     const levelStats =
       `Kills: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; ` +
@@ -1060,7 +1073,7 @@ export class Game {
         }
       } else if (this.deathTimer > 1.4 && this.deathTimer - dt <= 1.4) {
         // solo: death screen after a beat
-        document.exitPointerLock();
+        this.input.releaseLock();
         this.hud.showDeath(
           `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,
           () => {

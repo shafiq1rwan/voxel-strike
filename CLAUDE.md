@@ -2,12 +2,14 @@
 
 Original retro voxel FPS (TypeScript + Three.js + Vite). The core content —
 levels, textures, models, sounds — is generated procedurally at runtime and
-must keep working with zero assets present. On top of that base there are two
-*optional* asset layers (enemy sprite skins, music) loaded from manifests in
-`public/`; both degrade gracefully to the procedural versions when absent.
-Nothing is ever copied from other games; third-party assets need a license
-check before being committed (that's why `public/sprites/*` and
-`public/music/*` are git-ignored apart from manifests/docs/generated files).
+must keep working with zero assets present. On top of that base there is one
+*optional* asset layer (music) loaded from a manifest in `public/`; it degrades
+gracefully to silence when absent. Nothing is ever copied from other games;
+third-party assets need a license check before being committed (that's why
+`public/music/*` is git-ignored apart from the manifest and docs). Enemies are
+always the procedural voxel rigs — an optional billboard sprite-skin layer
+existed once and was removed (nothing shipped it; per-enemy sheet clones cost
+GPU memory on iOS).
 
 ## Commands
 
@@ -39,9 +41,7 @@ Tool scripts (not tests):
 
 ```bash
 node scripts/gen-icons.mjs                        # regenerate PWA icons
-node scripts/gen-demo-sprite.mjs                  # regenerate the demo enemy sprite sheet
 node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io project via the real browser flow
-node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into the game's 5-row sprite layout
 ```
 
 ## Architecture
@@ -109,14 +109,6 @@ node scripts/repack-sprites.mjs inspect|pack ...  # map a downloaded sheet into 
   maintains/restores it), plus a jolt tilt + scale pop on the mesh, a
   'fleshHit' thwack, micro-stagger, and knockback (brutes ×0.25) — routing it
   through the light tick alone makes hits feel like nothing.
-- `src/entities/sprites.ts` — optional Doom-style billboard skins for enemies.
-  `public/sprites/manifest.json` maps enemy kinds to sheets with a fixed row
-  order (idle/walk/attack/pain/death; death plays once, last frame = corpse,
-  and corpses fall to the floor). Enemies lazily swap their voxel rig for the
-  sprite when the skin loads and fall back to the rig when none exists. The
-  shipped troll/eye sheets come from a k-aa itch.io pack (commercial-ok, no
-  redistribution → git-ignored, so a fresh clone / the Pages deploy uses the
-  voxel rigs unless the files are re-added).
 - `src/fx/` — pooled particles (one InstancedMesh), tracers, dynamic light pool.
 - `src/weapons/weapons.ts` — defs, hold-to-fire with a 0.25s click buffer,
   hitscan + rockets, viewmodels, muzzle flash. Slot 5 is the ARC CASTER

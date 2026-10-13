@@ -332,6 +332,18 @@ export class PickupManager {
     for (const s of specs) this.add(s, world);
   }
 
+  /** level teardown: free GPU resources (the shared glow texture is kept) */
+  dispose(): void {
+    this.group.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      }
+    });
+    this.group.clear();
+    this.items.length = 0;
+  }
+
   add(spec: PickupSpec, world: VoxelWorld): void {
     const p = new Pickup(spec, world);
     this.items.push(p);

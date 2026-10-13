@@ -91,6 +91,12 @@ export class Input {
     }
   }
 
+  releaseLock(): void {
+    // iOS Safari has no Pointer Lock API at all — document.exitPointerLock is
+    // undefined there, and calling it threw mid-transition (death/intermission)
+    if (typeof document.exitPointerLock === 'function') document.exitPointerLock();
+  }
+
   down(code: string): boolean {
     return this.keys.has(code);
   }

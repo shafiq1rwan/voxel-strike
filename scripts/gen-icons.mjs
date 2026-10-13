@@ -6,7 +6,7 @@
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
 
-// -- minimal PNG encoder (same as gen-demo-sprite.mjs) -----------------------
+// -- minimal PNG encoder -----------------------------------------------------
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {

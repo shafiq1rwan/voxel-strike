@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { EnemySpec, RoomDef } from '../types';
 import { isDestructible } from '../world/blocks';
 import { moveBody, rayBox } from '../core/physics';
-import { SpriteDef, SpriteRowName, SPRITE_ROWS } from './sprites';
 import type { Game, PlayerTarget } from '../game';
 
 export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'charge' | 'pain' | 'dead';
@@ -97,14 +96,6 @@ export class Enemy {
   /** the player this enemy is currently hunting (local or co-op partner) */
   private tgt: PlayerTarget | null = null;
   private growlCd = 2 + Math.random() * 4;
-  // billboard sprite skin (optional, from SpriteLibrary)
-  private spriteMesh: THREE.Mesh | null = null;
-  private spriteTex: THREE.Texture | null = null;
-  private spriteDef: SpriteDef | null = null;
-  private spriteTime = 0;
-  private spriteRow = -1;
-  private spriteFrame = -1;
-  private corpseGrounded = false;
 
   constructor(spec: EnemySpec, room: RoomDef | null, groundY: number, startPatrolling: boolean) {
     this.kind = spec.kind;
@@ -128,11 +119,11 @@ export class Enemy {
     const mkLeg = (side: number): THREE.Group => {
       const g = new THREE.Group();
       g.position.set(0.18 * side, -0.24, 0);
-      const thigh = part(g, 0.17, 0.34, 0.19, 0x50241a);
+      const thigh = part(g, 0.19, 0.34, 0.21, 0x863b29);
       thigh.position.y = -0.15;
-      const shin = part(g, 0.13, 0.28, 0.15, 0x3c1a12);
+      const shin = part(g, 0.15, 0.28, 0.17, 0x552c26);
       shin.position.set(0, -0.42, -0.03);
-      const foot = part(g, 0.16, 0.08, 0.25, 0x2e2018);
+      const foot = part(g, 0.2, 0.1, 0.27, 0x292b34);
       foot.position.set(0, -0.57, -0.06);
       this.body.add(g);
       return g;
@@ -144,44 +135,41 @@ export class Enemy {
     this.torsoG = new THREE.Group();
     this.torsoG.position.y = -0.12;
     this.body.add(this.torsoG);
-    const torso = part(this.torsoG, 0.6, 0.6, 0.4, 0x8a3c22);
+    const torso = part(this.torsoG, 0.56, 0.5, 0.38, 0xc45a36);
     torso.position.y = 0.32;
     torso.rotation.x = 0.14;
-    const belly = part(this.torsoG, 0.5, 0.3, 0.36, 0x74301a);
+    const belly = part(this.torsoG, 0.4, 0.26, 0.32, 0x863b29);
     belly.position.y = 0.04;
-    // asymmetric bone spurs along the back
-    const spurA = part(this.torsoG, 0.1, 0.26, 0.1, 0x3a1c10);
-    spurA.position.set(-0.08, 0.64, 0.16);
-    spurA.rotation.x = 0.45;
-    const spurB = part(this.torsoG, 0.08, 0.2, 0.08, 0x3a1c10);
-    spurB.position.set(0.14, 0.54, 0.2);
-    spurB.rotation.x = 0.6;
-    spurB.rotation.z = -0.3;
+    // One broad collar keeps the silhouette readable at the retro resolution.
+    const collar = part(this.torsoG, 0.46, 0.12, 0.3, 0x863b29);
+    collar.position.set(0, 0.56, 0.02);
 
     // head: pivot at the neck, with a working jaw
     this.headG = new THREE.Group();
     this.headG.position.set(0, 0.62, -0.18);
     this.torsoG.add(this.headG);
-    const skull = part(this.headG, 0.38, 0.26, 0.36, 0x6e2c16);
+    const skull = part(this.headG, 0.4, 0.28, 0.36, 0xb84c2e);
     skull.position.y = 0.08;
-    const eye = part(this.headG, 0.3, 0.06, 0.05, 0xffcc33, true);
-    eye.position.set(0, 0.1, -0.19);
+    const mask = part(this.headG, 0.34, 0.2, 0.04, 0x292b34);
+    mask.position.set(0, 0.06, -0.19);
+    const eye = part(this.headG, 0.3, 0.07, 0.03, 0xffcc33, true);
+    eye.position.set(0, 0.1, -0.225);
     this.glowParts.push(eye);
-    this.jaw = part(this.headG, 0.3, 0.1, 0.3, 0x50241a);
+    this.jaw = part(this.headG, 0.3, 0.1, 0.3, 0x863b29);
     this.jaw.position.set(0, -0.06, -0.08);
-    const teeth = part(this.headG, 0.26, 0.05, 0.06, 0xd8cfa0, true);
+    const teeth = part(this.headG, 0.22, 0.04, 0.04, 0xe5d6ad);
     teeth.position.set(0, -0.01, -0.22);
 
     // arms: pivot groups at the shoulders, long enough to claw ahead of it
     const mkArm = (side: number): THREE.Group => {
       const g = new THREE.Group();
       g.position.set(0.36 * side, 0.5, -0.02);
-      const upper = part(g, 0.14, 0.38, 0.14, 0x74301a);
+      const upper = part(g, 0.18, 0.34, 0.18, 0xc45a36);
       upper.position.y = -0.17;
-      const fore = part(g, 0.12, 0.32, 0.12, 0x63281a);
+      const fore = part(g, 0.15, 0.3, 0.16, 0x863b29);
       fore.position.set(0, -0.44, -0.07);
       fore.rotation.x = -0.25;
-      const claw = part(g, 0.18, 0.12, 0.24, 0x2e2018);
+      const claw = part(g, 0.22, 0.16, 0.24, 0x292b34);
       claw.position.set(0, -0.6, -0.16);
       this.torsoG!.add(g);
       return g;
@@ -196,11 +184,11 @@ export class Enemy {
     const mkLeg = (side: number): THREE.Group => {
       const g = new THREE.Group();
       g.position.set(0.28 * side, -0.3, 0);
-      const thigh = part(g, 0.26, 0.46, 0.28, 0x4a2418);
+      const thigh = part(g, 0.28, 0.46, 0.3, 0x884331);
       thigh.position.y = -0.19;
-      const shin = part(g, 0.2, 0.38, 0.22, 0x381a10);
+      const shin = part(g, 0.24, 0.38, 0.26, 0x55352e);
       shin.position.set(0, -0.54, -0.03);
-      const foot = part(g, 0.26, 0.1, 0.36, 0x2a1c12);
+      const foot = part(g, 0.3, 0.12, 0.36, 0x292b34);
       foot.position.set(0, -0.72, -0.07);
       this.body.add(g);
       return g;
@@ -211,44 +199,47 @@ export class Enemy {
     this.torsoG = new THREE.Group();
     this.torsoG.position.y = -0.1;
     this.body.add(this.torsoG);
-    const torso = part(this.torsoG, 0.95, 0.82, 0.6, 0x7a3018);
+    const torso = part(this.torsoG, 0.95, 0.76, 0.6, 0xa84b32);
     torso.position.y = 0.44;
     torso.rotation.x = 0.16;
-    const belly = part(this.torsoG, 0.8, 0.42, 0.55, 0x64280f);
+    const belly = part(this.torsoG, 0.72, 0.38, 0.5, 0x70382c);
     belly.position.y = 0.02;
     // bone plating across the shoulders and back
-    const plateL = part(this.torsoG, 0.3, 0.16, 0.4, 0xc8bfa0);
-    plateL.position.set(-0.34, 0.78, 0.05);
-    const plateR = part(this.torsoG, 0.3, 0.16, 0.4, 0xc8bfa0);
-    plateR.position.set(0.34, 0.78, 0.05);
-    const spine = part(this.torsoG, 0.14, 0.4, 0.14, 0x3a1c10);
-    spine.position.set(0, 0.9, 0.2);
-    spine.rotation.x = 0.5;
+    const plateL = part(this.torsoG, 0.34, 0.24, 0.46, 0xe0c990);
+    plateL.position.set(-0.38, 0.74, 0);
+    plateL.rotation.z = -0.12;
+    const plateR = part(this.torsoG, 0.34, 0.24, 0.46, 0xe0c990);
+    plateR.position.set(0.38, 0.74, 0);
+    plateR.rotation.z = 0.12;
+    const chestPlate = part(this.torsoG, 0.44, 0.32, 0.08, 0xc1aa79);
+    chestPlate.position.set(0, 0.43, -0.32);
 
     this.headG = new THREE.Group();
     this.headG.position.set(0, 0.86, -0.26);
     this.torsoG.add(this.headG);
-    const skull = part(this.headG, 0.5, 0.34, 0.46, 0x60250f);
+    const skull = part(this.headG, 0.5, 0.34, 0.46, 0x884331);
     skull.position.y = 0.1;
+    const brow = part(this.headG, 0.54, 0.1, 0.14, 0xe0c990);
+    brow.position.set(0, 0.24, -0.2);
     const eye = part(this.headG, 0.4, 0.07, 0.06, 0xff8030, true);
     eye.position.set(0, 0.13, -0.25);
     this.glowParts.push(eye);
-    this.jaw = part(this.headG, 0.42, 0.14, 0.4, 0x4a2418);
+    this.jaw = part(this.headG, 0.42, 0.14, 0.4, 0x55352e);
     this.jaw.position.set(0, -0.09, -0.1);
-    const tuskL = part(this.headG, 0.07, 0.16, 0.07, 0xd8cfa0, true);
+    const tuskL = part(this.headG, 0.09, 0.2, 0.09, 0xe0c990);
     tuskL.position.set(-0.16, -0.02, -0.3);
-    const tuskR = part(this.headG, 0.07, 0.16, 0.07, 0xd8cfa0, true);
+    const tuskR = part(this.headG, 0.09, 0.2, 0.09, 0xe0c990);
     tuskR.position.set(0.16, -0.02, -0.3);
 
     const mkArm = (side: number): THREE.Group => {
       const g = new THREE.Group();
       g.position.set(0.56 * side, 0.62, -0.02);
-      const upper = part(g, 0.24, 0.5, 0.24, 0x64280f);
+      const upper = part(g, 0.28, 0.5, 0.28, 0xa84b32);
       upper.position.y = -0.22;
-      const fore = part(g, 0.2, 0.44, 0.2, 0x55220d);
+      const fore = part(g, 0.26, 0.4, 0.28, 0x884331);
       fore.position.set(0, -0.6, -0.08);
       fore.rotation.x = -0.25;
-      const slab = part(g, 0.3, 0.18, 0.36, 0x2a1c12);
+      const slab = part(g, 0.32, 0.22, 0.36, 0x292b34);
       slab.position.set(0, -0.86, -0.18);
       this.torsoG!.add(g);
       return g;
@@ -259,18 +250,20 @@ export class Enemy {
 
   private buildTicker(): void {
     // squat hazard-striped shell over a glowing amber core, six skittering legs
-    const shell = part(this.body, 0.44, 0.24, 0.5, 0x3a3626);
+    const shell = part(this.body, 0.44, 0.24, 0.5, 0xe2ad32);
     shell.position.y = 0.02;
-    const stripeA = part(this.body, 0.46, 0.06, 0.12, 0xffd028);
-    stripeA.position.set(0, 0.1, -0.12);
-    const stripeB = part(this.body, 0.46, 0.06, 0.12, 0xffd028);
-    stripeB.position.set(0, 0.1, 0.12);
-    const core = part(this.body, 0.2, 0.14, 0.2, 0xffb028, true);
-    core.position.set(0, -0.02, -0.18);
+    const stripeA = part(this.body, 0.46, 0.035, 0.1, 0x30323b);
+    stripeA.position.set(0, 0.155, -0.12);
+    const stripeB = part(this.body, 0.46, 0.035, 0.1, 0x30323b);
+    stripeB.position.set(0, 0.155, 0.12);
+    const bezel = part(this.body, 0.32, 0.19, 0.05, 0x30323b);
+    bezel.position.set(0, 0.01, -0.265);
+    const core = part(this.body, 0.22, 0.12, 0.03, 0xffb028, true);
+    core.position.set(0, 0.01, -0.3);
     this.glowParts.push(core);
     for (let i = 0; i < 6; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      const leg = part(this.body, 0.07, 0.22, 0.07, 0x2a2618);
+      const leg = part(this.body, 0.09, 0.22, 0.09, 0x30323b);
       leg.position.set(0.26 * side, -0.16, -0.16 + Math.floor(i / 2) * 0.16);
       leg.rotation.z = 0.5 * side;
       this.fins.push(leg); // reuse the fin slots as leg joints
@@ -278,18 +271,22 @@ export class Enemy {
   }
 
   private buildSentinel(): void {
-    const core = part(this.body, 0.55, 0.5, 0.55, 0x2c4452);
+    const core = part(this.body, 0.55, 0.42, 0.5, 0x497583);
     core.position.y = 0;
-    const panelF = part(this.body, 0.34, 0.2, 0.06, 0x55e0ff, true);
-    panelF.position.set(0, 0.02, -0.3);
+    const bezel = part(this.body, 0.4, 0.3, 0.06, 0x202d3b);
+    bezel.position.set(0, 0.02, -0.27);
+    const panelF = part(this.body, 0.28, 0.2, 0.04, 0x55e0ff, true);
+    panelF.position.set(0, 0.02, -0.32);
     this.glowParts.push(panelF);
-    const top = part(this.body, 0.3, 0.16, 0.3, 0x1e303c);
-    top.position.y = 0.32;
+    const pupil = part(this.body, 0.1, 0.12, 0.025, 0x202d3b);
+    pupil.position.set(0, 0.02, -0.355);
+    const top = part(this.body, 0.36, 0.12, 0.36, 0x202d3b);
+    top.position.y = 0.27;
     const emitter = part(this.body, 0.18, 0.16, 0.18, 0x88f0ff, true);
     emitter.position.y = -0.32;
     this.glowParts.push(emitter);
     for (let i = 0; i < 4; i++) {
-      const fin = part(this.body, 0.46, 0.1, 0.16, 0x24343e);
+      const fin = part(this.body, 0.34, 0.09, 0.18, 0x6b9ba6);
       const a = (i / 4) * Math.PI * 2;
       fin.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
       fin.rotation.y = -a;
@@ -397,72 +394,10 @@ export class Enemy {
       game.dynLights.flash(this.pos.x, this.pos.y, this.pos.z, 0.3, 0.85, 1, 1.4, 8, 0.28);
       game.audio.play('boltHit', this.pos);
     }
-    // sprite skins keep the corpse and play their death frames instead
-    if (!this.spriteMesh) this.mesh.visible = false;
+    this.mesh.visible = false;
     this.mesh.rotation.z = 0; // corpses don't hold the hit jolt
     this.mesh.scale.setScalar(1);
     game.onEnemyKilled(this);
-  }
-
-  /** swap the voxel rig for a billboard sprite once its skin is loaded */
-  private maybeAdoptSprite(game: Game): void {
-    if (this.spriteMesh) return;
-    const def = game.sprites.get(this.kind);
-    if (!def) return;
-    this.spriteDef = def;
-    this.spriteTex = def.texture.clone();
-    this.spriteTex.needsUpdate = true;
-    this.spriteTex.repeat.set(def.frameW / def.sheetW, def.frameH / def.sheetH);
-    const h = def.worldH;
-    const w = h * (def.frameW / def.frameH);
-    const mat = new THREE.MeshBasicMaterial({
-      map: this.spriteTex,
-      transparent: true,
-      alphaTest: 0.5,
-      fog: true,
-    });
-    this.spriteMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-    this.spriteMesh.userData.baseColor = new THREE.Color(0xffffff);
-    // feet of the sprite sit at the bottom of the collision box
-    this.spriteMesh.position.y = h / 2 - this.half.y;
-    this.mesh.add(this.spriteMesh);
-    this.body.visible = false;
-  }
-
-  /** frame selection + yaw-only billboard for the sprite skin */
-  private spriteAnimate(dt: number, game: Game): void {
-    const def = this.spriteDef!;
-    const speed = Math.hypot(this.vel.x, this.vel.z);
-    let row: SpriteRowName;
-    if (this.state === 'dead') row = 'death';
-    else if (this.state === 'attack') row = 'attack';
-    else if (this.state === 'pain') row = 'pain';
-    else row = speed > 0.6 ? 'walk' : 'idle';
-    const rowIndex = SPRITE_ROWS.indexOf(row);
-    if (rowIndex !== this.spriteRow) {
-      this.spriteRow = rowIndex;
-      this.spriteTime = 0;
-      this.spriteFrame = -1;
-    }
-    this.spriteTime += dt * (row === 'walk' ? 0.5 + speed / this.tuning.speed : 1);
-    const count = def.counts[row];
-    let frame = Math.floor(this.spriteTime * def.fps);
-    frame = row === 'death' ? Math.min(frame, count - 1) : frame % count;
-    if (frame !== this.spriteFrame) {
-      this.spriteFrame = frame;
-      this.spriteTex!.offset.set(
-        (frame * def.frameW) / def.sheetW,
-        1 - ((rowIndex + 1) * def.frameH) / def.sheetH
-      );
-      // footfalls on the stepping frames
-      if (this.kind === 'husk' && row === 'walk' && frame % 2 === 0 && speed > 1.6) {
-        game.audio.play('huskStep', this.pos);
-      }
-    }
-    // yaw-only billboard, counteracting the AI facing rotation on this.mesh
-    const dx = game.camera.position.x - this.pos.x;
-    const dz = game.camera.position.z - this.pos.z;
-    this.spriteMesh!.rotation.y = Math.atan2(dx, dz) - this.mesh.rotation.y;
   }
 
   update(dt: number, game: Game): void {
@@ -479,14 +414,8 @@ export class Enemy {
     const pl = this.pickTarget(game);
     this.tgt = pl;
 
-    if (this.alive) this.maybeAdoptSprite(game);
-
-    // dead: voxel rigs burst into gibs in die(); sprite skins play their
-    // death animation and remain as a corpse
-    if (this.state === 'dead') {
-      this.deadUpdate(dt, game);
-      return;
-    }
+    // dead: the voxel rig already burst into gibs in die()
+    if (this.state === 'dead') return;
 
     const toPlayer = new THREE.Vector3().subVectors(pl.pos, this.pos);
     const distSq = toPlayer.x * toPlayer.x + toPlayer.z * toPlayer.z;
@@ -599,31 +528,11 @@ export class Enemy {
     return best;
   }
 
-  /** shared corpse handling for sprite skins (voxel rigs vanish into gibs) */
-  private deadUpdate(dt: number, game: Game): void {
-    if (!this.spriteMesh) return;
-    // the corpse drops to the floor (hovering enemies die mid-air)
-    if (!this.corpseGrounded) {
-      this.vel.x *= 0.9;
-      this.vel.z *= 0.9;
-      this.vel.y -= 20 * dt;
-      const res = moveBody(game.world, this.pos, this.half, this.vel, dt, game.solidBoxes());
-      this.mesh.position.copy(this.pos);
-      if (res.onGround) this.corpseGrounded = true;
-    }
-    this.spriteAnimate(dt, game);
-    this.updateLighting(game, dt);
-  }
-
   /** co-op client: interpolate toward the host's snapshot; no AI, no physics */
   private puppetUpdate(dt: number, game: Game): void {
     this.stateTime += dt;
     this.flashTime = Math.max(0, this.flashTime - dt);
-    if (this.alive) this.maybeAdoptSprite(game);
-    if (this.state === 'dead') {
-      this.deadUpdate(dt, game);
-      return;
-    }
+    if (this.state === 'dead') return;
     if (!this.netInit) return;
     const k = 1 - Math.exp(-10 * dt);
     const prevX = this.pos.x;
@@ -967,10 +876,6 @@ export class Enemy {
   }
 
   private animate(dt: number, game: Game): void {
-    if (this.spriteMesh) {
-      this.spriteAnimate(dt, game);
-      return;
-    }
     const speed = Math.hypot(this.vel.x, this.vel.z);
     this.animPhase += dt * 2;
     if (this.kind === 'husk' || this.kind === 'brute') {
@@ -1117,9 +1022,7 @@ export class EnemyManager {
       e.mesh.traverse((o) => {
         if (o instanceof THREE.Mesh) {
           o.geometry.dispose();
-          const m = o.material as THREE.MeshBasicMaterial;
-          m.map?.dispose(); // per-enemy sprite texture clones
-          m.dispose();
+          (o.material as THREE.Material).dispose();
         }
       });
     }
