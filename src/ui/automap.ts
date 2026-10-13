@@ -33,6 +33,24 @@ const CSS = `
   font: 11px 'Courier New', Courier, monospace; letter-spacing: .2em;
   color: #566076; text-shadow: 1px 1px 0 #000;
 }
+#automap-hint .touch, #automap-close { display: none; }
+/* touch: the whole overlay is the close target (it sits above the touch
+   controls, which would otherwise swallow the tap as a look-drag), plus an
+   explicit close button; the map shrinks so both fit a short landscape phone */
+body.touch-mode #automap-wrap {
+  pointer-events: auto; touch-action: none; gap: 6px; background: rgba(5,6,10,.72);
+}
+/* the top status bar lives where the title would go; the objective tracker
+   already names the sector */
+body.touch-mode #automap-title { display: none; }
+body.touch-mode #hud #automap-wrap #automap-canvas { width: min(60vmin, 420px); }
+body.touch-mode #automap-hint .desktop { display: none; }
+body.touch-mode #automap-hint .touch { display: inline; }
+body.touch-mode #automap-close {
+  display: block; padding: 8px 22px; border: 2px solid #ffd028; border-radius: 8px;
+  background: rgba(10,13,20,.85); color: #ffd028;
+  font: bold 13px 'Courier New', Courier, monospace; letter-spacing: .2em;
+}
 `;
 
 const LOCK_COLORS: Record<string, string> = { red: '#ff3428', blue: '#3878ff', yellow: '#ffd028' };
@@ -59,9 +77,16 @@ export class Automap {
     this.wrap.innerHTML = `
       <div id="automap-title"></div>
       <canvas id="automap-canvas"></canvas>
-      <div id="automap-hint">TAB / M CLOSES THE MAP</div>
+      <button id="automap-close">&#10005; CLOSE MAP</button>
+      <div id="automap-hint"><span class="desktop">TAB / M CLOSES THE MAP</span><span class="touch">TAP ANYWHERE TO CLOSE</span></div>
     `;
     parent.appendChild(this.wrap);
+    // touch: any tap on the overlay (map, button, or the dimmed game) closes it.
+    // Only reachable in touch mode — on desktop the overlay ignores the pointer.
+    this.wrap.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // no synthetic click / look-drag from the closing tap
+      this.setVisible(false);
+    }, { passive: false });
     this.canvas = this.wrap.querySelector('#automap-canvas') as HTMLCanvasElement;
     this.ctx = this.canvas.getContext('2d')!;
     this.title = this.wrap.querySelector('#automap-title') as HTMLElement;

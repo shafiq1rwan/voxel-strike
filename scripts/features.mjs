@@ -509,6 +509,49 @@ try {
     doorProbe.worst.maxY < 2.6 && !doorProbe.worst.solid,
     `door: ${doorProbe.probes} half-open-door pushes never lift/embed the player (worst y=${doorProbe.worst.maxY.toFixed(2)} at door ${doorProbe.worst.door}, openT ${doorProbe.worst.openT})`
   );
+
+  // --- 12. touch: the map closes with a tap anywhere (and the tap doesn't look)
+  // Regression: the overlay let taps fall through to the look zone and the
+  // only close target was the small MAP button dimmed underneath it.
+  {
+    const mob = await browser.newPage();
+    mob.on('pageerror', (err) => errors.push(`[mobile pageerror] ${err.message}`));
+    await mob.setViewport({ width: 850, height: 400, hasTouch: true, isMobile: true });
+    await mob.evaluateOnNewDocument(() => localStorage.setItem('voxelstrike-tutorial-done', '1'));
+    await mob.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await mob.waitForSelector('#title-screen');
+    await mob.tap('#start-btn');
+    await new Promise((r) => setTimeout(r, 600));
+    const isOpen = () => mob.evaluate(() => window.__voxelstrike.automap.visible);
+    const yaw = () => mob.evaluate(() => window.__voxelstrike.player.yaw);
+
+    await mob.tap('#tmap');
+    await new Promise((r) => setTimeout(r, 200));
+    const touchUi = await mob.evaluate(() => ({
+      close: getComputedStyle(document.querySelector('#automap-close')).display !== 'none',
+      hint: document.querySelector('#automap-hint .touch').offsetParent !== null,
+    }));
+    check((await isOpen()) && touchUi.close && touchUi.hint, 'touch map: MAP opens it, with a CLOSE button + "tap anywhere" hint');
+    await mob.screenshot({ path: 'scripts/shots/features-touch-map.png' });
+    const yaw0 = await yaw();
+    await mob.touchscreen.tap(780, 330); // over the look zone, off the map canvas
+    await new Promise((r) => setTimeout(r, 200));
+    check(!(await isOpen()), 'touch map: a tap anywhere on the overlay closes it');
+    check(Math.abs((await yaw()) - yaw0) < 1e-6, 'touch map: the closing tap does not turn the camera');
+
+    await mob.tap('#tmap');
+    await new Promise((r) => setTimeout(r, 150));
+    await mob.tap('#automap-close');
+    await new Promise((r) => setTimeout(r, 150));
+    check(!(await isOpen()), 'touch map: the CLOSE MAP button closes it');
+
+    await mob.tap('#tmap');
+    await new Promise((r) => setTimeout(r, 150));
+    await mob.evaluate(() => window.__voxelstrike.requestPause());
+    await new Promise((r) => setTimeout(r, 150));
+    check(!(await isOpen()), 'map closes itself when the game pauses');
+    await mob.close();
+  }
 } finally {
   await browser.close();
 }

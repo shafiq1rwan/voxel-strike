@@ -1291,6 +1291,9 @@ export class Game {
     this.time += dt;
     this.frameCounter++;
     poki.setPlaying(this.state === 'playing');
+    // the map is an in-play overlay: never leave it open behind a menu,
+    // death screen or intermission (on touch it would also eat their taps)
+    if (this.automap.visible && this.state !== 'playing') this.automap.setVisible(false);
     if (this.state === 'playing') this.updateTips(dt);
 
     // fps meter

@@ -200,7 +200,12 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   LOS-checked per cell (rooms behind walls stay dark), doors draw in their
   lock color, exit pads green, the un-taken red key blinks. Its canvas rule
   must out-rank index.html's `#app canvas { width:100% }` — that's why the
-  CSS selector is `#hud #automap-wrap #automap-canvas`.
+  CSS selector is `#hud #automap-wrap #automap-canvas`. On touch the overlay
+  sits ABOVE the touch controls, so it takes `pointer-events` itself: any tap
+  closes it (touchstart is preventDefault-ed so the tap never becomes a
+  look-drag), plus a CLOSE MAP button. On desktop it stays pointer-transparent
+  (clicks fire the gun; Tab/M close it). `Game.frame()` force-closes it
+  whenever state isn't 'playing'. `features.mjs` #12 covers the touch flow.
 
 ## Conventions & gotchas
 
