@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:poki": "vite --mode poki",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "build:poki": "tsc --noEmit && vite build --mode poki",
+    "preview": "vite preview",
+    "preview:poki": "vite preview --mode poki"
   },
   "devDependencies": {
     "@types/three": "^0.170.0",

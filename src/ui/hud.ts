@@ -623,7 +623,9 @@ export class HUD {
 
     el.querySelector('#start-btn')!.addEventListener('click', () => opts.onStart());
     el.querySelector('#title-settings-btn')!.addEventListener('click', () => opts.onSettings());
-    el.querySelector('#coop-btn')!.addEventListener('click', () => opts.onCoop?.());
+    const coopBtn = el.querySelector('#coop-btn') as HTMLButtonElement;
+    if (opts.onCoop) coopBtn.addEventListener('click', () => opts.onCoop?.());
+    else coopBtn.remove(); // no co-op on this platform (Poki build)
     const howto = el.querySelector('#howto-panel') as HTMLElement;
     const brief = el.querySelector('#title-brief') as HTMLElement;
     el.querySelector('#howto-btn')!.addEventListener('click', () => {

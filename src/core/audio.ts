@@ -38,7 +38,7 @@ export class AudioMan {
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new AC();
     this.master = this.ctx.createGain();
-    this.master.gain.value = this.volume;
+    this.master.gain.value = this.muted ? 0 : this.volume;
     this.master.connect(this.ctx.destination);
     // self-heal: if the browser's autoplay policy leaves (or later puts) the
     // context suspended, the next gesture of any kind resumes it
@@ -70,9 +70,17 @@ export class AudioMan {
 
   private volume = 0.7;
 
+  private muted = false;
+
   setVolume(v: number): void {
     this.volume = v;
-    if (this.master) this.master.gain.value = v;
+    if (this.master) this.master.gain.value = this.muted ? 0 : v;
+  }
+
+  /** silence everything (music rides the master bus too) — used for ad breaks */
+  setMuted(on: boolean): void {
+    this.muted = on;
+    if (this.master) this.master.gain.value = on ? 0 : this.volume;
   }
 
   private hbTimer: number | null = null;

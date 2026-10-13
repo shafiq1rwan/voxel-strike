@@ -27,6 +27,7 @@ Other commands:
 ```bash
 npm run build      # type-check (tsc --noEmit) + production bundle in dist/
 npm run preview    # serve the production build at http://localhost:4173
+npm run build:poki # Poki web-portal build in dist-poki/ — see POKI.md
 ```
 
 Every page load generates a new level. Append `?seed=12345` to the URL to
@@ -240,6 +241,7 @@ node scripts/movement.mjs   # regression: W/A/S/D displacement must match the ca
 node scripts/firing.mjs     # regression: spam-clicking and holding the trigger both fire at the weapon's full rate; early clicks are buffered
 node scripts/aimassist.mjs  # regression: touch profiles get bullet magnetism + sticky aim; the identical shot misses on desktop
 node scripts/features.mjs   # regression: ticker suicide + corpse chain, key-pickup ambush, quad/shield/haste powerups, score + combo streaks
+node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ad breaks, measure() funnel, hidden co-op
 ```
 
 Each accepts an optional URL argument, e.g.

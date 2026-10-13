@@ -23,6 +23,7 @@ import { Automap } from './ui/automap';
 import { Netplay } from './net/netplay';
 import { GameSettings, loadSettings, saveSettings } from './core/settings';
 import { EnemySpec, KeyColor, PickupKind } from './types';
+import { POKI, poki } from './platform/poki';
 
 type GameState = 'title' | 'playing' | 'paused' | 'dead' | 'intermission' | 'won';
 
@@ -38,6 +39,16 @@ export interface PlayerTarget {
   dead: boolean;
   eyeY(): number;
   damage(amount: number, game: Game, source?: { x: number; z: number }): void;
+}
+
+/**
+ * Back to a fresh title screen. Normal builds drop the URL params (seed,
+ * co-op room) so the next run gets a new layout; Poki's iframe URL carries
+ * the platform's own params, so there it's a plain reload.
+ */
+function reloadToTitle(): void {
+  if (POKI) location.reload();
+  else location.href = location.pathname;
 }
 
 export class Game {
@@ -156,7 +167,7 @@ export class Game {
     const q = new URLSearchParams(location.search);
     const role = q.get('role');
     const room = q.get('room');
-    if ((role === 'host' || role === 'join') && room) {
+    if (!POKI && (role === 'host' || role === 'join') && room) {
       void this.startCoop(role, room, q.get('mp') === 'local');
     }
 
@@ -234,10 +245,10 @@ export class Game {
     this.state = 'won'; // terminal: stops the sim, hides the automap
     this.input.releaseLock();
     this.hud.showDisconnected(() => {
-      location.href = location.pathname;
+      reloadToTitle();
     });
     window.setTimeout(() => {
-      location.href = location.pathname;
+      reloadToTitle();
     }, 4000);
   }
 
@@ -387,7 +398,7 @@ export class Game {
     if (final) {
       this.state = 'won';
       this.hud.showWin(stats, () => {
-        location.href = location.pathname;
+        reloadToTitle();
       });
     } else {
       this.state = 'intermission';
@@ -406,6 +417,28 @@ export class Game {
     this.hud.message(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — it gets worse down here.`);
   }
 
+  private adPending = false;
+
+  /**
+   * Poki: offer a video ad at a natural break (run start, between sectors),
+   * then continue. Audio is initialised right now, inside the click gesture,
+   * because the ad resolves later. Plain builds continue immediately.
+   */
+  private afterAdBreak(then: () => void): void {
+    if (!POKI) {
+      then();
+      return;
+    }
+    if (this.adPending) return; // extra clicks on the screen while the ad runs
+    this.adPending = true;
+    this.audio.init();
+    void poki.commercialBreak(() => this.audio.setMuted(true)).then(() => {
+      this.audio.setMuted(false);
+      this.adPending = false;
+      then();
+    });
+  }
+
   private startGame(): void {
     this.audio.init();
     this.hud.hideScreen();
@@ -414,15 +447,20 @@ export class Game {
     this.levelStartTime = this.time;
     if (this.isTouch) {
       // go immersive: fullscreen + landscape lock where the platform allows it
-      void document.documentElement.requestFullscreen?.().catch(() => {});
-      const orientation = screen.orientation as ScreenOrientation & {
-        lock?: (o: string) => Promise<void>;
-      };
-      orientation.lock?.('landscape').catch(() => {});
+      // (not on Poki — its page owns fullscreen around the game iframe)
+      if (!POKI) {
+        void document.documentElement.requestFullscreen?.().catch(() => {});
+        const orientation = screen.orientation as ScreenOrientation & {
+          lock?: (o: string) => Promise<void>;
+        };
+        orientation.lock?.('landscape').catch(() => {});
+      }
     } else {
       this.input.requestLock();
     }
     this.hud.message(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard. Reach the exit.`);
+    poki.measure('campaign', 'main', 'start');
+    poki.measure('level', this.levelIndex, 'start');
     // if the browser blocked audio despite the gesture, tell the player how to fix it
     window.setTimeout(() => {
       if (!this.audio.isRunning()) {
@@ -444,6 +482,7 @@ export class Game {
     this.levelIndex++;
     this.buildLevel();
     this.net?.sendNextLevel();
+    poki.measure('level', this.levelIndex, 'start');
     this.hud.hideScreen();
     this.state = 'playing';
     this.levelStartTime = this.time;
@@ -466,8 +505,8 @@ export class Game {
     this.hud.showTitle({
       seed: this.baseSeed,
       best: this.bestScoreForSeed(),
-      onStart: () => this.startGame(),
-      onCoop: () => this.openCoop(),
+      onStart: () => this.afterAdBreak(() => this.startGame()),
+      onCoop: POKI ? undefined : () => this.openCoop(),
       onSettings: () => this.openSettings('title'),
     });
   }
@@ -511,7 +550,7 @@ export class Game {
       },
       () => this.resumeGame(),
       () => {
-        location.href = location.pathname;
+        reloadToTitle();
       },
       () => this.openSettings('pause')
     );
@@ -527,7 +566,7 @@ export class Game {
         this.applySettings();
       },
       onNewLayout: () => {
-        location.href = location.pathname;
+        reloadToTitle();
       },
       onBack: () => {
         if (from === 'title') this.showTitleScreen();
@@ -731,6 +770,7 @@ export class Game {
 
   /** grabbing the red keycard springs a security response around the player */
   onKeyPickup(): void {
+    poki.measure('keycard', this.levelIndex, 'picked');
     if (this.isNetClient) return; // the host owns the ambush
     const keyRoom = this.level.rooms.find((r) => r.kind === 'key');
     if (!keyRoom) return;
@@ -773,6 +813,10 @@ export class Game {
   }
 
   onPlayerDeath(): void {
+    if (!this.net) {
+      poki.measure('level', this.levelIndex, 'fail');
+      poki.measure('campaign', 'main', 'fail');
+    }
     this.state = 'dead';
     this.deathTimer = 0;
   }
@@ -808,6 +852,8 @@ export class Game {
     this.score += 1000 + Math.max(0, 900 - Math.floor(levelTime) * 3);
     this.hud.updateScore(this.score, 1);
     this.audio.play('win');
+    poki.measure('level', this.levelIndex, 'complete');
+    if (this.levelIndex >= TOTAL_SECTORS) poki.measure('campaign', 'main', 'complete');
     this.audio.setHeartbeat(false);
     this.lowHealth = false;
     this.hud.setLowHealth(false);
@@ -822,7 +868,7 @@ export class Game {
     if (this.levelIndex < TOTAL_SECTORS) {
       this.state = 'intermission';
       this.net?.sendWin(false, `SECTOR ${this.levelIndex} CLEARED`, levelStats);
-      this.hud.showIntermission(this.levelIndex, levelStats, () => this.nextLevel());
+      this.hud.showIntermission(this.levelIndex, levelStats, () => this.afterAdBreak(() => this.nextLevel()));
     } else {
       this.state = 'won';
       // per-layout best score: same seed = same dungeon, so scores compare fairly
@@ -843,7 +889,7 @@ export class Game {
         `Total time: ${this.formatTime(this.totalPlayTime)}<br><br>${scoreLine}`;
       this.net?.sendWin(true, 'CAMPAIGN COMPLETE', totals);
       this.hud.showWin(totals, () => {
-        location.href = location.pathname;
+        reloadToTitle();
       });
     }
   }
@@ -852,6 +898,7 @@ export class Game {
     const dt = Math.min(0.05, this.clock.getDelta());
     this.time += dt;
     this.frameCounter++;
+    poki.setPlaying(this.state === 'playing');
 
     // fps meter
     this.fpsAccum += dt;
@@ -1032,6 +1079,7 @@ export class Game {
       if (p.x > s.x && p.x < s.x + s.w && p.z > s.z && p.z < s.z + s.d) {
         this.secretAnnounced = true;
         this.secretsFound = 1;
+        poki.measure('secret', this.levelIndex, 'found');
         this.audio.play('secret');
         this.hud.message('You found a secret area! +500');
         this.score += 500;
@@ -1077,7 +1125,7 @@ export class Game {
         this.hud.showDeath(
           `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,
           () => {
-            location.href = location.pathname;
+            reloadToTitle();
           }
         );
       }

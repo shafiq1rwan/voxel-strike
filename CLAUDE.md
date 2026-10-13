@@ -17,6 +17,7 @@ GPU memory on iOS).
 npm run dev        # dev server on http://localhost:5173
 npm run build      # tsc --noEmit + vite build → dist/  (run this before calling work done)
 npm run preview    # serve the production build on :4173
+npm run build:poki # Poki build → dist-poki/ (also dev:poki / preview:poki) — see POKI.md
 ```
 
 Headless test suites (need a dev or preview server running; they drive Edge at
@@ -32,6 +33,7 @@ node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° sta
 node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
+node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() funnel, hidden co-op, boots with SDK blocked
 ```
 
 `?seed=N` on the URL reproduces a layout deterministically. `window.__voxelstrike`
@@ -144,6 +146,17 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
 - `src/core/settings.ts` — persisted options (sensitivity, master + music
   volume, FOV, resolution, shake, aim assist); `Game.applySettings()` pushes
   them into systems.
+- `src/platform/poki.ts` — Poki web-portal layer (details in POKI.md). Every
+  call is gated on the compile-time `POKI` constant (`--mode poki`), so the
+  regular build tree-shakes it out, and every call survives a missing SDK
+  (ad blockers). Gameplay start/stop is NOT called at each transition: `Game.frame()` calls
+  `poki.setPlaying(state === 'playing')` every frame and the wrapper only
+  forwards changes — keep it that way rather than sprinkling start/stop.
+  New ad points go through `Game.afterAdBreak()` (mutes audio, eats double
+  clicks); new analytics go through `poki.measure()` (no `/` or `^` in any
+  value — Poki reserves them) plus a row in POKI.md and an assert in
+  `poki.mjs`. Poki builds hide co-op, skip the SW/manifest/fullscreen, and
+  restart via `location.reload()` (the iframe URL carries Poki's params).
 - `src/ui/hud.ts` — DOM HUD + all screens; the voxel wordmark renderer
   (`startVoxelLogo`) draws 5×7 glyphs as extruded blocks (add glyphs to
   `GLYPHS` before using new letters in a wordmark).
@@ -196,4 +209,10 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   production builds only (`import.meta.env.PROD` in main.ts), so dev/HMR and
   the test suites never hit it.
 - `vite.config.ts` uses `base: './'` so builds work on GitHub Pages project
-  sites — don't remove it.
+  sites and Poki's CDN — don't remove it. In `--mode poki` its `pokiPlugin`
+  injects the SDK `<script>` (Poki requires it in `<head>`; no SRI — the v2
+  URL is updated in place by Poki) and deletes `sw.js`, the web manifest and
+  `public/marketing/` from `dist-poki/`.
+- Restarts (death, win, quit, new layout) go through `reloadToTitle()` in
+  game.ts, not a raw `location.href = …`, so the Poki build keeps its iframe
+  params.
