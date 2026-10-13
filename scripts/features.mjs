@@ -453,6 +453,62 @@ try {
   });
   check(ride.topY >= 3.9, `walk-on: elevator rose (topY=${ride.topY.toFixed(2)})`);
   check(ride.playerY > 4.3, `walk-on: rider carried to the top (y=${ride.playerY.toFixed(2)})`);
+
+  // --- 11. walking into a half-open door never launches the player ------------
+  // Regression: with the door's bottom edge just below head height, Y was the
+  // least-penetrated axis and the old resolver picked the push side from the
+  // (gravity, negative) Y velocity — teleporting the player onto the door's top,
+  // inside the wall above the doorway, then up out of the map as it rose.
+  // It needs SPEED: the frame's horizontal step into the door must exceed the
+  // tiny vertical overlap, so each probe takes a run-up from 1.6u back.
+  // Freeze each door at bottom-edge heights sweeping just under head height.
+  const doorProbe = await page.evaluate(async () => {
+    const g = window.__voxelstrike;
+    g.input.locked = true;
+    g.state = 'playing';
+    g.hud.hideScreen();
+    let worst = { maxY: 0, door: -1, openT: 0, solid: false };
+    let probes = 0;
+    for (let i = 0; i < g.doors.length; i++) {
+      const door = g.doors[i];
+      const origUpdate = door.update;
+      door.update = () => {}; // hold the door still at the probed height
+      door.locked = null;
+      for (const side of [-1, 1]) {
+        for (let k = 0; k <= 10; k++) {
+          // bottom edge sweeps 2.68 → 2.79, straddling head height (2.77)
+          const openT = 0.6 + k * 0.004;
+          door.openT = openT;
+          door.mesh.position.y = 2.5 + openT * 2.8;
+          const alongX = door.spec.dir === 'x';
+          const nx = alongX ? side : 0;
+          const nz = alongX ? 0 : side;
+          const back = 1.6;
+          g.player.health = 999;
+          g.player.spawnAt(door.centerX() + nx * back, 1.89, door.centerZ() + nz * back);
+          g.player.yaw = Math.atan2(nx, nz);
+          g.player.pitch = 0;
+          window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w' }));
+          let maxY = 0;
+          for (let f = 0; f < 30; f++) {
+            await new Promise((r) => requestAnimationFrame(r));
+            maxY = Math.max(maxY, g.player.pos.y);
+          }
+          window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', key: 'w' }));
+          const p = g.player.pos;
+          const solid = g.world.isSolid(Math.floor(p.x), Math.floor(g.player.eyeY()), Math.floor(p.z));
+          probes++;
+          if (maxY > worst.maxY || solid) worst = { maxY, door: i, openT, solid: solid || worst.solid };
+        }
+      }
+      door.update = origUpdate;
+    }
+    return { probes, worst };
+  });
+  check(
+    doorProbe.worst.maxY < 2.6 && !doorProbe.worst.solid,
+    `door: ${doorProbe.probes} half-open-door pushes never lift/embed the player (worst y=${doorProbe.worst.maxY.toFixed(2)} at door ${doorProbe.worst.door}, openT ${doorProbe.worst.openT})`
+  );
 } finally {
   await browser.close();
 }

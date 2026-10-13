@@ -56,7 +56,11 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   streak popups at 2/3/4 kills), per-seed best score in localStorage
   (`voxelstrike-best-<seedHex>`), and `onKeyPickup()` — grabbing the red
   keycard spawns an awake ambush in the key room (and bumps
-  `level.totalEnemies` so intermission ratios stay honest).
+  `level.totalEnemies` so intermission ratios stay honest). The HUD
+  objective tracker is driven by `updateObjective()` each frame:
+  `objectiveStage()` derives key → door → lift → pad from game state (pad =
+  feet above the lift's highY − 0.4) and the arrow points at
+  `objectiveTarget()` (pad position comes from `LevelData.exitPad`).
 - `src/world/world.ts` — flat `Uint8Array` voxel grid, DDA raycasts, baked RGB
   light grid (BFS from lamp blocks), per-voxel HP for destructibles.
 - `src/world/mesher.ts` — greedy mesher, one mesh per 16×16 chunk column; faces
@@ -95,7 +99,15 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   along the axis of least penetration: an axis-blind snap used to eject a
   walking rider sideways off the rising lift (0.03u vertical overlap "fixed"
   by a 1u horizontal shove), soft-locking the campaign. `features.mjs` has a
-  walk-on ride regression for this.
+  walk-on ride regression for this. Two more dynamic-box rules: Y may only
+  resolve when the body's center is ABOVE the box center (riding the lift),
+  and the push side comes from the body's position vs the box center — never
+  from the velocity sign. Using the velocity sign launched players running
+  into a half-open door (bottom edge just under head height → Y least
+  penetrated, gravity → negative Y delta → snapped onto the door's TOP, inside
+  the wall, then carried out of the map). `features.mjs` #11 sweeps that window.
+  Backstop: `Game.guardPlayerInWorld()` returns a player who stays inside
+  solid / above the world for >0.12s to their last on-ground position.
 - `src/entities/` — player (movement/health/keys, timed `buffs`:
   quad ×4 damage / shield full absorb / haste ×1.35 move+fire), enemies
   (state machines: idle/patrol/chase/attack/charge/pain/dead; husks have
@@ -104,7 +116,11 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   the husk rig/gait at heavier proportions, telegraph a 4.2× charge that
   smashes destructibles in its path, get stunned 1.3s on a wall slam via
   `stunTime`, and always drop a powerup; deaths burst into per-part gibs),
-  doors/elevator, pickups (magnetism, full-bright + glow discs; powerups set
+  doors/elevator (door.ts: the lift is a `group` — hazard-striped deck with
+  an UP-arrow top + an additive chevron beam up the shaft while it waits at
+  the bottom; `ExitBeacon` is the same beam in green over the exit pad, lit
+  only during the "step on the exit pad" objective), pickups (magnetism,
+  full-bright + glow discs; powerups set
   player buff timers), pooled projectiles (rockets carry a `dmgMult` for
   quad). Hit feedback fires the SAME frame as the damage — `applyFlash()`
   sets materials white-hot immediately (the 0.08s `updateLighting` tick then
@@ -159,7 +175,12 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   restart via `location.reload()` (the iframe URL carries Poki's params).
 - `src/ui/hud.ts` — DOM HUD + all screens; the voxel wordmark renderer
   (`startVoxelLogo`) draws 5×7 glyphs as extruded blocks (add glyphs to
-  `GLYPHS` before using new letters in a wordmark).
+  `GLYPHS` before using new letters in a wordmark). `hud.hint()` is the
+  first-run tutorial strip: `Game.updateTips()` shows 3 control hints
+  (separate touch/desktop text) in sector 1 of the first solo run, advancing
+  only while playing, then sets `voxelstrike-tutorial-done` in localStorage
+  (same key as the earlier Poki build — don't rename it). Update its text
+  when controls change.
 - `src/ui/automap.ts` — Tab/M (MAP button on touch) overlay canvas; reveal is
   LOS-checked per cell (rooms behind walls stay dark), doors draw in their
   lock color, exit pads green, the un-taken red key blinks. Its canvas rule

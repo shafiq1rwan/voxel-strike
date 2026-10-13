@@ -10,7 +10,7 @@ import { ChunkManager } from './world/mesher';
 import { generateLevel, LevelData } from './world/levelgen';
 import { Block, isDestructible } from './world/blocks';
 import { Player } from './entities/player';
-import { Door, Elevator } from './entities/door';
+import { Door, Elevator, ExitBeacon } from './entities/door';
 import { Enemy, EnemyManager } from './entities/enemies';
 import { PickupManager } from './entities/pickups';
 import { ProjectilePool } from './entities/projectiles';
@@ -40,6 +40,18 @@ export interface PlayerTarget {
   eyeY(): number;
   damage(amount: number, game: Game, source?: { x: number; z: number }): void;
 }
+
+/** the sector's critical path, as shown by the HUD objective tracker */
+type ObjectiveStage = 'key' | 'door' | 'lift' | 'pad';
+const OBJECTIVES: Record<ObjectiveStage, { text: string; color: string }> = {
+  key: { text: 'FIND THE RED KEYCARD', color: '#ff3428' },
+  door: { text: 'OPEN THE RED DOOR', color: '#ff3428' },
+  lift: { text: 'RIDE THE LIFT UP', color: '#ffd028' },
+  pad: { text: 'STEP ON THE EXIT PAD', color: '#4cc26a' },
+};
+
+/** localStorage flag: the first-run control hints have been shown */
+const TUTORIAL_KEY = 'voxelstrike-tutorial-done';
 
 /**
  * Back to a fresh title screen. Normal builds drop the URL params (seed,
@@ -268,10 +280,14 @@ export class Game {
     }
     this.doors = [];
     if (this.elevator) {
-      scene.remove(this.elevator.mesh);
-      this.elevator.mesh.geometry.dispose();
-      (this.elevator.mesh.material as THREE.Material).dispose();
+      scene.remove(this.elevator.group);
+      this.elevator.dispose();
       this.elevator = null;
+    }
+    if (this.exitBeacon) {
+      scene.remove(this.exitBeacon.mesh);
+      this.exitBeacon.dispose();
+      this.exitBeacon = null;
     }
     if (this.pickups) {
       scene.remove(this.pickups.group);
@@ -305,8 +321,12 @@ export class Game {
       scene.add(door.mesh);
     }
     if (this.level.elevator) {
-      this.elevator = new Elevator(this.level.elevator, this.world);
-      scene.add(this.elevator.mesh);
+      this.elevator = new Elevator(this.level.elevator);
+      scene.add(this.elevator.group);
+    }
+    if (this.level.exitPad) {
+      this.exitBeacon = new ExitBeacon(this.level.exitPad);
+      scene.add(this.exitBeacon.mesh);
     }
 
     this.pickups = new PickupManager(this.level.pickups, this.world);
@@ -323,6 +343,9 @@ export class Game {
     this.player.keys.clear();
     this.player.dead = false;
     this.player.spawnAt(this.level.spawn.x, this.level.spawn.y, this.level.spawn.z);
+    this.safePos.set(0, 0, 0);
+    this.embedTime = 0;
+    this.objStage = null;
     this.player.pitch = 0;
     // face into the level: toward the nearest connected room
     const spawnRoom = this.level.rooms.find((r) => r.kind === 'spawn')!;
@@ -418,6 +441,15 @@ export class Game {
   }
 
   private adPending = false;
+  /** first-run control hints: index of the next hint, -1 = off */
+  private tipStep = -1;
+  /** current objective step; null forces a refresh (new sector) */
+  private objStage: ObjectiveStage | null = null;
+  private exitBeacon: ExitBeacon | null = null;
+  /** last spot the player stood on open ground (guardPlayerInWorld) */
+  private safePos = new THREE.Vector3();
+  private embedTime = 0;
+  private tipTimer = 0;
 
   /**
    * Poki: offer a video ad at a natural break (run start, between sectors),
@@ -461,6 +493,7 @@ export class Game {
     this.hud.message(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard. Reach the exit.`);
     poki.measure('campaign', 'main', 'start');
     poki.measure('level', this.levelIndex, 'start');
+    this.startTips();
     // if the browser blocked audio despite the gesture, tell the player how to fix it
     window.setTimeout(() => {
       if (!this.audio.isRunning()) {
@@ -476,6 +509,47 @@ export class Game {
         }
       }, 700);
     }
+  }
+
+  /** first run only (and never in co-op): a short sequence of control hints */
+  private startTips(): void {
+    let done = false;
+    try {
+      done = localStorage.getItem(TUTORIAL_KEY) !== null;
+    } catch { /* storage may be unavailable */ }
+    this.tipStep = done || this.net ? -1 : 0;
+    this.tipTimer = 0.8;
+  }
+
+  /** advances only while actually playing, so pausing holds the sequence */
+  private updateTips(dt: number): void {
+    if (this.tipStep < 0) return;
+    this.tipTimer -= dt;
+    if (this.tipTimer > 0) return;
+    const k = (t: string): string => `<span class="kc">${t}</span>`;
+    const objective = 'FOLLOW THE <b style="color:#ffd028">&#9650;</b> AT THE TOP TO YOUR OBJECTIVE';
+    const tips: [string, number][] = this.isTouch
+      ? [
+          ['LEFT THUMB &mdash; MOVE &nbsp;&middot;&nbsp; RIGHT THUMB &mdash; AIM &nbsp;&middot;&nbsp; ' + k('FIRE'), 7],
+          [objective, 6],
+          [`${k('MAP')} SHOWS WHERE YOU'VE BEEN &nbsp;&middot;&nbsp; TAP A NUMBER TO SWITCH GUNS`, 6],
+        ]
+      : [
+          [`${k('W')}${k('A')}${k('S')}${k('D')} MOVE &nbsp;&middot;&nbsp; ${k('MOUSE')} AIM &nbsp;&middot;&nbsp; ${k('CLICK')} FIRE &nbsp;&middot;&nbsp; ${k('SPACE')} JUMP`, 7],
+          [objective, 6],
+          [`${k('TAB')} MAP &nbsp;&middot;&nbsp; ${k('1')}&ndash;${k('5')} OR ${k('WHEEL')} SWITCH GUNS`, 6],
+        ];
+    if (this.tipStep >= tips.length) {
+      this.tipStep = -1;
+      try {
+        localStorage.setItem(TUTORIAL_KEY, '1');
+      } catch { /* storage may be unavailable */ }
+      return;
+    }
+    const [html, secs] = tips[this.tipStep];
+    this.hud.hint(html, secs);
+    this.tipStep++;
+    this.tipTimer = secs + 1.2;
   }
 
   private nextLevel(): void {
@@ -808,6 +882,85 @@ export class Game {
   }
 
   /** brief FOV widening on heavy impacts — decays each frame */
+  /** which step of key → red door → lift → exit pad the player is on */
+  private objectiveStage(): ObjectiveStage {
+    const exitDoor = this.doors.find((d) => d.spec.locked === 'red');
+    if (exitDoor && exitDoor.locked) return this.player.hasKey('red') ? 'door' : 'key';
+    // up on the exit ledge (the lift's top floor) → last step
+    const ledgeY = this.level.elevator ? this.level.elevator.highY - 0.4 : 3.6;
+    return this.player.pos.y - this.player.half.y > ledgeY ? 'pad' : 'lift';
+  }
+
+  private objectiveTarget(stage: ObjectiveStage): { x: number; z: number } | null {
+    switch (stage) {
+      case 'key': {
+        const k = this.level.pickups.find((p) => p.kind === 'keyRed');
+        return k ? { x: k.x, z: k.z } : null;
+      }
+      case 'door': {
+        const d = this.doors.find((q) => q.spec.locked === 'red');
+        return d ? { x: d.centerX(), z: d.centerZ() } : null;
+      }
+      case 'lift': {
+        const e = this.level.elevator;
+        return e ? { x: e.x + 1, z: e.z + 1 } : null;
+      }
+      case 'pad':
+        return this.level.exitPad;
+    }
+  }
+
+  /** HUD objective tracker: step label (flashes on change) + arrow/distance */
+  private updateObjective(): void {
+    const stage = this.objectiveStage();
+    if (stage !== this.objStage) {
+      const changed = this.objStage !== null;
+      this.objStage = stage;
+      const o = OBJECTIVES[stage];
+      this.hud.setObjective(this.levelIndex, TOTAL_SECTORS, o.text, o.color, changed);
+    }
+    const t = this.objectiveTarget(stage);
+    if (!t) {
+      this.hud.updateCompass(null, 0);
+    } else {
+      // target in view space: forward = (-sin yaw, -cos yaw), right = (cos yaw, -sin yaw)
+      const dx = t.x - this.player.pos.x;
+      const dz = t.z - this.player.pos.z;
+      const yaw = this.player.yaw;
+      const fwd = dx * -Math.sin(yaw) + dz * -Math.cos(yaw);
+      const right = dx * Math.cos(yaw) + dz * -Math.sin(yaw);
+      this.hud.updateCompass((Math.atan2(right, fwd) * 180) / Math.PI, Math.hypot(dx, dz));
+    }
+    this.hud.setKills(this.kills, this.level.totalEnemies);
+  }
+
+  /**
+   * Last-resort unstick: if the player's body or eyes sit inside solid voxels,
+   * or above the world, for more than a few frames, put them back on the last
+   * open ground they stood on (or the spawn). Whatever physics edge case got
+   * them there, a stuck or out-of-map player is a dead run.
+   */
+  private guardPlayerInWorld(dt: number): void {
+    const p = this.player.pos;
+    const w = this.world;
+    const bx = Math.floor(p.x);
+    const bz = Math.floor(p.z);
+    const stuck =
+      p.y >= w.sy ||
+      w.isSolid(bx, Math.floor(p.y), bz) ||
+      w.isSolid(bx, Math.floor(this.player.eyeY()), bz);
+    if (!stuck) {
+      this.embedTime = 0;
+      if (this.player.onGround) this.safePos.copy(p);
+      return;
+    }
+    this.embedTime += dt;
+    if (this.embedTime <= 0.12) return;
+    this.embedTime = 0;
+    const back = this.safePos.lengthSq() === 0 ? this.level.spawn : this.safePos;
+    this.player.spawnAt(back.x, back.y, back.z);
+  }
+
   punchFOV(amount: number): void {
     this.fovKick = Math.min(9, this.fovKick + amount);
   }
@@ -819,6 +972,7 @@ export class Game {
     }
     this.state = 'dead';
     this.deathTimer = 0;
+    this.hud.clearHint();
   }
 
   private formatTime(t: number): string {
@@ -852,6 +1006,7 @@ export class Game {
     this.score += 1000 + Math.max(0, 900 - Math.floor(levelTime) * 3);
     this.hud.updateScore(this.score, 1);
     this.audio.play('win');
+    this.hud.clearHint();
     poki.measure('level', this.levelIndex, 'complete');
     if (this.levelIndex >= TOTAL_SECTORS) poki.measure('campaign', 'main', 'complete');
     this.audio.setHeartbeat(false);
@@ -899,6 +1054,7 @@ export class Game {
     this.time += dt;
     this.frameCounter++;
     poki.setPlaying(this.state === 'playing');
+    if (this.state === 'playing') this.updateTips(dt);
 
     // fps meter
     this.fpsAccum += dt;
@@ -1032,12 +1188,16 @@ export class Game {
     if (this.player.pos.y < -8) {
       this.player.spawnAt(this.level.spawn.x, this.level.spawn.y, this.level.spawn.z);
     }
+    this.guardPlayerInWorld(dt);
     this.weapons.update(dt, this.input, this);
     this.enemies.update(dt, this);
     this.projectiles.update(dt, this);
     this.particles.update(dt, this.world);
     this.tracers.update(dt);
     this.pickups.update(dt, this.time, this);
+    this.elevator?.animate(dt, this.time);
+    this.updateObjective();
+    this.exitBeacon?.animate(dt, this.objStage === 'pad');
     this.hud.updateAmmo(this.player, this.weapons);
     this.hud.updateBuffs(this.player);
     this.automap.update(dt, this);

@@ -85,9 +85,39 @@ const CSS = `
 #score .label { font-size: 10px; letter-spacing: 2px; color: #7d8699; margin-right: 8px; }
 #score-mult { color: #ffd028; margin-left: 7px; }
 #score-mult:empty { display: none; }
+#kills {
+  position: absolute; top: 52px; right: 14px; font-size: 13px; font-weight: bold;
+  letter-spacing: 2px; color: #cfd6e4; text-align: right;
+}
+#kills .label { font-size: 10px; letter-spacing: 2px; color: #7d8699; margin-right: 8px; }
+#kills.all { color: #4cc26a; }
 #buffs {
-  position: absolute; top: 56px; right: 14px; display: flex; flex-direction: column;
+  position: absolute; top: 74px; right: 14px; display: flex; flex-direction: column;
   gap: 4px; align-items: flex-end;
+}
+/* ---------------- objective tracker (top center) ---------------- */
+#objective {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  max-width: 46vw; text-align: center;
+}
+#obj-head { font-size: 10px; letter-spacing: 3px; color: #7d8699; }
+#obj-head b { color: #ffd028; }
+#obj-main {
+  display: flex; align-items: center; gap: 8px; padding: 4px 12px;
+  font-size: 14px; font-weight: bold; letter-spacing: 2px; color: #e8ecf4;
+  background: rgba(8,10,16,.6); border: 1px solid #39404f; white-space: nowrap;
+}
+#obj-main.flash { animation: objflash .9s ease-out; }
+@keyframes objflash {
+  0% { border-color: #ffd028; background: rgba(255,208,40,.35); transform: scale(1.12); }
+  100% { border-color: #39404f; background: rgba(8,10,16,.6); transform: scale(1); }
+}
+#obj-sq { display: inline-block; width: 10px; height: 10px; border: 1px solid #000; box-shadow: 0 0 8px currentColor; }
+#obj-nav { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: bold; color: #ffd028; height: 22px; }
+#obj-arrow {
+  width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent;
+  border-bottom: 16px solid #ffd028; filter: drop-shadow(1px 1px 0 #000) drop-shadow(0 0 5px rgba(255,208,40,.6));
 }
 .buff {
   font-size: 12px; font-weight: bold; letter-spacing: 2px; padding: 3px 9px;
@@ -96,6 +126,20 @@ const CSS = `
 .buff.quad { color: #ffd028; border-color: #ffd028; }
 .buff.shield { color: #55e0ff; border-color: #55e0ff; }
 .buff.haste { color: #ff8030; border-color: #ff8030; }
+#hint {
+  position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  padding: 8px 16px; font-size: 13px; letter-spacing: 2px; color: #e8ecf4;
+  background: rgba(8,10,16,.78); border: 1px solid #ffd028; max-width: 90vw;
+  width: max-content; /* left:50% would otherwise cap it at half the screen */
+  opacity: 0; transition: opacity .35s; text-align: center; pointer-events: none;
+}
+#hint.on { opacity: 1; }
+.kc {
+  display: inline-block; min-width: 22px; padding: 2px 6px; margin: 0 2px;
+  border: 1px solid #cfd6e4; border-bottom-width: 3px; border-radius: 3px;
+  font-size: 12px; font-weight: bold; color: #ffd028; background: #14171f; text-shadow: none;
+}
 .streak {
   position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%);
   font-size: 27px; font-weight: bold; letter-spacing: 6px; color: #ffd028;
@@ -201,9 +245,15 @@ body.touch-mode #messages {
 }
 body.touch-mode #fps { display: none; }
 body.touch-mode #score { top: 56px; right: 10px; font-size: 13px; }
-body.touch-mode #buffs { top: 78px; right: 10px; }
+body.touch-mode #kills { top: 78px; right: 10px; font-size: 12px; }
+body.touch-mode #buffs { top: 98px; right: 10px; }
+body.touch-mode #objective { top: 74px; max-width: 40vw; }
+body.touch-mode #obj-head { font-size: 9px; }
+body.touch-mode #obj-main { font-size: 11px; padding: 3px 8px; letter-spacing: 1px; }
 body.touch-mode .buff { font-size: 10px; padding: 2px 6px; }
 body.touch-mode .streak { font-size: 19px; letter-spacing: 4px; }
+/* the stat bar moves to the top on touch: the hint sits low, between the thumbs */
+body.touch-mode #hint { bottom: 12px; max-width: 46vw; font-size: 11px; padding: 6px 10px; gap: 6px; }
 
 /* ---------------- small screens ---------------- */
 @media (max-width: 760px) {
@@ -213,7 +263,9 @@ body.touch-mode .streak { font-size: 19px; letter-spacing: 4px; }
   .stat .label { font-size: 9px; }
   #weaponname { font-size: 10px; letter-spacing: 2px; }
   .slot { width: 30px; height: 24px; }
-  #messages { font-size: 12px; left: 10px; top: 8px; max-width: 70vw; }
+  #messages { font-size: 12px; left: 10px; top: 92px; max-width: 40vw; }
+  #objective { max-width: 56vw; }
+  #obj-main { font-size: 12px; letter-spacing: 1px; }
   .screen h1 { font-size: 32px; letter-spacing: 4px; }
   .panel { padding: 20px 22px 18px; max-width: 92vw; }
   .title-menu-row { flex-wrap: wrap; justify-content: center; }
@@ -381,6 +433,17 @@ export class HUD {
   private scoreMultEl!: HTMLElement;
   private buffsEl!: HTMLElement;
   private buffsCache = '';
+  private hintEl!: HTMLElement;
+  private hintTimer: number | null = null;
+  private objMainEl!: HTMLElement;
+  private objSqEl!: HTMLElement;
+  private objTextEl!: HTMLElement;
+  private objArrowEl!: HTMLElement;
+  private objDistEl!: HTMLElement;
+  private objDistCache = '';
+  private killsEl!: HTMLElement;
+  private killsNumEl!: HTMLElement;
+  private killsCache = '';
   private screenEl: HTMLElement | null = null;
   private hitTimer: number | null = null;
   private logoStop: (() => void) | null = null;
@@ -401,6 +464,13 @@ export class HUD {
       <div id="messages"></div>
       <div id="fps"></div>
       <div id="score"><span class="label">SCORE</span><span id="score-num">000000</span><span id="score-mult"></span></div>
+      <div id="kills"><span class="label">KILLS</span><span id="kills-num">0 / 0</span></div>
+      <div id="objective">
+        <div id="obj-head">SECTOR <b id="obj-sector">1</b> / <span id="obj-total">3</span></div>
+        <div id="obj-main"><i id="obj-sq"></i><span id="obj-text"></span></div>
+        <div id="obj-nav"><div id="obj-arrow"></div><span id="obj-dist"></span></div>
+      </div>
+      <div id="hint"></div>
       <div id="buffs"></div>
       <div id="statbar">
         <div class="stat" id="hp"><div class="value">100</div><div class="label">HEALTH</div></div>
@@ -432,6 +502,14 @@ export class HUD {
     this.scoreNumEl = this.root.querySelector('#score-num')!;
     this.scoreMultEl = this.root.querySelector('#score-mult')!;
     this.buffsEl = this.root.querySelector('#buffs')!;
+    this.hintEl = this.root.querySelector('#hint')!;
+    this.objMainEl = this.root.querySelector('#obj-main')!;
+    this.objSqEl = this.root.querySelector('#obj-sq')!;
+    this.objTextEl = this.root.querySelector('#obj-text')!;
+    this.objArrowEl = this.root.querySelector('#obj-arrow')!;
+    this.objDistEl = this.root.querySelector('#obj-dist')!;
+    this.killsEl = this.root.querySelector('#kills')!;
+    this.killsNumEl = this.root.querySelector('#kills-num')!;
     for (let i = 0; i < ORDER.length; i++) {
       const s = document.createElement('div');
       s.className = 'slot';
@@ -475,6 +553,55 @@ export class HUD {
     this.messagesEl.appendChild(div);
     while (this.messagesEl.children.length > 4) this.messagesEl.firstChild?.remove();
     setTimeout(() => div.remove(), 3600);
+  }
+
+  /** objective tracker: current step text + color; `flash` pops it on a change */
+  setObjective(sector: number, total: number, text: string, color: string, flash: boolean): void {
+    (this.root.querySelector('#obj-sector') as HTMLElement).textContent = String(sector);
+    (this.root.querySelector('#obj-total') as HTMLElement).textContent = String(total);
+    this.objTextEl.textContent = text;
+    this.objSqEl.style.background = color;
+    this.objSqEl.style.color = color;
+    if (flash) {
+      this.objMainEl.classList.remove('flash');
+      void this.objMainEl.offsetWidth; // restart the animation
+      this.objMainEl.classList.add('flash');
+    }
+  }
+
+  /** arrow relative to view (0° = straight ahead) + distance; null hides it */
+  updateCompass(angleDeg: number | null, dist: number): void {
+    if (angleDeg === null) {
+      this.objArrowEl.style.opacity = '0';
+      if (this.objDistCache !== '') this.objDistEl.textContent = this.objDistCache = '';
+      return;
+    }
+    this.objArrowEl.style.opacity = '1';
+    this.objArrowEl.style.transform = `rotate(${angleDeg.toFixed(0)}deg)`;
+    const d = dist < 2.5 ? 'HERE' : `${Math.round(dist)}m`;
+    if (d !== this.objDistCache) this.objDistEl.textContent = this.objDistCache = d;
+  }
+
+  setKills(kills: number, total: number): void {
+    const t = `${kills} / ${total}`;
+    if (t === this.killsCache) return;
+    this.killsCache = t;
+    this.killsNumEl.textContent = t;
+    this.killsEl.classList.toggle('all', total > 0 && kills >= total);
+  }
+
+  /** tutorial strip above the stat bar; `html` may use <span class="kc"> keycaps */
+  hint(html: string, seconds: number): void {
+    this.hintEl.innerHTML = html;
+    this.hintEl.classList.add('on');
+    if (this.hintTimer !== null) clearTimeout(this.hintTimer);
+    this.hintTimer = window.setTimeout(() => this.clearHint(), seconds * 1000);
+  }
+
+  clearHint(): void {
+    this.hintEl.classList.remove('on');
+    if (this.hintTimer !== null) clearTimeout(this.hintTimer);
+    this.hintTimer = null;
   }
 
   damageFlash(): void {

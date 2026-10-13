@@ -13,6 +13,8 @@ export interface LevelData {
   pickups: PickupSpec[];
   enemies: EnemySpec[];
   elevator: ElevatorSpec | null;
+  /** center of the 2×2 exit pad on the ledge (y = its top surface) */
+  exitPad: { x: number; y: number; z: number } | null;
   secretRect: Rect | null;
   seed: number;
   totalEnemies: number;
@@ -337,6 +339,7 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
 
   const ledgeCells: Array<[number, number]> = [];
   let elevator: ElevatorSpec | null = null;
+  let exitPad: LevelData['exitPad'] = null;
   {
     const r = exitRoom;
     const depth = 3;
@@ -370,6 +373,7 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
       }
     }
     elevator = { x: elevX, z: elevZ, lowY: 1, highY: 4 };
+    exitPad = { x: padCX, y: 4, z: padCZ };
   }
 
   // -- paint pass: type walls/floors/ceilings around air --------------------
@@ -772,6 +776,7 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     pickups,
     enemies,
     elevator,
+    exitPad,
     secretRect,
     seed,
     totalEnemies: enemies.length,

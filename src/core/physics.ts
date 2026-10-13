@@ -107,17 +107,39 @@ function moveAxis(
   // rising elevator overlaps their feet by a hair while they still carry any
   // horizontal velocity (the "elevator slides you off" bug): the X pass would
   // "fix" a 0.03 vertical overlap with a 1-unit horizontal shove.
+  //
+  // Vertical resolution is only allowed when the body's center is ABOVE the
+  // box's center (standing on a lift). And the push side comes from where the
+  // body sits relative to the box, never from which way it was moving. Using
+  // the movement sign launched players: walking into a rising door whose
+  // bottom edge was just below head height made Y the least-penetrated axis,
+  // gravity made the Y delta negative, and the "resolve" teleported the player
+  // onto the TOP of the door — inside the wall above the doorway, then carried
+  // up and out of the map as the door kept rising.
   for (const b of extraBoxes) {
-    if (overlapsBox(pos.x, pos.y, pos.z, half.x, half.y, half.z, b)) {
-      const penX = Math.min(pos.x + half.x - b.minX, b.maxX - (pos.x - half.x));
-      const penY = Math.min(pos.y + half.y - b.minY, b.maxY - (pos.y - half.y));
-      const penZ = Math.min(pos.z + half.z - b.minZ, b.maxZ - (pos.z - half.z));
-      const pen = axis === 'x' ? penX : axis === 'y' ? penY : penZ;
-      if (pen > Math.min(penX, penY, penZ) + 1e-6) continue; // another axis owns this overlap
-      const boxMin = axis === 'x' ? b.minX : axis === 'y' ? b.minY : b.minZ;
-      const boxMax = axis === 'x' ? b.maxX : axis === 'y' ? b.maxY : b.maxZ;
-      resolve(boxMin, boxMax);
+    if (!overlapsBox(pos.x, pos.y, pos.z, half.x, half.y, half.z, b)) continue;
+    const penX = Math.min(pos.x + half.x - b.minX, b.maxX - (pos.x - half.x));
+    const penY = Math.min(pos.y + half.y - b.minY, b.maxY - (pos.y - half.y));
+    const penZ = Math.min(pos.z + half.z - b.minZ, b.maxZ - (pos.z - half.z));
+    const onTop = pos.y > (b.minY + b.maxY) / 2;
+    const least = onTop ? Math.min(penX, penY, penZ) : Math.min(penX, penZ);
+    if (axis === 'y' && !onTop) continue; // never pushed under/over a box from below
+    const pen = axis === 'x' ? penX : axis === 'y' ? penY : penZ;
+    if (pen > least + 1e-6) continue; // another axis owns this overlap
+    const boxMin = axis === 'x' ? b.minX : axis === 'y' ? b.minY : b.minZ;
+    const boxMax = axis === 'x' ? b.maxX : axis === 'y' ? b.maxY : b.maxZ;
+    const mid = (boxMin + boxMax) / 2;
+    if (pos[axis] < mid) {
+      pos[axis] = boxMin - half[axis] - EPS;
+    } else {
+      pos[axis] = boxMax + half[axis] + EPS;
+      if (axis === 'y') res.onGround = true;
     }
+    if (axis === 'x') res.hitX = true;
+    else if (axis === 'y') res.hitY = true;
+    else res.hitZ = true;
+    // only kill velocity heading INTO the box (a rider keeps rising with the lift)
+    if (Math.sign(vel[axis]) === Math.sign(mid - pos[axis])) vel[axis] = 0;
   }
 }
 
