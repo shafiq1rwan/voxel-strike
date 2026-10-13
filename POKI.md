@@ -14,12 +14,17 @@ npm run preview:poki   # serve dist-poki/ on http://localhost:4173 to try it
 npm run dev:poki       # dev server in Poki mode (HMR)
 ```
 
-To ship, zip the **contents** of `dist-poki/` (`index.html` must be at the root
-of the zip) and upload the zip to the Poki Inspector:
+To ship, build and zip in one step, then upload `voxelstrike-poki.zip` to the
+Poki Inspector:
 
-```powershell
-Compress-Archive -Path dist-poki\* -DestinationPath voxelstrike-poki.zip -Force
+```bash
+npm run zip:poki       # build:poki + scripts/zip-poki.ps1 → voxelstrike-poki.zip (git-ignored)
 ```
+
+The zip has `index.html` at its root and forward-slash entry paths. Don't
+use `Compress-Archive` instead. On Windows PowerShell 5.1 it writes
+`assets\index.js`-style backslash paths. A Linux server unpacks those as flat
+filenames, and every asset fails to load.
 
 The bundle is about 0.75 MB. Asset paths are relative (`base: './'`), so the
 bundle works from Poki's CDN path as-is.

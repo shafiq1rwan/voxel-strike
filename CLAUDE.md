@@ -17,7 +17,7 @@ GPU memory on iOS).
 npm run dev        # dev server on http://localhost:5173
 npm run build      # tsc --noEmit + vite build → dist/  (run this before calling work done)
 npm run preview    # serve the production build on :4173
-npm run build:poki # Poki build → dist-poki/ (also dev:poki / preview:poki) — see POKI.md
+npm run build:poki # Poki build → dist-poki/ (also dev:poki / preview:poki; zip:poki → upload zip) — see POKI.md
 ```
 
 Headless test suites (need a dev or preview server running; they drive Edge at

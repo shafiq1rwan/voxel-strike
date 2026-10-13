@@ -8,6 +8,7 @@
     "dev:poki": "vite --mode poki",
     "build": "tsc --noEmit && vite build",
     "build:poki": "tsc --noEmit && vite build --mode poki",
+    "zip:poki": "npm run build:poki && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/zip-poki.ps1",
     "preview": "vite preview",
     "preview:poki": "vite preview --mode poki"
   },
