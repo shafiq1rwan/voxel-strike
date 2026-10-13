@@ -101,7 +101,16 @@ try {
   await sleep(600);
   const after = await page.evaluate(() => window.__voxelstrike.audio.masterBus?.gain.value);
   check(after > 0, `audio restored after the ad (gain=${after})`);
-  check((await state(page)) === 'playing', 'playing after the ad');
+  // an ad spends the click gesture: desktop asks for one more click to
+  // re-capture the mouse before play starts
+  const ready = await page.evaluate(() => ({
+    state: window.__voxelstrike.state,
+    ready: document.body.textContent.includes('CLICK TO CONTINUE'),
+  }));
+  check(ready.state === 'paused' && ready.ready, `after an ad: READY / click to continue (state=${ready.state})`);
+  await page.mouse.click(640, 360);
+  await sleep(400);
+  check((await state(page)) === 'playing', 'playing after the ad + click');
   c = await calls(page);
   check(c.includes('commercialBreak'), 'commercialBreak before the run');
   check(c.indexOf('commercialBreak') < c.indexOf('gameplayStart'), 'ad comes before gameplayStart');
@@ -131,11 +140,14 @@ try {
   check(c.includes('measure level 1 complete'), 'level 1 complete measured');
   check(c[c.length - 1] === 'gameplayStop' && (await state(page)) === 'intermission', 'intermission → gameplayStop');
   const breaks = c.filter((x) => x === 'commercialBreak').length;
+  await sleep(800); // the intermission screen arms after 0.7s
   await page.evaluate(() => {
     document.querySelector('.screen').click();
     document.querySelector('.screen').click(); // impatient double click during the ad
   });
   await sleep(700);
+  await page.mouse.click(640, 360); // READY → click to continue
+  await sleep(400);
   c = await calls(page);
   check(c.filter((x) => x === 'commercialBreak').length === breaks + 1, 'one ad per break, even on double click');
   check((await page.evaluate(() => window.__voxelstrike.levelIndex)) === 2, 'advanced exactly one sector');
@@ -154,6 +166,21 @@ try {
   check(c.includes('measure level 2 fail') && c.includes('measure campaign main fail'), 'death measured as level + campaign fail');
   check(c[c.length - 1] === 'gameplayStop', 'death → gameplayStop');
   check(!c.some((x) => /[\/^]/.test(x.replace(/^measure /, ''))), "no '/' or '^' in measure values");
+
+  // retry from the death screen: an ad break, then a NEW level-2 attempt (in place, no reload)
+  await page.evaluate(() => (window.__bootMarker = 'same-page'));
+  await sleep(2200); // death screen appears after 1.4s, arms 0.7s later
+  const breaksBefore = c.filter((x) => x === 'commercialBreak').length;
+  await page.evaluate(() => document.querySelector('#retry-btn').click());
+  await sleep(700);
+  await page.mouse.click(640, 360); // READY → click to continue
+  await sleep(400);
+  c = await calls(page);
+  check(c.filter((x) => x === 'commercialBreak').length === breaksBefore + 1, 'retry is an ad break');
+  check(c.filter((x) => x === 'measure level 2 start').length === 2, 'retry counts as a new level 2 attempt');
+  check(c[c.length - 1] === 'gameplayStart' && (await state(page)) === 'playing', 'retry → gameplay resumed');
+  check(!c.slice(2).includes('init'), 'retry did not reload the page (no second SDK init)');
+  check(await page.evaluate(() => window.__bootMarker === 'same-page'), 'same page after retry');
   console.log('  calls:', c.join(' | '));
   await page.close();
 

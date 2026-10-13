@@ -33,6 +33,7 @@ node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° sta
 node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
+node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
 node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() funnel, hidden co-op, boots with SDK blocked
 ```
 
@@ -49,7 +50,19 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
 ## Architecture
 
 - `src/game.ts` — orchestrator: state machine (title/playing/paused/dead/
-  intermission/won), 3-sector campaign flow with in-place level teardown,
+  intermission/won), 3-sector campaign flow with in-place level teardown.
+  Solo restarts NEVER reload the page: every sector start captures a
+  `Checkpoint` (seed, score, health/armor/ammo, weapon loadout, run totals);
+  death offers Retry sector (`retrySector` restores it, health floored at 60)
+  or New run; from sector 2 on the checkpoint is also saved to localStorage
+  (`voxelstrike-run`, same key as the old Poki build) so the title offers
+  "Continue · Sector N" and the pause menu "Save & quit to menu"
+  (`goToTitle` rebuilds a fresh sector 1 behind the title). All sector
+  entries funnel through `enterSector(msg, adShown)`. Click-through screens
+  "arm" after 0.7s (1.2s on the win screen) so a held trigger can't skip
+  them — tests must wait before clicking. WebGL context loss pauses behind
+  a GRAPHICS LOST overlay (reload button after 4s), and nothing resumes
+  until the context returns. `checkpoint.mjs` covers all of this. Also:
   explosions via `queueExplosion` fuses (barrel chains AND ticker corpses —
   each entry carries its own damage/radius), FOV punch, screen wiring.
   Also owns score + combo (kills within 2.5s chain a ×5-capped multiplier,
@@ -168,11 +181,13 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   (ad blockers). Gameplay start/stop is NOT called at each transition: `Game.frame()` calls
   `poki.setPlaying(state === 'playing')` every frame and the wrapper only
   forwards changes — keep it that way rather than sprinkling start/stop.
-  New ad points go through `Game.afterAdBreak()` (mutes audio, eats double
-  clicks); new analytics go through `poki.measure()` (no `/` or `^` in any
-  value — Poki reserves them) plus a row in POKI.md and an assert in
-  `poki.mjs`. Poki builds hide co-op, skip the SW/manifest/fullscreen, and
-  restart via `location.reload()` (the iframe URL carries Poki's params).
+  New ad points go through `Game.afterBreak(then(adShown))` (mutes audio,
+  releases held keys, eats double clicks); when an ad really played, desktop
+  needs a READY "click to continue" before pointer lock (the gesture is
+  spent) — `enterSector`/`resumeGame` handle that. New analytics go through
+  `poki.measure()` (no `/` or `^` in any value — Poki reserves them) plus a
+  row in POKI.md and an assert in `poki.mjs`. Poki builds hide co-op and
+  skip the SW/manifest/fullscreen.
 - `src/ui/hud.ts` — DOM HUD + all screens; the voxel wordmark renderer
   (`startVoxelLogo`) draws 5×7 glyphs as extruded blocks (add glyphs to
   `GLYPHS` before using new letters in a wordmark). `hud.hint()` is the
@@ -234,6 +249,8 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   injects the SDK `<script>` (Poki requires it in `<head>`; no SRI — the v2
   URL is updated in place by Poki) and deletes `sw.js`, the web manifest and
   `public/marketing/` from `dist-poki/`.
-- Restarts (death, win, quit, new layout) go through `reloadToTitle()` in
-  game.ts, not a raw `location.href = …`, so the Poki build keeps its iframe
-  params.
+- The only page reloads left are co-op teardown (`reloadToTitle()` in
+  game.ts — it drops the `?role`/`?room` params; Poki builds use
+  `location.reload()` to keep their iframe params) and the graphics-lost
+  overlay's "Reload game" button. Don't add reload-based restarts: each
+  reload is another Poki load and loses in-memory state.

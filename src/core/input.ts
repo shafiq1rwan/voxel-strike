@@ -91,6 +91,17 @@ export class Input {
     }
   }
 
+  /**
+   * Forget every held key/button. Called on screen transitions: a key held
+   * when a menu or ad took focus never gets its keyup, so the player would
+   * otherwise keep walking/firing on their own when play resumes.
+   */
+  releaseAll(): void {
+    this.keys.clear();
+    this.buttons.clear();
+    this.firePressed = false;
+  }
+
   releaseLock(): void {
     // iOS Safari has no Pointer Lock API at all — document.exitPointerLock is
     // undefined there, and calling it threw mid-transition (death/intermission)

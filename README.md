@@ -241,6 +241,7 @@ node scripts/movement.mjs   # regression: W/A/S/D displacement must match the ca
 node scripts/firing.mjs     # regression: spam-clicking and holding the trigger both fire at the weapon's full rate; early clicks are buffered
 node scripts/aimassist.mjs  # regression: touch profiles get bullet magnetism + sticky aim; the identical shot misses on desktop
 node scripts/features.mjs   # regression: ticker suicide + corpse chain, key-pickup ambush, quad/shield/haste powerups, score + combo streaks
+node scripts/checkpoint.mjs # run flow: retry a sector with your entry gear, save + Continue, quit to menu, new run — all without a page reload
 node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ad breaks, measure() funnel, hidden co-op
 ```
 

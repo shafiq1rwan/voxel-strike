@@ -54,9 +54,50 @@ const OBJECTIVES: Record<ObjectiveStage, { text: string; color: string }> = {
 const TUTORIAL_KEY = 'voxelstrike-tutorial-done';
 
 /**
- * Back to a fresh title screen. Normal builds drop the URL params (seed,
- * co-op room) so the next run gets a new layout; Poki's iframe URL carries
- * the platform's own params, so there it's a plain reload.
+ * Run state at a sector's start. Retrying a sector restores it; from sector 2
+ * on it's also saved to localStorage so "Continue" survives a closed tab.
+ */
+interface Checkpoint {
+  v: 1;
+  seed: number;
+  sector: number;
+  score: number;
+  health: number;
+  armor: number;
+  ammo: Record<string, number>;
+  owned: string[];
+  current: string;
+  totalKills: number;
+  totalEnemies: number;
+  totalSecretsFound: number;
+  totalSecrets: number;
+  totalTime: number;
+}
+
+/** localStorage key of the saved run (same key as the earlier Poki build) */
+const RUN_KEY = 'voxelstrike-run';
+
+function storageGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null; // storage may be unavailable
+  }
+}
+
+function storageSet(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch { /* storage may be unavailable */ }
+}
+
+/**
+ * Co-op only: reload to a fresh title screen. Solo runs restart in place
+ * (goToTitle / retrySector / newRunNow); co-op tears down a network session,
+ * and the URL's role/room params must go too. Normal builds drop the URL
+ * params; Poki's iframe URL carries the platform's own, so there it's a plain
+ * reload.
  */
 function reloadToTitle(): void {
   if (POKI) location.reload();
@@ -162,14 +203,11 @@ export class Game {
 
     // WebGL context loss (iOS Safari under GPU memory pressure, or after the
     // app is backgrounded): three.js preventDefaults it and re-uploads every
-    // resource on restore — we just pause so nobody dies behind a frozen frame
+    // resource on restore — we pause behind a "graphics lost" overlay so
+    // nobody dies behind a frozen frame, with a reload fallback
     const canvas = this.rendererSys.renderer.domElement;
-    canvas.addEventListener('webglcontextlost', () => {
-      this.input.releaseLock();
-      this.requestPause();
-      this.hud.message('GRAPHICS RESET — RESTORING...');
-    });
-    canvas.addEventListener('webglcontextrestored', () => this.hud.message('GRAPHICS RESTORED'));
+    canvas.addEventListener('webglcontextlost', () => this.onContextLost());
+    canvas.addEventListener('webglcontextrestored', () => this.onContextRestored());
 
     // debug hook for automated smoke tests
     (window as unknown as Record<string, unknown>).__voxelstrike = this;
@@ -420,9 +458,7 @@ export class Game {
     this.input.releaseLock();
     if (final) {
       this.state = 'won';
-      this.hud.showWin(stats, () => {
-        reloadToTitle();
-      });
+      this.hud.showWin(stats, () => reloadToTitle());
     } else {
       this.state = 'intermission';
       this.hud.showWaiting(heading, stats, 'WAITING FOR THE HOST TO DESCEND...');
@@ -440,7 +476,12 @@ export class Game {
     this.hud.message(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — it gets worse down here.`);
   }
 
-  private adPending = false;
+  /** an ad break is in flight: swallow repeat clicks, hold pointer-lock resumes */
+  private breakPending = false;
+  /** WebGL context is lost: no resuming until it's back */
+  private gfxLost = false;
+  /** run state at the current sector's start (retry restores it) */
+  private checkpoint: Checkpoint | null = null;
   /** first-run control hints: index of the next hint, -1 = off */
   private tipStep = -1;
   /** current objective step; null forces a refresh (new sector) */
@@ -452,47 +493,225 @@ export class Game {
   private tipTimer = 0;
 
   /**
-   * Poki: offer a video ad at a natural break (run start, between sectors),
-   * then continue. Audio is initialised right now, inside the click gesture,
-   * because the ad resolves later. Plain builds continue immediately.
+   * Poki: offer a video ad at a natural break (run start, retry, between
+   * sectors, unpause), then continue. `then(adShown)` — when an ad actually
+   * played the click gesture is gone, so desktop needs a fresh click before
+   * pointer lock (enterSector/resumeGame show "click to continue"). Audio is
+   * initialised now, inside the gesture. Plain builds continue immediately.
    */
-  private afterAdBreak(then: () => void): void {
+  private afterBreak(then: (adShown: boolean) => void): void {
     if (!POKI) {
-      then();
+      then(false);
       return;
     }
-    if (this.adPending) return; // extra clicks on the screen while the ad runs
-    this.adPending = true;
+    if (this.breakPending) return; // extra clicks on the screen while the ad runs
+    this.breakPending = true;
     this.audio.init();
-    void poki.commercialBreak(() => this.audio.setMuted(true)).then(() => {
-      this.audio.setMuted(false);
-      this.adPending = false;
-      then();
-    });
+    let shown = false;
+    void poki
+      .commercialBreak(() => {
+        shown = true;
+        this.audio.setMuted(true);
+        this.input.releaseAll();
+      })
+      .then(() => {
+        if (shown) {
+          this.audio.setMuted(false);
+          this.input.releaseAll();
+        }
+        this.breakPending = false;
+        then(shown);
+      });
   }
 
-  private startGame(): void {
-    this.audio.init();
+  // ------------------------------------------------------------------ run flow
+
+  private makeCheckpoint(sector: number): Checkpoint {
+    const lo = this.weapons.loadout();
+    return {
+      v: 1,
+      seed: this.baseSeed,
+      sector,
+      score: this.score,
+      health: this.player.health,
+      armor: this.player.armor,
+      ammo: { ...this.player.ammo },
+      owned: lo.owned,
+      current: lo.current,
+      totalKills: this.totalKills,
+      totalEnemies: this.totalEnemiesSoFar,
+      totalSecretsFound: this.totalSecretsFound,
+      totalSecrets: this.totalSecretsSoFar,
+      totalTime: this.totalPlayTime,
+    };
+  }
+
+  /** remember the run as it enters `sector`; solo runs past sector 1 are saved */
+  private captureCheckpoint(sector = this.levelIndex): void {
+    this.checkpoint = this.makeCheckpoint(sector);
+    if (!this.net && sector >= 2) storageSet(RUN_KEY, JSON.stringify(this.checkpoint));
+  }
+
+  /** the saved run, if there is a valid one to continue */
+  private loadSave(): Checkpoint | null {
+    const raw = storageGet(RUN_KEY);
+    if (!raw) return null;
+    try {
+      const cp = JSON.parse(raw) as Checkpoint;
+      if (cp.v !== 1 || !(cp.sector >= 2 && cp.sector <= TOTAL_SECTORS) || !cp.ammo || !Array.isArray(cp.owned)) return null;
+      return cp;
+    } catch {
+      return null;
+    }
+  }
+
+  /** put the run back into a checkpoint's state (the level is rebuilt separately) */
+  private applyCheckpoint(cp: Checkpoint): void {
+    this.baseSeed = cp.seed >>> 0;
+    this.levelIndex = cp.sector;
+    this.score = cp.score;
+    this.comboChain = 0;
+    this.comboTimer = 0;
+    // a retry never starts you nearly dead
+    this.player.health = Math.max(60, Math.min(this.player.maxHealth, cp.health));
+    this.player.armor = cp.armor;
+    for (const k of Object.keys(this.player.ammo) as (keyof typeof this.player.ammo)[]) {
+      this.player.ammo[k] = Math.min(this.player.ammoMax[k], Math.max(0, cp.ammo[k] ?? 0));
+    }
+    this.player.buffs.quad = this.player.buffs.shield = this.player.buffs.haste = 0;
+    this.weapons.restoreLoadout(cp.owned, cp.current);
+    this.totalKills = cp.totalKills;
+    this.totalEnemiesSoFar = cp.totalEnemies;
+    this.totalSecretsFound = cp.totalSecretsFound;
+    this.totalSecretsSoFar = cp.totalSecrets;
+    this.totalPlayTime = cp.totalTime;
+  }
+
+  /** fresh run on a new random layout: sector 1, sidearm only */
+  private resetRun(): void {
+    this.baseSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+    this.applyCheckpoint({
+      v: 1, seed: this.baseSeed, sector: 1, score: 0, health: 100, armor: 0,
+      ammo: { bullets: 48, shells: 0, rockets: 0, cells: 0 },
+      owned: ['pistol'], current: 'pistol',
+      totalKills: 0, totalEnemies: 0, totalSecretsFound: 0, totalSecrets: 0, totalTime: 0,
+    });
+    this.player.health = 100;
+    this.checkpoint = null;
+  }
+
+  /** heartbeat, low-health vignette, tutorial hint, death timer */
+  private clearTransientFX(): void {
+    this.audio.setHeartbeat(false);
+    this.lowHealth = false;
+    this.hud.setLowHealth(false);
+    this.hud.clearHint();
+    this.tipStep = -1;
+    this.deathTimer = 0;
+  }
+
+  /** back to the title on a fresh layout, without reloading the page */
+  private goToTitle(): void {
+    this.detachNet();
+    this.clearTransientFX();
+    if (this.automap.visible) this.automap.setVisible(false);
+    this.input.releaseLock();
+    this.input.releaseAll();
+    this.resetRun();
+    this.buildLevel();
+    this.state = 'title';
+    this.weapons.viewModel.visible = false;
+    this.showTitleScreen();
+  }
+
+  /**
+   * Common entry into a built sector: HUD up, message, then play. After an ad
+   * on desktop the click gesture is spent, so the player clicks once more
+   * ("READY — click to continue") to re-capture the mouse.
+   */
+  private enterSector(message: string, adShown: boolean): void {
     this.hud.hideScreen();
+    this.clearTransientFX();
     this.weapons.viewModel.visible = true;
-    this.state = 'playing';
     this.levelStartTime = this.time;
-    if (this.isTouch) {
+    this.input.releaseAll();
+    this.hud.message(message);
+    poki.measure('level', this.levelIndex, 'start');
+    if (adShown && !this.isTouch && !this.net) {
+      this.state = 'paused';
+      this.hud.showClickToResume(() => this.input.requestLock());
+      return;
+    }
+    this.state = 'playing';
+    if (!this.isTouch) this.input.requestLock();
+  }
+
+  /** died: replay this sector with the gear you entered it with */
+  private retrySector(adShown: boolean): void {
+    if (this.checkpoint) this.applyCheckpoint(this.checkpoint);
+    else this.resetRun();
+    this.buildLevel();
+    this.captureCheckpoint();
+    this.enterSector(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — second attempt. Follow the arrow.`, adShown);
+  }
+
+  /** abandon the run: new layout, sector 1, no save */
+  private newRunNow(adShown: boolean): void {
+    storageSet(RUN_KEY, null);
+    this.resetRun();
+    this.buildLevel();
+    this.captureCheckpoint();
+    poki.measure('campaign', 'main', 'start');
+    this.enterSector(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard.`, adShown);
+    this.startTips();
+  }
+
+  /** title "Continue": resume the saved run at the sector it was saved on */
+  private continueRun(adShown: boolean): void {
+    const save = this.loadSave();
+    if (!save) {
+      this.startGame(adShown);
+      return;
+    }
+    this.audio.init();
+    this.applyCheckpoint(save);
+    this.buildLevel();
+    this.captureCheckpoint();
+    poki.measure('campaign', 'main', 'continue');
+    this.enterSector(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — welcome back. Find the RED keycard.`, adShown);
+  }
+
+  private onContextLost(): void {
+    this.gfxLost = true;
+    if (this.state === 'playing' && !this.net) {
+      this.state = 'paused';
+      this.input.releaseAll();
+      this.input.releaseLock();
+    }
+    this.hud.setGraphicsLost(true, () => location.reload());
+  }
+
+  private onContextRestored(): void {
+    this.gfxLost = false;
+    this.hud.setGraphicsLost(false, () => {});
+    if (this.state === 'paused') this.showPauseScreen();
+  }
+
+  /** start the sector-1 level that's already built behind the title screen */
+  private startGame(adShown = false): void {
+    this.audio.init();
+    if (this.isTouch && !POKI) {
       // go immersive: fullscreen + landscape lock where the platform allows it
       // (not on Poki — its page owns fullscreen around the game iframe)
-      if (!POKI) {
-        void document.documentElement.requestFullscreen?.().catch(() => {});
-        const orientation = screen.orientation as ScreenOrientation & {
-          lock?: (o: string) => Promise<void>;
-        };
-        orientation.lock?.('landscape').catch(() => {});
-      }
-    } else {
-      this.input.requestLock();
+      void document.documentElement.requestFullscreen?.().catch(() => {});
+      const orientation = screen.orientation as ScreenOrientation & {
+        lock?: (o: string) => Promise<void>;
+      };
+      orientation.lock?.('landscape').catch(() => {});
     }
-    this.hud.message(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard. Reach the exit.`);
+    this.captureCheckpoint();
     poki.measure('campaign', 'main', 'start');
-    poki.measure('level', this.levelIndex, 'start');
+    this.enterSector(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard. Reach the exit.`, adShown);
     this.startTips();
     // if the browser blocked audio despite the gesture, tell the player how to fix it
     window.setTimeout(() => {
@@ -552,16 +771,12 @@ export class Game {
     this.tipTimer = secs + 1.2;
   }
 
-  private nextLevel(): void {
+  private nextLevel(adShown = false): void {
     this.levelIndex++;
     this.buildLevel();
+    this.captureCheckpoint();
     this.net?.sendNextLevel();
-    poki.measure('level', this.levelIndex, 'start');
-    this.hud.hideScreen();
-    this.state = 'playing';
-    this.levelStartTime = this.time;
-    if (!this.isTouch) this.input.requestLock();
-    this.hud.message(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — it gets worse down here.`);
+    this.enterSector(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — it gets worse down here.`, adShown);
   }
 
   /** push the persisted settings into every system they control */
@@ -576,10 +791,17 @@ export class Game {
   }
 
   private showTitleScreen(): void {
+    const save = this.loadSave();
     this.hud.showTitle({
       seed: this.baseSeed,
       best: this.bestScoreForSeed(),
-      onStart: () => this.afterAdBreak(() => this.startGame()),
+      touch: this.isTouch,
+      continueSector: save?.sector,
+      onStart: () => {
+        storageSet(RUN_KEY, null); // a new run replaces any saved one
+        this.afterBreak((ad) => this.startGame(ad));
+      },
+      onContinue: () => this.afterBreak((ad) => this.continueRun(ad)),
       onCoop: POKI ? undefined : () => this.openCoop(),
       onSettings: () => this.openSettings('title'),
     });
@@ -599,14 +821,19 @@ export class Game {
   }
 
   private resumeGame(): void {
-    if (this.isTouch) {
-      if (this.state === 'paused') {
+    if (this.state !== 'paused' || this.gfxLost) return;
+    this.afterBreak((adShown) => {
+      if (this.state !== 'paused') return;
+      this.input.releaseAll();
+      if (this.isTouch) {
         this.state = 'playing';
         this.hud.hideScreen();
+      } else if (adShown) {
+        this.hud.showClickToResume(() => this.input.requestLock());
+      } else {
+        this.input.requestLock(); // resume happens via the lock-change event
       }
-    } else {
-      this.input.requestLock(); // resume happens via the lock-change event
-    }
+    });
   }
 
   private showPauseScreen(): void {
@@ -623,10 +850,10 @@ export class Game {
         seed: this.baseSeed,
       },
       () => this.resumeGame(),
-      () => {
-        reloadToTitle();
-      },
-      () => this.openSettings('pause')
+      () => this.goToTitle(),
+      () => this.openSettings('pause'),
+      this.net ? 'Leave co-op' : this.levelIndex >= 2 ? 'Save &amp; quit to menu' : 'Main menu',
+      this.isTouch
     );
   }
 
@@ -640,7 +867,8 @@ export class Game {
         this.applySettings();
       },
       onNewLayout: () => {
-        reloadToTitle();
+        storageSet(RUN_KEY, null);
+        this.goToTitle();
       },
       onBack: () => {
         if (from === 'title') this.showTitleScreen();
@@ -653,9 +881,10 @@ export class Game {
     if (!locked && this.state === 'playing') {
       this.state = 'paused';
       this.showPauseScreen();
-    } else if (locked && this.state === 'paused') {
+    } else if (locked && this.state === 'paused' && !this.breakPending && !this.gfxLost) {
       this.state = 'playing';
       this.hud.hideScreen();
+      this.input.releaseAll();
     }
     if (locked) this.audio.init(); // gaining pointer lock is a fine moment to resume audio
   }
@@ -1006,12 +1235,9 @@ export class Game {
     this.score += 1000 + Math.max(0, 900 - Math.floor(levelTime) * 3);
     this.hud.updateScore(this.score, 1);
     this.audio.play('win');
-    this.hud.clearHint();
+    this.clearTransientFX();
     poki.measure('level', this.levelIndex, 'complete');
     if (this.levelIndex >= TOTAL_SECTORS) poki.measure('campaign', 'main', 'complete');
-    this.audio.setHeartbeat(false);
-    this.lowHealth = false;
-    this.hud.setLowHealth(false);
     this.input.releaseLock();
 
     const levelStats =
@@ -1022,10 +1248,15 @@ export class Game {
 
     if (this.levelIndex < TOTAL_SECTORS) {
       this.state = 'intermission';
+      // the save points at the NEXT sector: quitting now resumes there
+      this.captureCheckpoint(this.levelIndex + 1);
       this.net?.sendWin(false, `SECTOR ${this.levelIndex} CLEARED`, levelStats);
-      this.hud.showIntermission(this.levelIndex, levelStats, () => this.afterAdBreak(() => this.nextLevel()));
+      this.hud.showIntermission(this.levelIndex, levelStats, !this.net, () => {
+        if (this.state === 'intermission') this.afterBreak((ad) => this.nextLevel(ad));
+      });
     } else {
       this.state = 'won';
+      storageSet(RUN_KEY, null); // campaign done: nothing left to continue
       // per-layout best score: same seed = same dungeon, so scores compare fairly
       const best = this.bestScoreForSeed();
       const isRecord = this.score > best;
@@ -1043,9 +1274,15 @@ export class Game {
         `Secrets: ${this.totalSecretsFound} / ${this.totalSecretsSoFar} &nbsp;·&nbsp; ` +
         `Total time: ${this.formatTime(this.totalPlayTime)}<br><br>${scoreLine}`;
       this.net?.sendWin(true, 'CAMPAIGN COMPLETE', totals);
-      this.hud.showWin(totals, () => {
-        reloadToTitle();
-      });
+      this.hud.showWin(
+        totals,
+        () => {
+          if (this.state !== 'won') return;
+          if (this.net) this.goToTitle();
+          else this.afterBreak((ad) => this.newRunNow(ad));
+        },
+        () => this.goToTitle()
+      );
     }
   }
 
@@ -1284,8 +1521,12 @@ export class Game {
         this.input.releaseLock();
         this.hud.showDeath(
           `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,
+          this.levelIndex,
           () => {
-            reloadToTitle();
+            if (this.state === 'dead') this.afterBreak((ad) => this.retrySector(ad));
+          },
+          () => {
+            if (this.state === 'dead') this.afterBreak((ad) => this.newRunNow(ad));
           }
         );
       }

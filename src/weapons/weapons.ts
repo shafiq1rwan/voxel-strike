@@ -123,6 +123,24 @@ export class WeaponSystem {
     this.showModel(this.current);
   }
 
+  /** owned weapons + the one in hand, for sector checkpoints */
+  loadout(): { owned: WeaponId[]; current: WeaponId } {
+    return { owned: ORDER.filter((w) => this.owned.has(w)), current: this.current };
+  }
+
+  /** restore a checkpoint's loadout instantly (no lower/raise animation) */
+  restoreLoadout(owned: string[], current: string): void {
+    const valid = owned.filter((w): w is WeaponId => (ORDER as string[]).includes(w));
+    this.owned = new Set<WeaponId>(['pistol', ...valid]);
+    this.current = this.owned.has(current as WeaponId) ? (current as WeaponId) : 'pistol';
+    this.pending = null;
+    this.raiseT = 1;
+    this.cooldown = 0;
+    this.queuedShot = 0;
+    this.flashTime = 0;
+    this.showModel(this.current);
+  }
+
   private buildModels(): void {
     // SIDEARM — compact pistol
     {

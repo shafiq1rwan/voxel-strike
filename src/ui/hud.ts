@@ -163,6 +163,11 @@ const CSS = `
 .screen h1.win { color: #4cc26a; text-shadow: 3px 3px 0 #000, 0 0 24px rgba(76,194,106,.5); }
 .screen p { font-size: 15px; color: #8a94a8; margin: 4px 0; }
 .screen .prompt { margin-top: 26px; font-size: 17px; color: #ffd028; animation: pulse .7s infinite alternate; }
+.screen-btns { margin-top: 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.tbtn-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.screen .keyhint { margin-top: 12px; font-size: 11px; letter-spacing: .14em; color: #566076; }
+.screen.arming { cursor: default; }
+.screen.arming .tbtn, .screen.arming .prompt { opacity: .35; }
 .panel {
   position: relative; border: 1px solid #39404f; background: rgba(8,10,16,.82);
   padding: 34px 52px 30px;
@@ -698,21 +703,50 @@ export class HUD {
     return this.root;
   }
 
-  showTitle(opts: { seed: number; best?: number; onStart: () => void; onCoop?: () => void; onSettings: () => void }): void {
+  showTitle(opts: {
+    seed: number;
+    best?: number;
+    /** touch device: the how-to panel lists the on-screen controls */
+    touch?: boolean;
+    /** saved run: shows "Continue · Sector N" as the primary button */
+    continueSector?: number;
+    onStart: () => void;
+    onContinue?: () => void;
+    /** omitted on platforms without co-op (Poki build) */
+    onCoop?: () => void;
+    onSettings: () => void;
+  }): void {
     this.hideScreen();
     const el = document.createElement('div');
     el.id = 'title-screen';
     el.className = 'tscreen';
     const seedHex = (opts.seed >>> 0).toString(16).toUpperCase().padStart(8, '0');
+    const cont = opts.continueSector && opts.onContinue ? opts.continueSector : 0;
+    const controls = opts.touch
+      ? `<b>LEFT THUMB</b><span>Move (drag anywhere on the left)</span>
+          <b>RIGHT THUMB</b><span>Aim (drag anywhere on the right)</span>
+          <b>FIRE / JUMP</b><span>Buttons on the right</span>
+          <b>1&ndash;5</b><span>Tap a weapon slot to switch</span>
+          <b>MAP</b><span>Top-right button &mdash; shows where you've been</span>`
+      : `<b>WASD / ARROWS</b><span>Move</span>
+          <b>MOUSE</b><span>Aim</span>
+          <b>LEFT CLICK</b><span>Fire (hold to keep firing)</span>
+          <b>SPACE</b><span>Jump</span>
+          <b>1&ndash;5 / WHEEL</b><span>Switch weapon</span>
+          <b>TAB / M</b><span>Map</span>
+          <b>ESC</b><span>Pause</span>`;
     el.innerHTML = `
       <div class="title-center">
         <canvas id="title-logo"></canvas>
         <div class="title-tag">A Retro Voxel Shooter</div>
         <div class="title-mission">Three sectors down. One way out.</div>
         <div class="title-menu">
-          <button id="start-btn" class="tbtn tbtn-primary">Enter the facility</button>
+          ${cont
+            ? `<button id="continue-btn" class="tbtn tbtn-primary">Continue &middot; Sector ${cont}</button>`
+            : '<button id="start-btn" class="tbtn tbtn-primary">Enter the facility</button>'}
           <div class="title-menu-row">
-            <button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button>
+            ${cont ? '<button id="start-btn" class="tbtn tbtn-quiet">New run</button>' : ''}
+            ${opts.onCoop ? '<button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button>' : ''}
             <button id="howto-btn" class="tbtn tbtn-quiet">How to play</button>
             <button id="title-settings-btn" class="tbtn tbtn-quiet">Settings</button>
           </div>
@@ -720,25 +754,21 @@ export class HUD {
         <div id="title-brief" class="title-brief">
           <span class="chip"><i class="sq" style="background:#ff3428;color:#ff3428"></i>FIND THE RED KEYCARD</span>
           <span class="sep">&#9656;</span>
-          <span class="chip"><i class="sq" style="background:#8a94a8;color:#8a94a8"></i>OPEN THE VAULT</span>
+          <span class="chip"><i class="sq" style="background:#ff3428;color:#ff3428"></i>OPEN THE RED DOOR</span>
           <span class="sep">&#9656;</span>
-          <span class="chip"><i class="sq" style="background:#4cc26a;color:#4cc26a"></i>RIDE THE LIFT OUT</span>
+          <span class="chip"><i class="sq" style="background:#4cc26a;color:#4cc26a"></i>RIDE THE LIFT TO THE EXIT PAD</span>
         </div>
         <div id="howto-panel" class="howto" hidden>
-          <b>WASD</b><span>Move</span>
-          <b>MOUSE</b><span>Aim</span>
-          <b>LEFT CLICK</b><span>Fire (hold to keep firing)</span>
-          <b>SPACE</b><span>Jump</span>
-          <b>1&ndash;5 / WHEEL</b><span>Switch weapon</span>
-          <b>ESC</b><span>Release mouse, pause</span>
+          ${controls}
+          <span class="tip">Follow the yellow arrow at the top of the screen to your next objective.</span>
           <span class="tip">Green barrels explode and chain. Crates break open.</span>
           <span class="tip">A cracked wall hides a secret in every sector.</span>
-          <span class="tip">Gunfire is loud &mdash; whatever hears it comes looking.</span>
+          <span class="tip">Die and you restart the sector with the gear you brought in.</span>
         </div>
       </div>
       <div class="title-foot">
         <span>LAYOUT ${seedHex}${opts.best ? ` &middot; BEST SCORE ${opts.best.toLocaleString()}` : ' &middot; GENERATED FRESH EVERY RUN'}</span>
-        <span>VOXELSTRIKE 0.2</span>
+        <span>VOXELSTRIKE 0.3</span>
       </div>
     `;
     document.body.appendChild(el);
@@ -749,10 +779,9 @@ export class HUD {
     this.logoStop = startVoxelLogo(el.querySelector('#title-logo') as HTMLCanvasElement, 'VOXELSTRIKE');
 
     el.querySelector('#start-btn')!.addEventListener('click', () => opts.onStart());
+    el.querySelector('#continue-btn')?.addEventListener('click', () => opts.onContinue?.());
     el.querySelector('#title-settings-btn')!.addEventListener('click', () => opts.onSettings());
-    const coopBtn = el.querySelector('#coop-btn') as HTMLButtonElement;
-    if (opts.onCoop) coopBtn.addEventListener('click', () => opts.onCoop?.());
-    else coopBtn.remove(); // no co-op on this platform (Poki build)
+    el.querySelector('#coop-btn')?.addEventListener('click', () => opts.onCoop?.());
     const howto = el.querySelector('#howto-panel') as HTMLElement;
     const brief = el.querySelector('#title-brief') as HTMLElement;
     el.querySelector('#howto-btn')!.addEventListener('click', () => {
@@ -761,7 +790,10 @@ export class HUD {
       brief.style.display = show ? 'none' : 'flex';
     });
     this.titleKey = (ev: KeyboardEvent) => {
-      if (ev.code === 'Enter' || ev.code === 'NumpadEnter') opts.onStart();
+      if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') {
+        if (cont) opts.onContinue?.();
+        else opts.onStart();
+      }
     };
     window.addEventListener('keydown', this.titleKey);
   }
@@ -856,12 +888,56 @@ export class HUD {
     this.screenEl = el;
   }
 
-  showDeath(stats: string, onRestart: () => void): void {
-    this.showScreen(`
+  /** solo death: retry the sector from its checkpoint, or start over */
+  showDeath(stats: string, sector: number, onRetry: () => void, onNewRun: () => void): void {
+    this.showButtonScreen(`
       <h1>YOU DIED</h1>
       <p>${stats}</p>
-      <div class="prompt">CLICK TO TRY AGAIN</div>
-    `, onRestart);
+      <div class="screen-btns">
+        <button id="retry-btn" class="tbtn tbtn-primary">Retry sector ${sector}</button>
+        <div class="tbtn-row"><button id="newrun-btn" class="tbtn tbtn-quiet">New run</button></div>
+      </div>
+      <div class="keyhint">You restart with the gear you entered the sector with &middot; ENTER / SPACE to retry</div>
+    `, { '#retry-btn': onRetry, '#newrun-btn': onNewRun }, onRetry);
+  }
+
+  /** after an ad the desktop needs a fresh click to re-capture the mouse */
+  showClickToResume(onClick: () => void): void {
+    this.showScreen(`
+      <h1 class="win">READY</h1>
+      <div class="prompt">CLICK TO CONTINUE</div>
+    `, onClick, 0);
+  }
+
+  private gfxLostEl: HTMLElement | null = null;
+
+  /**
+   * WebGL context lost: an overlay above everything. A reload button appears
+   * after 4s in case the browser never gives the context back (iOS Safari
+   * blocks pages that lose it repeatedly).
+   */
+  setGraphicsLost(on: boolean, onReload: () => void): void {
+    if (!on) {
+      this.gfxLostEl?.remove();
+      this.gfxLostEl = null;
+      return;
+    }
+    if (this.gfxLostEl) return;
+    const el = document.createElement('div');
+    el.className = 'screen';
+    el.style.zIndex = '30';
+    el.style.cursor = 'default';
+    el.innerHTML = `<div class="panel">
+      <h1 style="font-size:34px">GRAPHICS LOST</h1>
+      <p>Your device paused the game's graphics. Recovering&hellip;</p>
+      <div class="screen-btns"><button class="tbtn tbtn-primary" hidden>Reload game</button></div>
+      <div class="keyhint">Progress from cleared sectors is saved.</div>
+    </div>`;
+    const btn = el.querySelector('button') as HTMLButtonElement;
+    btn.addEventListener('click', () => onReload());
+    window.setTimeout(() => (btn.hidden = false), 4000);
+    document.body.appendChild(el);
+    this.gfxLostEl = el;
   }
 
   /** co-op client: the host's connection is gone — the run is over */
@@ -1004,21 +1080,26 @@ export class HUD {
   }
 
   /** between-levels screen */
-  showIntermission(sector: number, stats: string, onNext: () => void): void {
+  showIntermission(sector: number, stats: string, saved: boolean, onNext: () => void): void {
     this.showScreen(`
       <h1 class="win">SECTOR ${sector} CLEARED</h1>
       <p>${stats}</p>
+      ${saved ? `<p>Progress saved &mdash; you can continue from sector ${sector + 1} later.</p>` : ''}
       <div class="prompt">CLICK TO DESCEND TO SECTOR ${sector + 1}</div>
     `, onNext);
   }
 
-  showWin(stats: string, onRestart: () => void): void {
-    this.showScreen(`
+  /** `onMenu` adds a "Main menu" button (solo); co-op has just the one action */
+  showWin(stats: string, onAgain: () => void, onMenu?: () => void): void {
+    this.showButtonScreen(`
       <h1 class="win">CAMPAIGN COMPLETE</h1>
       <p>All sectors cleared. The facility is silent.</p>
       <p>${stats}</p>
-      <div class="prompt">CLICK TO PLAY AGAIN</div>
-    `, onRestart);
+      <div class="screen-btns">
+        <button id="again-btn" class="tbtn tbtn-primary">Play a new layout</button>
+        ${onMenu ? '<div class="tbtn-row"><button id="menu-btn" class="tbtn tbtn-quiet">Main menu</button></div>' : ''}
+      </div>
+    `, { '#again-btn': onAgain, '#menu-btn': onMenu ?? onAgain }, onAgain, 1200);
   }
 
   showPause(
@@ -1029,8 +1110,10 @@ export class HUD {
       time: string; score: number; seed: number;
     },
     onResume: () => void,
-    onNewRun: () => void,
-    onSettings: () => void
+    onQuit: () => void,
+    onSettings: () => void,
+    quitLabel = 'Main menu',
+    touch = false
   ): void {
     this.hideScreen();
     const el = document.createElement('div');
@@ -1052,13 +1135,13 @@ export class HUD {
           <button id="resume-btn" class="tbtn tbtn-primary">Resume</button>
           <div class="title-menu-row">
             <button id="pause-settings-btn" class="tbtn tbtn-quiet">Settings</button>
-            <button id="pause-newrun-btn" class="tbtn tbtn-quiet">Abandon &amp; start new run</button>
+            <button id="pause-newrun-btn" class="tbtn tbtn-quiet">${quitLabel}</button>
           </div>
         </div>
       </div>
       <div class="title-foot">
         <span>LAYOUT ${seedHex}</span>
-        <span>ESC RELEASED THE MOUSE &middot; ENTER OR RESUME TO CONTINUE</span>
+        <span>${touch ? 'TAP RESUME TO CONTINUE' : 'ENTER / SPACE OR RESUME TO CONTINUE'}</span>
       </div>
     `;
     document.body.appendChild(el);
@@ -1066,10 +1149,10 @@ export class HUD {
     this.root.style.visibility = 'hidden';
     this.logoStop = startVoxelLogo(el.querySelector('#pause-logo') as HTMLCanvasElement, 'PAUSED', [176, 188, 210]);
     el.querySelector('#resume-btn')!.addEventListener('click', () => onResume());
-    el.querySelector('#pause-newrun-btn')!.addEventListener('click', () => onNewRun());
+    el.querySelector('#pause-newrun-btn')!.addEventListener('click', () => onQuit());
     el.querySelector('#pause-settings-btn')!.addEventListener('click', () => onSettings());
     this.titleKey = (ev: KeyboardEvent) => {
-      if (ev.code === 'Enter' || ev.code === 'NumpadEnter') onResume();
+      if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') onResume();
     };
     window.addEventListener('keydown', this.titleKey);
   }
@@ -1086,14 +1169,58 @@ export class HUD {
     this.screenEl = null;
   }
 
-  private showScreen(html: string, onClick: () => void): void {
+  /**
+   * Click-anywhere screen. It "arms" after `armMs`: until then clicks are
+   * ignored (dimmed prompt), so a trigger finger still held from the firefight
+   * that just ended can't skip the death/clear screen by accident.
+   */
+  private showScreen(html: string, onClick: () => void, armMs = 700): void {
     this.hideScreen();
     const el = document.createElement('div');
-    el.className = 'screen';
+    el.className = armMs > 0 ? 'screen arming' : 'screen';
     el.innerHTML = `<div class="panel">${html}</div>`;
-    el.addEventListener('click', () => onClick());
+    let armed = armMs <= 0;
+    if (!armed) {
+      window.setTimeout(() => {
+        armed = true;
+        el.classList.remove('arming');
+      }, armMs);
+    }
+    el.addEventListener('click', () => {
+      if (armed) onClick();
+    });
     document.body.appendChild(el);
     this.screenEl = el;
+  }
+
+  /** screen with real buttons (selector → handler), Enter/Space = `onEnter`, same arming */
+  private showButtonScreen(
+    html: string,
+    handlers: Record<string, () => void>,
+    onEnter: () => void,
+    armMs = 700
+  ): void {
+    this.hideScreen();
+    const el = document.createElement('div');
+    el.className = 'screen arming';
+    el.style.cursor = 'default';
+    el.innerHTML = `<div class="panel">${html}</div>`;
+    document.body.appendChild(el);
+    this.screenEl = el;
+    let armed = false;
+    window.setTimeout(() => {
+      armed = true;
+      el.classList.remove('arming');
+    }, armMs);
+    for (const [sel, fn] of Object.entries(handlers)) {
+      el.querySelector(sel)?.addEventListener('click', () => {
+        if (armed) fn();
+      });
+    }
+    this.titleKey = (ev: KeyboardEvent) => {
+      if (armed && (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space')) onEnter();
+    };
+    window.addEventListener('keydown', this.titleKey);
   }
 }
 
