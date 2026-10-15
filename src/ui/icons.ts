@@ -9,7 +9,7 @@
  * Icons licensed CC BY 4.0 (https://fontawesome.com/license/free).
  */
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
-import { faPlus } from '@fortawesome/free-solid-svg-icons/faPlus';
+import { faHeart } from '@fortawesome/free-solid-svg-icons/faHeart';
 import { faShieldHalved } from '@fortawesome/free-solid-svg-icons/faShieldHalved';
 import { faIdCard } from '@fortawesome/free-solid-svg-icons/faIdCard';
 import { faDoorClosed } from '@fortawesome/free-solid-svg-icons/faDoorClosed';
@@ -54,7 +54,7 @@ function shells(size: number): string {
 }
 
 export const ICONS = {
-  health: (size = 20) => fa(faPlus, '#e8524a', size),
+  health: (size = 18) => fa(faHeart, '#e8524a', size),
   armor: (size = 20) => fa(faShieldHalved, '#3a9cff', size),
   bullets: (size = 22) => bullets(size),
   shells: (size = 22) => shells(size),

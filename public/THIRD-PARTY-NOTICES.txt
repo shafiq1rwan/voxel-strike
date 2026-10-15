@@ -4,7 +4,7 @@ VOXELSTRIKE — third-party notices
 HUD icons
 ---------
 Font Awesome Free 6.7.2 by @fontawesome — https://fontawesome.com
-Icons used: plus, shield-halved, id-card, door-closed, elevator,
+Icons used: heart, shield-halved, id-card, door-closed, elevator,
 flag-checkered, rocket, battery-full, right-left.
 Icons licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
 Font Awesome Free license: https://fontawesome.com/license/free
