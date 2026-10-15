@@ -74,40 +74,44 @@ wrapper call is then a no-op and the game plays normally without ads.
 
 ## Game events (`PokiSDK.measure`)
 
-These events feed the funnels in the Poki dashboard. Category and `what` stay
-stable across versions, and none of them may contain `/` or `^`.
+Deliberately small: the game sends **7 events**, enough to answer "how many
+started playing", "who passed each level" and "how many times players died". Everything else (loads, plays,
+ads, playtime) Poki already tracks on its own. None of the values may contain
+`/` or `^`.
 
 | category | what | action | Fired when |
 |---|---|---|---|
-| `campaign` | `main` | `start` | A new run starts (title *Enter the facility* / *New run*, death screen *New run*, *Play a new layout*). |
-| `campaign` | `main` | `continue` | A saved run is resumed from the title (*Continue · Sector N*). |
-| `campaign` | `main` | `complete` | Sector 3 exit reached. |
-| `campaign` | `main` | `fail` | The player dies (solo). |
-| `level` | `1`–`3` | `start` | Each attempt at a sector begins: entering it, continuing into it, or retrying it after a death. |
-| `level` | `1`–`3` | `complete` | That sector's exit pad is reached. |
-| `level` | `1`–`3` | `fail` | The player dies in that sector. |
-| `keycard` | `1`–`3` | `picked` | The red keycard is picked up in that sector. |
-| `secret` | `1`–`3` | `found` | That sector's secret room is entered. |
+| `level` | `1` | `start` | A new run begins: title *Enter the facility*, *New run* (title or death screen), or *Play a new layout*. Not sent on *Retry sector* or *Continue* |
+| `level` | `1` / `2` / `3` | `complete` | That sector's exit pad is reached |
+| `level` | `1` / `2` / `3` | `fail` | The player dies in that sector (solo) |
 
-Each attempt sends either `complete` or `fail`, never both. Together with
-Poki's built-in metrics, these events give this funnel:
+In the Game Events tab they group as `level` → `1` / `2` / `3` →
+`start` / `complete` / `fail`, which reads as a funnel:
 
-**loads** (`gameLoadingFinished`) → **plays** (`gameplayStart` / `campaign start`) → **sector 1 / 2 / 3 complete** (`level N complete`) → **campaign complete**
+**level 1 start** (played) → **level 1 complete** → **level 2 complete** →
+**level 3 complete** (finished the game)
 
-Drop-off between sectors shows up as `level N start` minus `level N complete`.
-A retry is a new attempt, so `level N start` ÷ `level N complete` is the
-average number of tries per clear. That's the clearest difficulty signal per
-sector.
-`keycard N picked` against `level N complete` shows whether players who found
-the key still failed to reach the exit.
+- **Played** = `level 1 start` — players who pressed *Enter the facility*
+  (or started another run). Poki's own load count includes people who left
+  on the title screen.
+- **Passed level N** = `level N complete`.
+- **Total deaths** = `level 1 fail` + `level 2 fail` + `level 3 fail`. Each
+  death sends exactly one `fail`, and the split shows which sector kills
+  players most.
+- Counts are events, not unique players: someone who clears sector 1 in two
+  separate runs counts twice.
+
+Earlier versions of the code also sent `level start`, `campaign`,
+`keycard` and `secret` events; they were cut to keep the dashboard simple.
 
 ### Adding an event
 
 Call `poki.measure(category, what, action)` from
 [`src/platform/poki.ts`](src/platform/poki.ts) at the moment the event happens.
 Never call `window.PokiSDK` directly. The wrapper is a no-op outside Poki builds
-and survives a missing SDK. Then add a row to the table above and an assertion
-to `scripts/poki.mjs`.
+and survives a missing SDK. Then add a row to the table above and update the
+event assertions in `scripts/poki.mjs` (it checks that *only* the listed events
+are sent). Keep the set small — every event is another row to read.
 
 ## Testing
 
@@ -132,8 +136,9 @@ plays a fake 400 ms ad. The test checks:
   desktop asks for one click (READY) before play resumes
 - `gameplayStart`/`Stop` across start, pause, resume, intermission, and death,
   with no duplicate sends per frame
-- the `measure` funnel: campaign/level start, keycard, level complete,
-  level + campaign fail, and no `/` or `^` in any value
+- exactly one `level 1 start` when a run begins, `level N complete` /
+  `level N fail` after that, and nothing else (no event on keycard pickup,
+  sector entry or retry); no `/` or `^` in any value
 - one ad per break even on a double click, advancing exactly one sector
 - retry after death: an ad break, a second `level 2 start`, and no page reload
   (no second `init`)

@@ -48,7 +48,7 @@ node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups,
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
-node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() funnel, hidden co-op, boots with SDK blocked
+node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 start, level complete/fail), hidden co-op, boots with SDK blocked
 ```
 
 `?seed=N` on the URL reproduces a layout deterministically. `window.__voxelstrike`

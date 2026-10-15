@@ -3,7 +3,8 @@
  * dist-poki). The CDN SDK is swapped for a recording stub so the run is
  * deterministic (no real ads, no network): checks init/loading order, the
  * hidden co-op button, ad breaks muting audio, gameplayStart/Stop following
- * pause/death/intermission, the measure() funnel, page-scroll blocking — and
+ * pause/death/intermission, the measure() events (level 1 start on a new
+ * run, level N complete / fail, nothing else), page-scroll blocking — and
  * that the game still boots when an ad blocker drops the SDK.
  * Usage: node scripts/poki.mjs [url]
  */
@@ -116,7 +117,7 @@ try {
   c = await calls(page);
   check(c.includes('commercialBreak'), 'commercialBreak before the run');
   check(c.indexOf('commercialBreak') < c.indexOf('gameplayStart'), 'ad comes before gameplayStart');
-  check(c.includes('measure campaign main start') && c.includes('measure level 1 start'), 'campaign + level 1 start measured');
+  check(c.filter((x) => x.startsWith('measure')).join() === 'measure level 1 start', 'starting a run sends exactly one level 1 start');
 
   // pause / resume
   await page.evaluate(() => window.__voxelstrike.requestPause());
@@ -131,9 +132,9 @@ try {
   await sleep(300);
   check((await calls(page)).filter((x) => x === 'gameplayStart').length === starts, 'gameplayStart is not re-sent every frame');
 
-  // side objectives
+  // side objectives are not measured
   await page.evaluate(() => window.__voxelstrike.onKeyPickup());
-  check((await calls(page)).includes('measure keycard 1 picked'), 'keycard pickup measured');
+  check((await calls(page)).filter((x) => x.startsWith('measure')).length === 1, 'keycard pickup sends no game event');
 
   // clear sector 1 → intermission → ad → sector 2
   await page.evaluate(() => window.__voxelstrike.win());
@@ -153,7 +154,7 @@ try {
   c = await calls(page);
   check(c.filter((x) => x === 'commercialBreak').length === breaks + 1, 'one ad per break, even on double click');
   check((await page.evaluate(() => window.__voxelstrike.levelIndex)) === 2, 'advanced exactly one sector');
-  check(c.includes('measure level 2 start') && c[c.length - 1] !== 'gameplayStop', 'level 2 start + gameplay resumed');
+  check(c[c.length - 1] !== 'gameplayStop', 'sector 2: gameplay resumed');
   await page.screenshot({ path: `${OUT}/poki-sector2.png` });
 
   // death → fail events + gameplayStop
@@ -165,7 +166,7 @@ try {
   });
   await sleep(150);
   c = await calls(page);
-  check(c.includes('measure level 2 fail') && c.includes('measure campaign main fail'), 'death measured as level + campaign fail');
+  check(c.filter((x) => x === 'measure level 2 fail').length === 1, 'death measured once as level 2 fail');
   check(c[c.length - 1] === 'gameplayStop', 'death → gameplayStop');
   check(!c.some((x) => /[\/^]/.test(x.replace(/^measure /, ''))), "no '/' or '^' in measure values");
 
@@ -179,7 +180,9 @@ try {
   await sleep(400);
   c = await calls(page);
   check(c.filter((x) => x === 'commercialBreak').length === breaksBefore + 1, 'retry is an ad break');
-  check(c.filter((x) => x === 'measure level 2 start').length === 2, 'retry counts as a new level 2 attempt');
+  const sent = c.filter((x) => x.startsWith('measure'));
+  check(sent.join() === 'measure level 1 start,measure level 1 complete,measure level 2 fail',
+    `only level 1 start + level complete / fail were sent, retry adds nothing (${sent.join(', ')})`);
   check(c[c.length - 1] === 'gameplayStart' && (await state(page)) === 'playing', 'retry → gameplay resumed');
   check(!c.slice(2).includes('init'), 'retry did not reload the page (no second SDK init)');
   check(await page.evaluate(() => window.__bootMarker === 'same-page'), 'same page after retry');

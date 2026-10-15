@@ -271,7 +271,7 @@ node scripts/features.mjs   # tickers, ambush, powerups, combo, arena, headshots
 node scripts/checkpoint.mjs # retry, save + Continue, quit to menu, new run — no page reloads
 node scripts/monkey.mjs     # randomized stress run with NaN / out-of-world checks
 node scripts/coop.mjs       # 2-player co-op over BroadcastChannel
-node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ads, measure() funnel
+node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ads, measure() events (level 1 start, level complete/fail)
 ```
 
 Each accepts an optional URL argument, e.g.

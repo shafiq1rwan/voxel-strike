@@ -640,7 +640,6 @@ export class Game {
     this.levelStartTime = this.time;
     this.input.releaseAll();
     this.hud.message(message);
-    poki.measure('level', this.levelIndex, 'start');
     if (adShown && !this.isTouch && !this.net) {
       this.state = 'paused';
       this.hud.showClickToResume(() => this.input.requestLock());
@@ -665,7 +664,7 @@ export class Game {
     this.resetRun();
     this.buildLevel();
     this.captureCheckpoint();
-    poki.measure('campaign', 'main', 'start');
+    poki.measure('level', 1, 'start'); // a new run = someone played (not sent on retry)
     this.enterSector(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard.`, adShown);
     this.startTips();
   }
@@ -681,7 +680,6 @@ export class Game {
     this.applyCheckpoint(save);
     this.buildLevel();
     this.captureCheckpoint();
-    poki.measure('campaign', 'main', 'continue');
     this.enterSector(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — welcome back. Find the RED keycard.`, adShown);
   }
 
@@ -714,7 +712,7 @@ export class Game {
       orientation.lock?.('landscape').catch(() => {});
     }
     this.captureCheckpoint();
-    poki.measure('campaign', 'main', 'start');
+    poki.measure('level', 1, 'start'); // title "Enter the facility": someone played
     this.enterSector(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard. Reach the exit.`, adShown);
     this.startTips();
     // if the browser blocked audio despite the gesture, tell the player how to fix it
@@ -1077,7 +1075,6 @@ export class Game {
 
   /** grabbing the red keycard springs a security response around the player */
   onKeyPickup(): void {
-    poki.measure('keycard', this.levelIndex, 'picked');
     if (this.isNetClient) return; // the host owns the ambush
     const keyRoom = this.level.rooms.find((r) => r.kind === 'key');
     if (!keyRoom) return;
@@ -1200,8 +1197,8 @@ export class Game {
 
   onPlayerDeath(): void {
     if (!this.net) {
+      // Poki events are deliberately few: level 1 start, level N complete / fail (POKI.md)
       poki.measure('level', this.levelIndex, 'fail');
-      poki.measure('campaign', 'main', 'fail');
     }
     this.state = 'dead';
     this.deathTimer = 0;
@@ -1240,8 +1237,7 @@ export class Game {
     this.hud.updateScore(this.score, 1);
     this.audio.play('win');
     this.clearTransientFX();
-    poki.measure('level', this.levelIndex, 'complete');
-    if (this.levelIndex >= TOTAL_SECTORS) poki.measure('campaign', 'main', 'complete');
+    poki.measure('level', this.levelIndex, 'complete'); // the only other Poki event (POKI.md)
     this.input.releaseLock();
 
     const levelStats =
@@ -1483,7 +1479,6 @@ export class Game {
       if (p.x > s.x && p.x < s.x + s.w && p.z > s.z && p.z < s.z + s.d) {
         this.secretAnnounced = true;
         this.secretsFound = 1;
-        poki.measure('secret', this.levelIndex, 'found');
         this.audio.play('secret');
         this.hud.message('You found a secret area! +500');
         this.score += 500;
