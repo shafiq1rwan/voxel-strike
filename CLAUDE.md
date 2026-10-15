@@ -30,7 +30,7 @@ node scripts/e2e.mjs        # plays the whole 3-sector campaign: aggro, barrels,
 node scripts/movement.mjs   # WASD displacement must match camera basis vectors at 5 yaw angles
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, touch map + weapon button/wheel
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, touch map + weapon button/wheel, phone settings fit
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
@@ -213,7 +213,11 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   offline safe) plus hand-drawn bullet/shell rounds. FA is CC BY 4.0 and
   minification strips its license comment, so the credit lives in
   `public/THIRD-PARTY-NOTICES.txt` (ships in web + Poki builds) — list any
-  newly used icon there.
+  newly used icon there. Full-screen menus (`.tscreen`) must fit a ~360px
+  tall landscape phone: they scroll (`overflow-y: auto`, inner block centred
+  by auto margins so it never clips at the top, footer in the flow), and
+  settings switch to a compact two-column grid under `max-height: 560px` —
+  check new menu content at 667×375 (`features.mjs` #14).
 - `src/ui/hud.ts` — DOM HUD + all screens; the voxel wordmark renderer
   (`startVoxelLogo`) draws 5×7 glyphs as extruded blocks (add glyphs to
   `GLYPHS` before using new letters in a wordmark). `hud.hint()` is the

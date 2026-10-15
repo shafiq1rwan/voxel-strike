@@ -326,15 +326,21 @@ body.touch-mode #hint { bottom: 12px; max-width: 46vw; font-size: 11px; padding:
 }
 
 /* ---------------- full-screen menus (title, pause) ---------------- */
+/* menus scroll when they don't fit (phones in landscape are ~360-400px tall):
+   the inner block is centred by auto margins, so it sits in the middle when
+   it fits and starts at the top — never clipped — when it doesn't */
 .tscreen {
   position: fixed; inset: 0; z-index: 10; color: #cfd6e4;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  padding: 12px 0 13px; box-sizing: border-box;
+  overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
   background:
     radial-gradient(ellipse at 50% 115%, rgba(5,6,10,0), rgba(5,6,10,.9) 72%),
     linear-gradient(rgba(5,6,10,.62), rgba(5,6,10,.38) 42%, rgba(5,6,10,.8));
 }
+.tscreen > .title-center { margin: auto 0; flex-shrink: 0; }
 .tscreen::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
+  content: ''; position: fixed; inset: 0; pointer-events: none;
   background: repeating-linear-gradient(0deg, rgba(0,0,0,.24) 0 1px, transparent 1px 3px);
 }
 .title-center {
@@ -449,14 +455,36 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
 .howto b { color: #cfd6e4; font-weight: bold; letter-spacing: .1em; }
 .howto .tip { grid-column: 1 / -1; color: #6f7a90; }
 .howto .tip:first-of-type { margin-top: 8px; }
+/* in the flow (last flex item), so a tall menu scrolls past it instead of under it */
 .title-foot {
-  position: absolute; left: 18px; right: 18px; bottom: 13px;
+  align-self: stretch; flex-shrink: 0; margin: 10px 18px 0;
   display: flex; justify-content: space-between; gap: 12px;
   font-size: 11px; letter-spacing: .12em; color: #566076;
 }
 @media (max-height: 560px) {
   .title-brief, .howto { margin-top: 16px; }
   .title-menu { margin-top: 18px; }
+  .tscreen { padding: 4px 0 7px; }
+  .title-foot { margin-top: 4px; }
+  /* settings: smaller logo + tighter rows so Back fits on a landscape phone */
+  #settings-logo { width: min(40vw, 230px); }
+  #settings-screen .title-tag { margin-top: 4px; }
+  #settings-screen .setlist { margin-top: 8px; }
+  #settings-screen .setrow { padding: 5px 4px; }
+  #settings-screen .title-menu { margin-top: 10px; }
+  #settings-screen .tbtn-primary { padding: 10px 40px; font-size: 15px; }
+}
+/* short AND wide (landscape phone): settings rows in two columns */
+@media (max-height: 560px) and (min-width: 600px) {
+  #settings-screen .title-center { max-width: 1000px; }
+  #settings-screen .setlist {
+    display: grid; grid-template-columns: 1fr 1fr; column-gap: 26px; width: min(96vw, 960px);
+  }
+  #settings-screen .setrow { font-size: 10px; letter-spacing: .1em; gap: 8px; }
+  #settings-screen .setctl { gap: 8px; }
+  #settings-screen input[type=range].tslider { width: 92px; }
+  #settings-screen .setval { min-width: 40px; }
+  #settings-screen .sethint { font-size: 9px; letter-spacing: .04em; }
 }
 @media (prefers-reduced-motion: reduce) {
   .screen .prompt, #hp.low .value, #obj-main.flash { animation: none; }

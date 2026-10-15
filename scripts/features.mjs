@@ -623,6 +623,33 @@ try {
     check((await cur()) === 'smg', `touch: firing an empty shotgun auto-switches to a loaded weapon (${await cur()})`);
     await mob.close();
   }
+
+  // --- 14. phone landscape: settings fit and Back works
+  // Regression: on a ~375px-tall phone the settings list overflowed with no
+  // scroll, pushing the Back button off-screen — players were stuck in it.
+  {
+    const ph = await browser.newPage();
+    ph.on('pageerror', (err) => errors.push(`[phone pageerror] ${err.message}`));
+    await ph.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
+    await ph.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await ph.waitForSelector('#title-settings-btn');
+    await ph.tap('#title-settings-btn');
+    await ph.waitForSelector('#settings-back');
+    await new Promise((r) => setTimeout(r, 300));
+    const fit = await ph.evaluate(() => {
+      const scr = document.querySelector('#settings-screen');
+      const r = document.querySelector('#settings-back').getBoundingClientRect();
+      return { overflow: scr.scrollHeight - scr.clientHeight, top: r.top, bottom: r.bottom, vh: innerHeight };
+    });
+    await ph.screenshot({ path: 'scripts/shots/features-phone-settings.png' });
+    check(fit.overflow <= 0 && fit.top >= 0 && fit.bottom <= fit.vh,
+      `phone settings: everything fits, Back on screen (overflow ${fit.overflow}px, Back bottom ${Math.round(fit.bottom)}/${fit.vh})`);
+    await ph.tap('#settings-back');
+    await new Promise((r) => setTimeout(r, 300));
+    check(await ph.evaluate(() => !!document.querySelector('#title-screen') && !document.querySelector('#settings-screen')),
+      'phone settings: tapping Back returns to the title');
+    await ph.close();
+  }
 } finally {
   await browser.close();
 }
