@@ -189,7 +189,8 @@ export class Game {
     this.hud.onPauseClick = () => this.requestPause();
 
     if (this.isTouch) {
-      new TouchControls(this.hud.container, this.input, () => this.requestPause(), () => this.toggleMap());
+      new TouchControls(this.hud.container, this.input, () => this.requestPause(), () => this.toggleMap(),
+        () => this.weapons.loadout());
     }
 
     this.buildLevel();
@@ -754,7 +755,7 @@ export class Game {
       ? [
           ['LEFT THUMB &mdash; MOVE &nbsp;&middot;&nbsp; RIGHT THUMB &mdash; AIM &nbsp;&middot;&nbsp; ' + k('FIRE'), 7],
           [objective, 6],
-          [`${k('MAP')} SHOWS WHERE YOU'VE BEEN &nbsp;&middot;&nbsp; TAP A NUMBER TO SWITCH GUNS`, 6],
+          [`${k('MAP')} SHOWS WHERE YOU'VE BEEN &nbsp;&middot;&nbsp; TAP ${k('GUN')} TO SWITCH &middot; HOLD FOR ALL`, 6],
         ]
       : [
           [`${k('W')}${k('A')}${k('S')}${k('D')} MOVE &nbsp;&middot;&nbsp; ${k('MOUSE')} AIM &nbsp;&middot;&nbsp; ${k('CLICK')} FIRE &nbsp;&middot;&nbsp; ${k('SPACE')} JUMP`, 7],

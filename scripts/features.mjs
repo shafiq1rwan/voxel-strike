@@ -552,6 +552,75 @@ try {
     await mob.evaluate(() => window.__voxelstrike.requestPause());
     await new Promise((r) => setTimeout(r, 150));
     check(!(await isOpen()), 'map closes itself when the game pauses');
+
+    // --- 13. touch weapon button: tap / swipe / hold-wheel, owned-only slots,
+    // auto-switch on empty. (Switching via tiny top-of-screen slots was hard.)
+    await mob.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.resumeGame();
+      for (const o of g.enemies.list) { o.pos.x = 2; o.pos.z = 2; o.awake = false; }
+      g.weapons.give('shotgun');
+      g.weapons.give('smg');
+      Object.assign(g.player.ammo, { bullets: 100, shells: 20 });
+    });
+    await new Promise((r) => setTimeout(r, 900));
+    const cur = () => mob.evaluate(() => window.__voxelstrike.weapons.current);
+    const settle = () => new Promise((r) => setTimeout(r, 500));
+    const btn = await mob.evaluate(() => {
+      const r = document.querySelector('#tweapon').getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    check((await cur()) === 'smg', `weapon button: setup holds the SMG (${await cur()})`);
+
+    await mob.touchscreen.tap(btn.x, btn.y);
+    await settle();
+    const label = await mob.evaluate(() => document.querySelector('#tweapon-num').textContent);
+    check((await cur()) === 'pistol' && label === '1', `weapon button: tap cycles to the next owned weapon, wrapping (${await cur()}, label ${label})`);
+
+    await mob.touchscreen.touchStart(btn.x, btn.y);
+    await mob.touchscreen.touchMove(btn.x - 45, btn.y);
+    await mob.touchscreen.touchEnd();
+    await settle();
+    check((await cur()) === 'smg', `weapon button: swipe left goes to the previous weapon (${await cur()})`);
+
+    await mob.touchscreen.touchStart(btn.x, btn.y);
+    await new Promise((r) => setTimeout(r, 450));
+    const wheel = await mob.evaluate(() => ({
+      open: document.querySelector('#twheel').classList.contains('open'),
+      items: [...document.querySelectorAll('.twheel-item')].map((el) => {
+        const r = el.getBoundingClientRect();
+        return { label: el.firstChild.textContent, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }),
+    }));
+    check(wheel.open && wheel.items.length === 3, `weapon wheel: hold opens it with the 3 owned weapons (${wheel.items.length})`);
+    const target = wheel.items.find((it) => it.label === '2');
+    await mob.touchscreen.touchMove(target.x, target.y);
+    await mob.screenshot({ path: 'scripts/shots/features-touch-wheel.png' });
+    await mob.touchscreen.touchEnd();
+    await settle();
+    const closed = await mob.evaluate(() => !document.querySelector('#twheel').classList.contains('open'));
+    check((await cur()) === 'shotgun' && closed, `weapon wheel: slide onto slot 2 + release picks the shotgun (${await cur()})`);
+
+    await mob.touchscreen.touchStart(btn.x, btn.y);
+    await new Promise((r) => setTimeout(r, 450));
+    await mob.touchscreen.touchEnd();
+    await settle();
+    check((await cur()) === 'shotgun', 'weapon wheel: releasing on the button cancels');
+
+    const slots = await mob.evaluate(() =>
+      [...document.querySelectorAll('#slots .slot')].filter((s) => getComputedStyle(s).display !== 'none').length);
+    check(slots === 3, `touch slot bar shows only owned weapons (${slots})`);
+
+    await mob.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.player.ammo.shells = 0;
+      g.input.touchState.fire = true;
+      g.input.pressFire();
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    await mob.evaluate(() => { window.__voxelstrike.input.touchState.fire = false; });
+    await settle();
+    check((await cur()) === 'smg', `touch: firing an empty shotgun auto-switches to a loaded weapon (${await cur()})`);
     await mob.close();
   }
 } finally {

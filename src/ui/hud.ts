@@ -215,17 +215,14 @@ const CSS = `
   position: absolute; right: 0; bottom: 0; width: 55%; height: 82%;
   pointer-events: auto; touch-action: none;
 }
-/* the joystick rests bottom-left so players see where to put their thumb;
-   a touch anywhere in the left zone re-centres it under the thumb */
 #tjoy-base {
-  position: absolute; left: 30px; bottom: 30px; width: 120px; height: 120px; border-radius: 50%;
-  border: 2px solid rgba(207,214,228,.5); background: rgba(10,13,20,.3);
-  pointer-events: none; transition: opacity .15s;
+  position: absolute; width: 96px; height: 96px; border-radius: 50%;
+  border: 2px solid rgba(255,208,40,.45); background: rgba(10,13,20,.35);
+  display: none; pointer-events: none;
 }
-#tjoy-base.rest { opacity: .7; }
 #tjoy-knob {
-  position: absolute; left: 37px; top: 37px; width: 46px; height: 46px;
-  border-radius: 50%; background: rgba(207,214,228,.6); border: 1px solid rgba(0,0,0,.5);
+  position: absolute; left: 28px; top: 28px; width: 40px; height: 40px;
+  border-radius: 50%; background: rgba(255,208,40,.55); border: 1px solid #000;
 }
 .tbtn-touch {
   position: absolute; pointer-events: auto; touch-action: none;
@@ -237,6 +234,23 @@ const CSS = `
 }
 #tfire { right: 18px; bottom: 18px; width: 104px; height: 104px; font-size: 16px; }
 #tjump { right: 136px; bottom: 54px; }
+/* weapon button above JUMP: tap = next, swipe = prev/next, hold = wheel */
+#tweapon { right: 136px; bottom: 132px; flex-direction: column; gap: 2px; line-height: 1; }
+#tweapon .ico { opacity: .75; }
+#tweapon-num { font-size: 18px; color: #ffd028; }
+#tweapon-name { font-size: 7.5px; letter-spacing: .5px; max-width: 60px; overflow: hidden; white-space: nowrap; }
+#twheel { position: absolute; inset: 0; pointer-events: none; display: none; }
+#twheel.open { display: block; }
+.twheel-item {
+  position: absolute; width: 54px; height: 54px; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: rgba(8,10,16,.84); border: 2px solid rgba(207,214,228,.45); color: #f0f2f6;
+  font: bold 17px 'Courier New', Courier, monospace; line-height: 1; text-shadow: 1px 1px 0 #000;
+  transition: transform .08s, border-color .08s, color .08s;
+}
+.twheel-item small { font-size: 7px; letter-spacing: .3px; }
+.twheel-item.cur { border-color: rgba(255,208,40,.55); }
+.twheel-item.pick { color: #ffd028; border-color: #ffd028; background: rgba(40,32,8,.92); transform: scale(1.18); }
 /* map + pause sit exactly where the desktop buttons are (#sysbtns) */
 #tmap, #tpause {
   top: 34px; height: 34px; border-radius: 0; border-width: 1px; border-color: #6a7488;
@@ -277,7 +291,9 @@ body.touch-mode #obj-head { font-size: 13px; }
 body.touch-mode #sysbtns .sysbtn { visibility: hidden; } /* the touch #tmap/#tpause sit here */
 body.touch-mode #weaponbar { top: 8px; bottom: auto; gap: 6px; }
 body.touch-mode #slots { gap: 6px; }
-body.touch-mode .slot { width: 30px; height: 28px; font-size: 13px; }
+/* touch: only weapons you own, bigger targets (the weapon button does most switching) */
+body.touch-mode .slot { width: 36px; height: 30px; font-size: 14px; }
+body.touch-mode .slot:not(.owned) { display: none; }
 body.touch-mode .slot.active::after { bottom: -6px; height: 2px; }
 body.touch-mode .key { width: 34px; height: 28px; }
 body.touch-mode #objective { top: 50px; max-width: 40vw; }
@@ -606,6 +622,11 @@ export class HUD {
 
   updateWeapon(w: WeaponSystem): void {
     this.weaponNameEl.textContent = WEAPONS[w.current].name;
+    // touch weapon button (mounted by TouchControls in touch mode)
+    const tNum = this.root.querySelector('#tweapon-num');
+    const tName = this.root.querySelector('#tweapon-name');
+    if (tNum) tNum.textContent = String(ORDER.indexOf(w.current) + 1);
+    if (tName) tName.textContent = WEAPONS[w.current].name;
     const slots = this.slotsEl.querySelectorAll('.slot');
     ORDER.forEach((id, i) => {
       slots[i].classList.toggle('owned', w.has(id));

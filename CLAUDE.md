@@ -30,7 +30,7 @@ node scripts/e2e.mjs        # plays the whole 3-sector campaign: aggro, barrels,
 node scripts/movement.mjs   # WASD displacement must match camera basis vectors at 5 yaw angles
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, touch map + weapon button/wheel
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
@@ -146,7 +146,8 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   (cells ammo): `fireArc` raycasts the first target then chains to up to 3
   more within 7u (LOS-checked, ×0.7 damage per hop), drawn as jagged teal
   tracer segments (`Tracers.fire` takes color + life; pool sized for it).
-  Adding a weapon means updating BOTH `ORDER` arrays (weapons.ts + hud.ts)
+  Adding a weapon means updating BOTH `ORDER` arrays (weapons.ts — exported,
+  also used by touch.ts's weapon wheel — + hud.ts), `DRY_SWITCH` in weapons.ts,
   and the Digit list in input.ts. Hitscan headshots: husk/brute hits above
   `pos.y + half.y * 0.45` deal ×2 (gold marker, +50 kill bonus via
   `Enemy.lastHitHead`, which damage() clears after each hit so splash kills
@@ -282,7 +283,15 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   tries fullscreen + orientation lock on start. When held in portrait, the
   whole body gets `.force-landscape` (CSS rotate 90°); Renderer.resize reads
   BODY client dims (not window) and TouchControls.mapXY converts raw touch
-  coords into the rotated game space — keep those three in sync.
+  coords into the rotated game space — keep those three in sync. The
+  joystick is invisible until touched (appears under the thumb, hides on
+  release) — a resting on-screen ring was tried and rejected. Weapon
+  switching on touch is the `#tweapon` button above JUMP: tap = next owned,
+  swipe = prev/next, hold 280ms = a wheel of owned weapons (slide + release
+  picks, release on the button cancels); wheel positions use offsetLeft/Top
+  (layout space) so they match `mapXY`. The top slot bar shows owned weapons
+  only, and an empty weapon auto-switches to a loaded one (touch only,
+  `DRY_SWITCH` order, rockets last). `features.mjs` #13 covers all of it.
 - PWA: `public/manifest.webmanifest` (fullscreen, landscape) + `public/sw.js`
   (network-first, cache fallback — bump its CACHE name when changing SW
   behavior) + icons from `node scripts/gen-icons.mjs`. The SW registers in

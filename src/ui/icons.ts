@@ -17,6 +17,7 @@ import { faElevator } from '@fortawesome/free-solid-svg-icons/faElevator';
 import { faFlagCheckered } from '@fortawesome/free-solid-svg-icons/faFlagCheckered';
 import { faRocket } from '@fortawesome/free-solid-svg-icons/faRocket';
 import { faBatteryFull } from '@fortawesome/free-solid-svg-icons/faBatteryFull';
+import { faRightLeft } from '@fortawesome/free-solid-svg-icons/faRightLeft';
 
 const C = 'currentColor';
 
@@ -64,6 +65,8 @@ export const ICONS = {
   door: (size = 18) => fa(faDoorClosed, C, size),
   lift: (size = 18) => fa(faElevator, C, size),
   pad: (size = 18) => fa(faFlagCheckered, C, size),
+  /** touch weapon button: tap to cycle */
+  swap: (size = 10) => fa(faRightLeft, C, size),
 };
 
 export type AmmoIcon = 'bullets' | 'shells' | 'rockets' | 'cells';

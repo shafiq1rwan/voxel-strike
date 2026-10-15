@@ -55,7 +55,11 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   },
 };
 
-const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
+/** slot order (keys 1-5); touch.ts maps wheel picks through it */
+export const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
+
+/** touch auto-switch preference when the weapon in hand runs dry (rockets last: self-splash) */
+const DRY_SWITCH: WeaponId[] = ['shotgun', 'smg', 'arc', 'pistol', 'rocket'];
 
 // view-model palette (theme-locked)
 const VOID = 0x05060a;
@@ -451,7 +455,13 @@ export class WeaponSystem {
       } else if (!this.dryFired) {
         this.dryFired = true;
         game.audio.play('dryfire');
-        // auto-switch away from an empty weapon feels bad; just click.
+        // desktop: just click (number keys are right there). Touch: switching
+        // is a reach mid-fight, so hop to the best weapon that still has ammo.
+        if (game.isTouch) {
+          const next = DRY_SWITCH.find((id) =>
+            id !== this.current && this.owned.has(id) && game.player.ammo[WEAPONS[id].ammoType] >= WEAPONS[id].ammoPerShot);
+          if (next) this.switchTo(next);
+        }
       }
       // adrenaline powerup: faster trigger
       this.cooldown = 1 / (def.rate * (game.player.buffs.haste > 0 ? 1.35 : 1));
