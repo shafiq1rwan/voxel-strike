@@ -11,6 +11,20 @@ always the procedural voxel rigs — an optional billboard sprite-skin layer
 existed once and was removed (nothing shipped it; per-enemy sheet clones cost
 GPU memory on iOS).
 
+## Docs (keep them in sync with the code)
+
+- `docs/ARCHITECTURE.md` — module map, states, frame loop, sector build,
+  render passes, co-op, storage keys, builds. Update when structure changes.
+- `docs/ART.md` — art direction, palette, view-model rules, HUD style, and
+  the **owner's calls** (no black outlines, slim icons, invisible joystick,
+  no sequel teases). Read before any visual change; art direction is the
+  owner's decision, so show a screenshot before polishing further.
+- `docs/UI_SPEC.md` — HUD layout (desktop + mobile), touch controls, every
+  screen, UI rules. Update when the HUD, controls or a screen changes.
+- `docs/TESTING.md` — every suite, running/writing them, gotchas. Update when
+  a suite is added or its coverage changes (and the command list below).
+- `POKI.md` — the Poki build, SDK lifecycle, `measure()` events.
+
 ## Commands
 
 ```bash

@@ -51,16 +51,23 @@ is bigger and meaner than the last.
 | Tab or M | Automap (fills in as you explore) |
 | Esc | Release the mouse (pauses) |
 
+On desktop a **minimap** in the top-left corner shows the explored area
+around you.
+
 **On phones/tablets** the game switches to touch controls automatically:
-left-thumb virtual joystick to move, drag the right side to aim, FIRE and
-JUMP buttons (with the ammo count above FIRE), tap the weapon slots in the
-top bar to switch, and MAP + pause buttons top-right. The HUD moves to a compact
-top strip so the bottom corners stay clear for your thumbs. The game is
-**always landscape**: held in portrait, it rotates itself 90° (no need to
-enable the OS auto-rotate), and the installed PWA locks landscape natively.
-Touch play also gets **aim assist** — near-miss shots bend onto the target
-and look sensitivity eases while tracking an enemy (toggle in Settings;
-never active with a mouse).
+touch anywhere on the left half to get a joystick under your thumb, drag the
+right side to aim, and use the FIRE and JUMP buttons (ammo count above
+FIRE). The **weapon button** above JUMP switches guns: tap for the next one,
+swipe left/right to step through them, or hold to open a weapon wheel and
+slide onto the one you want. An empty gun switches to a loaded one by
+itself. MAP and pause are top-right, and the weapon slots move to the top so
+the bottom corners stay clear for your thumbs. The game is **always
+landscape**: held in portrait, it rotates itself 90° (no need to enable the
+OS auto-rotate), and the installed PWA locks landscape natively.
+Touch play also gets **aim assist**: near-miss shots bend onto the target,
+aiming slows slightly over an enemy, and while you move, drag or fire the
+view gently follows the enemy you're already aiming near (toggle in
+Settings; never active with a mouse).
 
 ## Co-op
 
@@ -134,8 +141,12 @@ Tips:
 | 4 | **THUMPER** | Rocket launcher | Secret pickup; splash damage, destroys crates and cracked walls |
 | 5 | **ARC CASTER** | Chain lightning | Arena prize; the bolt arcs to up to 3 more enemies near the first hit |
 
-All weapons have recoil, muzzle flash (sprite + dynamic light on the walls),
-per-type ammo pools, and box-modeled first-person view models.
+All weapons have recoil, a muzzle flash (starburst sprite + dynamic light on
+the walls), per-type ammo pools, and shaded box-modeled view models with
+moving parts: the pistol slide blows back, the scattergun racks its pump and
+ejects the hull, the ripper's bolt cycles, the thumper's ready light flips
+red/green, and the arc caster's coils charge and flare. Guns sway as you
+turn and bob in step with your footsteps.
 
 ## Bestiary
 
@@ -160,18 +171,22 @@ steer around walls with a Doom-style sidestep when blocked.
 
 ## Engine overview
 
+The full map — states, the frame loop, sector building, rendering passes,
+co-op — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ```
 src/
-├── main.ts                 entry point
-├── game.ts                 orchestrator: game loop, state machine, explosions, win/lose
+├── main.ts                 entry point (Poki init, service worker)
+├── game.ts                 orchestrator: state machine, frame loop, sectors, explosions, score
 ├── types.ts                shared plain-data types (no Three.js imports)
 ├── core/
-│   ├── renderer.ts         Three.js setup, 240-line internal res, fog
+│   ├── renderer.ts         Three.js setup, 240-line internal res, fog, weapon overlay pass
 │   ├── input.ts            keyboard + pointer-lock mouse
+│   ├── touch.ts            touch joystick, look, buttons, weapon button + wheel
 │   ├── physics.ts          AABB-vs-voxel movement, ray/box intersection
 │   ├── audio.ts            procedural WebAudio synth, positional pan/gain
 │   ├── music.ts            optional soundtrack: menu/ambient/combat crossfading loops
-│   ├── settings.ts         persisted options (sensitivity, volume, FOV, resolution)
+│   ├── settings.ts         persisted options (sensitivity, volume, FOV, resolution, …)
 │   └── rng.ts              seeded RNG (mulberry32)
 ├── world/
 │   ├── blocks.ts           block types + procedural 16px texture atlas
@@ -179,18 +194,28 @@ src/
 │   ├── mesher.ts           greedy mesher + chunk manager + chunk shader
 │   └── levelgen.ts         procedural dungeon generator + validator
 ├── entities/
-│   ├── player.ts           movement, health/armor/keys/ammo, camera
+│   ├── player.ts           movement, health/armor/keys/ammo, camera, touch aim assist
+│   ├── aimassist.ts        touch aim-assist target picking
 │   ├── enemies.ts          enemy AI, models, manager
-│   ├── door.ts             sliding doors (lockable) + elevator platform
-│   ├── pickups.ts          items, keycards, weapon pickups
-│   └── projectiles.ts      pooled rockets + enemy plasma bolts
+│   ├── door.ts             sliding doors (lockable), elevator, exit beacon
+│   ├── pickups.ts          items, keycards, weapon pickups, powerups
+│   ├── projectiles.ts      pooled rockets + enemy plasma bolts
+│   └── remoteplayer.ts     co-op partner avatar
+├── weapons/
+│   └── weapons.ts          weapon defs, firing, view models + animation
 ├── fx/
 │   ├── particles.ts        1024-instance pooled voxel particles
 │   ├── tracers.ts          pooled hitscan tracer streaks
 │   └── dynlights.ts        dynamic light pool fed to the chunk shader
-├── ui/
-│   └── hud.ts              DOM overlay: stats, messages, screens
-└── (scripts/)              headless browser tests (see below)
+├── net/
+│   ├── netplay.ts          host-authoritative co-op sync
+│   └── transport.ts        PeerJS / BroadcastChannel transports
+├── platform/
+│   └── poki.ts             Poki SDK wrapper (Poki builds only)
+└── ui/
+    ├── hud.ts              DOM HUD + every screen
+    ├── automap.ts          automap overlay + desktop minimap
+    └── icons.ts            inline SVG HUD icons
 ```
 
 Key design points:
@@ -230,19 +255,23 @@ Key design points:
 
 ## Tests
 
-Three headless-browser test suites drive the real game in Edge
-(`puppeteer-core`, no browser download needed) and save screenshots to
-`scripts/shots/`. Run them with a dev **or** preview server up:
+Ten headless-browser suites drive the real game in Edge (`puppeteer-core`,
+no browser download needed) and save screenshots to `scripts/shots/`. Run
+them with a dev **or** preview server up. What each one covers, the
+fake pointer lock they share, and the gotchas are in
+[docs/TESTING.md](docs/TESTING.md).
 
 ```bash
-node scripts/smoke.mjs      # boot, move, shoot, switch weapons, explode — fails on any console error
-node scripts/e2e.mjs        # plays the whole campaign: aggro + damage indicator + barrel chain, then key → locked door → elevator → exit for all 3 sectors
-node scripts/movement.mjs   # regression: W/A/S/D displacement must match the camera's forward/right vectors at 5 facing angles
-node scripts/firing.mjs     # regression: spam-clicking and holding the trigger both fire at the weapon's full rate; early clicks are buffered
-node scripts/aimassist.mjs  # regression: touch profiles get bullet magnetism + sticky aim; the identical shot misses on desktop
-node scripts/features.mjs   # regression: ticker suicide + corpse chain, key-pickup ambush, quad/shield/haste powerups, score + combo streaks
-node scripts/checkpoint.mjs # run flow: retry a sector with your entry gear, save + Continue, quit to menu, new run — all without a page reload
-node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ad breaks, measure() funnel, hidden co-op
+node scripts/smoke.mjs      # boot, move, shoot, explode — fails on any console error
+node scripts/e2e.mjs        # plays the whole 3-sector campaign
+node scripts/movement.mjs   # W/A/S/D must match the camera's vectors at 5 facing angles
+node scripts/firing.mjs     # spam-click, hold-to-fire and the click buffer
+node scripts/aimassist.mjs  # touch aim assist (magnetism, sticky, rotation); desktop stays raw
+node scripts/features.mjs   # tickers, ambush, powerups, combo, arena, headshots, automap, lift, touch weapon wheel, phone settings
+node scripts/checkpoint.mjs # retry, save + Continue, quit to menu, new run — no page reloads
+node scripts/monkey.mjs     # randomized stress run with NaN / out-of-world checks
+node scripts/coop.mjs       # 2-player co-op over BroadcastChannel
+node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ads, measure() funnel
 ```
 
 Each accepts an optional URL argument, e.g.
@@ -261,6 +290,18 @@ SwiftShader (software rendering) in CI. The main costs are kept flat:
 greedy meshing keeps the triangle count low, the whole world is ~64 draw
 calls before frustum culling, particles/projectiles are pooled, and the
 internal render resolution is fixed regardless of window size.
+
+## Docs
+
+| Doc | What's in it |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, game states, the frame loop, building a sector, rendering, co-op, storage, builds |
+| [docs/ART.md](docs/ART.md) | Art direction: palette, world, enemies, weapon view models, HUD style, the owner's decisions |
+| [docs/UI_SPEC.md](docs/UI_SPEC.md) | HUD layout (desktop + mobile), touch controls, every screen, UI rules |
+| [docs/TESTING.md](docs/TESTING.md) | The browser test suites, how to run and write them, gotchas |
+| [POKI.md](POKI.md) | The Poki build: SDK lifecycle, ad breaks, analytics events, upload |
+| [public/music/README.md](public/music/README.md) | Adding an optional soundtrack |
+| [CLAUDE.md](CLAUDE.md) | Rules and gotchas for AI agents (and humans) changing the code |
 
 ## License / originality note
 

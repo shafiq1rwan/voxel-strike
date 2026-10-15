@@ -39,7 +39,8 @@ bundle works from Poki's CDN path as-is.
 | Touch fullscreen / orientation lock | requested on start | skipped (Poki's page owns fullscreen around the iframe) |
 | Arrow keys / space / wheel | normal | `preventDefault` so they can't scroll the Poki page |
 | Leaving co-op (partner disconnect, co-op campaign end) | navigates to the bare path (drops `?role`/`?room`) | `location.reload()` (keeps Poki's iframe query params; co-op is hidden on Poki anyway) |
-| `public/marketing/` | copied (unused) | deleted from the output (store art goes to the Poki dashboard, not the game bundle) |
+| `public/marketing/` (if present) | copied (unused) | deleted from the output (store art goes to the Poki dashboard, not the game bundle; the folder isn't in the repo today) |
+| `THIRD-PARTY-NOTICES.txt` | shipped | shipped (Font Awesome CC BY 4.0 credit for the HUD icons — keep it) |
 
 The vite plugin `pokiPlugin` in [`vite.config.ts`](vite.config.ts) handles the
 SDK tag and the stripped files.
@@ -114,6 +115,11 @@ to `scripts/poki.mjs`.
 npm run dev:poki                                         # or: npm run build:poki && npm run preview:poki
 node scripts/poki.mjs "http://localhost:5173/?seed=12345"
 ```
+
+If a regular dev server already holds port 5173, `dev:poki` moves to 5174
+and the test must be pointed there — against the regular server
+`window.__poki` doesn't exist and the run fails at the first check. More on
+the suites in [docs/TESTING.md](docs/TESTING.md).
 
 `scripts/poki.mjs` intercepts the CDN script and serves a recording stub, so
 the run is deterministic and needs no network. The stub's `commercialBreak`
