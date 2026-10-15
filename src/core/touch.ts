@@ -5,6 +5,8 @@ export function isTouchDevice(): boolean {
 }
 
 const JOY_RADIUS = 48;
+/** half of #tjoy-base's CSS size */
+const BASE_HALF = 60;
 const LOOK_SENS = 2.6;
 
 /**
@@ -40,8 +42,8 @@ export class TouchControls {
     ui.innerHTML = `
       <div id="tjoy-zone"></div>
       <div id="tlook-zone"></div>
-      <div id="tjoy-base"><div id="tjoy-knob"></div></div>
-      <div id="tammo">–</div>
+      <div id="tjoy-base" class="rest"><div id="tjoy-knob"></div></div>
+      <div id="tammo"><i id="tammo-ico"></i><span id="tammo-num">–</span></div>
       <button id="tjump" class="tbtn-touch">JUMP</button>
       <button id="tfire" class="tbtn-touch">FIRE</button>
       <button id="tmap" class="tbtn-touch">MAP</button>
@@ -79,9 +81,11 @@ export class TouchControls {
       this.joyId = t.identifier;
       this.joyBaseX = p.x;
       this.joyBaseY = p.y;
-      this.base.style.display = 'block';
-      this.base.style.left = `${p.x - JOY_RADIUS}px`;
-      this.base.style.top = `${p.y - JOY_RADIUS}px`;
+      // the resting ring jumps under the thumb
+      this.base.classList.remove('rest');
+      this.base.style.left = `${p.x - BASE_HALF}px`;
+      this.base.style.top = `${p.y - BASE_HALF}px`;
+      this.base.style.bottom = 'auto';
       this.setKnob(0, 0);
     }, { passive: false });
 
@@ -129,7 +133,12 @@ export class TouchControls {
           this.joyId = null;
           this.input.touchState.moveX = 0;
           this.input.touchState.moveY = 0;
-          this.base.style.display = 'none';
+          // back to the resting spot (CSS position) so it always shows where to touch
+          this.base.classList.add('rest');
+          this.base.style.left = '';
+          this.base.style.top = '';
+          this.base.style.bottom = '';
+          this.setKnob(0, 0);
         } else if (t.identifier === this.lookId) {
           this.lookId = null;
         }

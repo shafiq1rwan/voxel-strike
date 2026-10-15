@@ -2,6 +2,7 @@ import { Player } from '../entities/player';
 import { WeaponSystem, WEAPONS } from '../weapons/weapons';
 import { WeaponId } from '../types';
 import { GameSettings, RESOLUTIONS } from '../core/settings';
+import { ICONS, AmmoIcon } from './icons';
 
 const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
 
@@ -24,35 +25,93 @@ const CSS = `
 }
 #lowvignette.on { opacity: 1; animation: lowpulse 1s infinite alternate; }
 @keyframes lowpulse { from { opacity: .5; } to { opacity: 1; } }
-#statbar {
-  position: absolute; left: 0; right: 0; bottom: 0; display: flex;
-  justify-content: space-between; align-items: flex-end; padding: 10px 18px;
-  background: linear-gradient(to top, rgba(4,6,10,.92), rgba(4,6,10,0));
-}
-.stat { text-align: center; min-width: 90px; }
-.stat .label { font-size: 11px; letter-spacing: 2px; color: #7d8699; }
-.stat .value { font-size: 34px; font-weight: bold; line-height: 1; }
-#hp.low .value { color: #ff4030; animation: pulse .5s infinite alternate; }
-#hp .value { color: #e8524a; }
-#armor .value { color: #4cc26a; }
-#ammo .value { color: #d8b040; }
+/* ---------------- in-game HUD: corner panels ---------------- */
+.hpanel { background: rgba(8,10,16,.74); border: 1px solid #262c38; box-shadow: 0 2px 0 rgba(0,0,0,.35); }
+.ico { display: block; filter: drop-shadow(1px 1px 0 rgba(0,0,0,.75)); }
 @keyframes pulse { from { opacity: 1; } to { opacity: .45; } }
-#weaponname { font-size: 12px; letter-spacing: 3px; color: #9aa4ba; margin-bottom: 4px; }
-#slots { display: flex; gap: 6px; justify-content: center; }
-.slot {
-  width: 26px; height: 20px; border: 1px solid #39404f; font-size: 11px;
-  display: flex; align-items: center; justify-content: center; color: #4a5262;
-  background: rgba(10,13,20,.7);
+/* top-left: vitals */
+#vitals { position: absolute; top: 12px; left: 14px; display: flex; gap: 8px; }
+.pill { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 10px; }
+.pill .value { font-size: 22px; font-weight: bold; line-height: 1; color: #f0f2f6; }
+.pill .unit { font-size: 13px; font-weight: bold; letter-spacing: 1px; color: #cfd6e4; }
+#hp.low { border-color: rgba(255,64,48,.7); }
+#hp.low .value { color: #ff4030; animation: pulse .5s infinite alternate; }
+/* top-right: sector, map + pause, score */
+#topright {
+  position: absolute; top: 12px; right: 14px; display: flex; flex-direction: column;
+  align-items: flex-end; gap: 8px;
 }
-.slot.owned { color: #cfd6e4; border-color: #6a7488; }
+#obj-head { font-size: 15px; font-weight: bold; letter-spacing: 3px; color: #cfd6e4; }
+#obj-head b { color: #ffd028; }
+#sysbtns { display: flex; gap: 8px; height: 34px; }
+.sysbtn {
+  pointer-events: auto; height: 34px; padding: 0; cursor: pointer;
+  font: bold 13px 'Courier New', Courier, monospace; letter-spacing: 2px; text-indent: 2px;
+  color: #f0f2f6; background: rgba(8,10,16,.74); border: 1px solid #6a7488;
+  text-shadow: 1px 1px 0 #000;
+}
+.sysbtn:hover { color: #ffd028; border-color: #ffd028; }
+#hud-map { width: 58px; }
+#hud-pause { width: 36px; letter-spacing: 0; text-indent: 0; }
+/* top-center: objective tracker */
+#objective {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  max-width: 46vw; text-align: center;
+}
+#obj-main {
+  display: flex; align-items: center; gap: 10px; padding: 6px 14px;
+  font-size: 15px; font-weight: bold; letter-spacing: 1px; color: #f0f2f6; white-space: nowrap;
+}
+#obj-main.flash { animation: objflash .9s ease-out; }
+@keyframes objflash {
+  0% { border-color: #ffd028; background: rgba(255,208,40,.35); transform: scale(1.12); }
+  100% { border-color: #262c38; background: rgba(8,10,16,.74); transform: scale(1); }
+}
+#obj-nav { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ffd028; height: 22px; }
+#obj-arrow {
+  width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent;
+  border-bottom: 16px solid #ffd028; filter: drop-shadow(1px 1px 0 #000) drop-shadow(0 0 5px rgba(255,208,40,.6));
+}
+/* bottom-center: weapon slots + keycards */
+#weaponbar {
+  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+}
+#slots { display: flex; gap: 10px; }
+.slot {
+  position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: bold; color: #4a5262; border: 1px solid #39404f; background: rgba(8,10,16,.74);
+}
+.slot.owned { color: #e8ecf4; border-color: #6a7488; }
 .slot.active { color: #ffd028; border-color: #ffd028; }
-#keys { display: flex; gap: 5px; margin-top: 6px; justify-content: center; min-height: 12px; }
-.key { width: 18px; height: 10px; border: 1px solid #000; opacity: .15; }
-.key.red { background: #ff3428; } .key.blue { background: #3878ff; } .key.yellow { background: #ffd028; }
-.key.have { opacity: 1; box-shadow: 0 0 6px currentColor; }
+.slot.active::after {
+  content: ''; position: absolute; left: -1px; right: -1px; bottom: -7px; height: 3px;
+  background: #ffd028; box-shadow: 1px 1px 0 #000;
+}
+#keys { display: flex; gap: 6px; }
+.key {
+  width: 38px; height: 32px; display: none; align-items: center; justify-content: center;
+  border: 1px solid #39404f; background: rgba(8,10,16,.74);
+}
+.key.red { display: flex; color: #ff3428; opacity: .45; }
+.key.blue { color: #3878ff; } .key.yellow { color: #ffd028; }
+.key.have { display: flex; opacity: 1; border-color: currentColor; box-shadow: 0 0 8px rgba(0,0,0,.4), inset 0 0 6px rgba(255,255,255,.08); }
+/* bottom-right: weapon + ammo */
+#ammo-block { position: absolute; right: 18px; bottom: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+#weaponname { font-size: 14px; font-weight: bold; letter-spacing: 3px; color: #cfd6e4; }
+#ammo { display: flex; align-items: center; gap: 12px; }
+#ammo .value { font-size: 34px; font-weight: bold; line-height: 1; color: #f0f2f6; min-width: 2ch; text-align: right; }
+#ammo-block .label { font-size: 11px; font-weight: bold; letter-spacing: 3px; color: #cfd6e4; }
+/* desktop minimap sits under the vitals (automap.ts draws it) */
+#hud #minimap {
+  position: absolute; top: 58px; left: 14px; width: 124px; height: 124px;
+  image-rendering: pixelated; background: rgba(5,6,10,.78); border: 1px solid #6a7488;
+  box-shadow: 0 2px 0 rgba(0,0,0,.35);
+}
 #messages {
-  position: absolute; top: 14px; left: 18px; font-size: 15px; color: #e8ecf4;
-  display: flex; flex-direction: column; gap: 3px;
+  position: absolute; top: 196px; left: 14px; font-size: 14px; color: #e8ecf4;
+  display: flex; flex-direction: column; gap: 3px; max-width: 40vw;
 }
 #messages div { animation: msgfade 3.5s forwards; }
 @keyframes msgfade { 0%,70% { opacity: 1; } 100% { opacity: 0; } }
@@ -78,47 +137,13 @@ const CSS = `
   position: absolute; inset: 0; opacity: 0; transition: opacity .3s;
   background: radial-gradient(ellipse at center, rgba(60,200,255,0) 45%, rgba(60,200,255,.4) 100%);
 }
-#score {
-  position: absolute; top: 28px; right: 14px; font-size: 17px; font-weight: bold;
-  letter-spacing: 2px; color: #cfd6e4; text-align: right;
-}
-#score .label { font-size: 10px; letter-spacing: 2px; color: #7d8699; margin-right: 8px; }
+#score { font-size: 15px; font-weight: bold; letter-spacing: 2px; color: #cfd6e4; }
+#score .label, #kills .label { font-size: 10px; letter-spacing: 2px; color: #8a94a8; margin-right: 8px; }
 #score-mult { color: #ffd028; margin-left: 7px; }
 #score-mult:empty { display: none; }
-#kills {
-  position: absolute; top: 52px; right: 14px; font-size: 13px; font-weight: bold;
-  letter-spacing: 2px; color: #cfd6e4; text-align: right;
-}
-#kills .label { font-size: 10px; letter-spacing: 2px; color: #7d8699; margin-right: 8px; }
+#kills { font-size: 12px; font-weight: bold; letter-spacing: 2px; color: #cfd6e4; margin-top: -4px; }
 #kills.all { color: #4cc26a; }
-#buffs {
-  position: absolute; top: 74px; right: 14px; display: flex; flex-direction: column;
-  gap: 4px; align-items: flex-end;
-}
-/* ---------------- objective tracker (top center) ---------------- */
-#objective {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  max-width: 46vw; text-align: center;
-}
-#obj-head { font-size: 10px; letter-spacing: 3px; color: #7d8699; }
-#obj-head b { color: #ffd028; }
-#obj-main {
-  display: flex; align-items: center; gap: 8px; padding: 4px 12px;
-  font-size: 14px; font-weight: bold; letter-spacing: 2px; color: #e8ecf4;
-  background: rgba(8,10,16,.6); border: 1px solid #39404f; white-space: nowrap;
-}
-#obj-main.flash { animation: objflash .9s ease-out; }
-@keyframes objflash {
-  0% { border-color: #ffd028; background: rgba(255,208,40,.35); transform: scale(1.12); }
-  100% { border-color: #39404f; background: rgba(8,10,16,.6); transform: scale(1); }
-}
-#obj-sq { display: inline-block; width: 10px; height: 10px; border: 1px solid #000; box-shadow: 0 0 8px currentColor; }
-#obj-nav { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: bold; color: #ffd028; height: 22px; }
-#obj-arrow {
-  width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent;
-  border-bottom: 16px solid #ffd028; filter: drop-shadow(1px 1px 0 #000) drop-shadow(0 0 5px rgba(255,208,40,.6));
-}
+#buffs { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
 .buff {
   font-size: 12px; font-weight: bold; letter-spacing: 2px; padding: 3px 9px;
   border: 1px solid; background: rgba(8,10,16,.65);
@@ -127,7 +152,7 @@ const CSS = `
 .buff.shield { color: #55e0ff; border-color: #55e0ff; }
 .buff.haste { color: #ff8030; border-color: #ff8030; }
 #hint {
-  position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: 74px; transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
   padding: 8px 16px; font-size: 13px; letter-spacing: 2px; color: #e8ecf4;
   background: rgba(8,10,16,.78); border: 1px solid #ffd028; max-width: 90vw;
@@ -202,33 +227,38 @@ const CSS = `
   position: absolute; right: 0; bottom: 0; width: 55%; height: 82%;
   pointer-events: auto; touch-action: none;
 }
+/* the joystick rests bottom-left so players see where to put their thumb;
+   a touch anywhere in the left zone re-centres it under the thumb */
 #tjoy-base {
-  position: absolute; width: 96px; height: 96px; border-radius: 50%;
-  border: 2px solid rgba(255,208,40,.45); background: rgba(10,13,20,.35);
-  display: none; pointer-events: none;
+  position: absolute; left: 30px; bottom: 30px; width: 120px; height: 120px; border-radius: 50%;
+  border: 2px solid rgba(207,214,228,.5); background: rgba(10,13,20,.3);
+  pointer-events: none; transition: opacity .15s;
 }
+#tjoy-base.rest { opacity: .7; }
 #tjoy-knob {
-  position: absolute; left: 28px; top: 28px; width: 40px; height: 40px;
-  border-radius: 50%; background: rgba(255,208,40,.55); border: 1px solid #000;
+  position: absolute; left: 37px; top: 37px; width: 46px; height: 46px;
+  border-radius: 50%; background: rgba(207,214,228,.6); border: 1px solid rgba(0,0,0,.5);
 }
 .tbtn-touch {
   position: absolute; pointer-events: auto; touch-action: none;
-  width: 62px; height: 62px; border-radius: 50%;
-  border: 2px solid rgba(207,214,228,.35); background: rgba(10,13,20,.45);
-  color: #cfd6e4; font: bold 11px 'Courier New', Courier, monospace;
+  width: 66px; height: 66px; border-radius: 50%;
+  border: 2px solid rgba(207,214,228,.5); background: rgba(10,13,20,.4);
+  color: #f0f2f6; font: bold 13px 'Courier New', Courier, monospace;
   letter-spacing: .1em; display: flex; align-items: center; justify-content: center;
-  user-select: none; -webkit-user-select: none;
+  user-select: none; -webkit-user-select: none; text-shadow: 1px 1px 0 #000;
 }
-#tfire {
-  right: 22px; bottom: 110px; width: 88px; height: 88px;
-  border-color: rgba(255,80,50,.55); color: #ff8060; font-size: 13px;
+#tfire { right: 18px; bottom: 18px; width: 104px; height: 104px; font-size: 16px; }
+#tjump { right: 136px; bottom: 54px; }
+/* map + pause sit exactly where the desktop buttons are (#sysbtns) */
+#tmap, #tpause {
+  top: 34px; height: 34px; border-radius: 0; border-width: 1px; border-color: #6a7488;
+  background: rgba(8,10,16,.74); font-size: 13px; letter-spacing: 2px;
 }
-#tjump { right: 126px; bottom: 42px; }
-#tpause { top: 8px; right: 10px; width: 42px; height: 42px; border-radius: 10px; }
-#tmap { top: 8px; right: 60px; width: 42px; height: 42px; border-radius: 10px; font-size: 9px; }
+#tpause { right: 10px; width: 36px; letter-spacing: 0; }
+#tmap { right: 54px; width: 58px; }
 #tammo {
-  position: absolute; right: 12px; bottom: 208px; width: 108px; text-align: center;
-  font: bold 22px 'Courier New', Courier, monospace; color: #ffd028;
+  position: absolute; right: 22px; bottom: 132px; display: flex; align-items: center; gap: 8px;
+  font: bold 22px 'Courier New', Courier, monospace; color: #f0f2f6;
   text-shadow: 2px 2px 0 #000; pointer-events: none; letter-spacing: 1px;
 }
 #slots .slot { pointer-events: auto; }
@@ -247,42 +277,40 @@ body.force-landscape {
 }
 
 /* ---------------- mobile HUD layout (touch devices) ---------------- */
-body.touch-mode #statbar {
-  top: 0; bottom: auto; align-items: flex-start; padding: 6px 62px 10px 12px;
-  background: linear-gradient(to bottom, rgba(4,6,10,.8), rgba(4,6,10,0));
-}
-body.touch-mode .stat { min-width: 56px; }
-body.touch-mode .stat .value { font-size: 21px; }
-body.touch-mode .stat .label { font-size: 8px; letter-spacing: 1px; }
-body.touch-mode #weaponname { font-size: 9px; letter-spacing: 2px; margin-bottom: 3px; }
-body.touch-mode .slot { width: 36px; height: 27px; font-size: 13px; }
-body.touch-mode #keys { margin-top: 4px; }
-body.touch-mode #messages {
-  top: 58px; left: 10px; font-size: 11px; max-width: 58vw; gap: 2px;
-}
+/* thumbs own the bottom corners: weapons move to the top, ammo sits over FIRE,
+   no minimap (the MAP button opens the full automap) */
+body.touch-mode #vitals { top: 8px; left: 10px; gap: 6px; }
+body.touch-mode .pill { padding: 4px 9px 4px 8px; gap: 6px; }
+body.touch-mode .pill .value { font-size: 18px; }
+body.touch-mode .pill .unit { font-size: 11px; }
+body.touch-mode #hud #minimap { display: none; }
+body.touch-mode #topright { top: 8px; right: 10px; gap: 8px; }
+body.touch-mode #obj-head { font-size: 13px; }
+body.touch-mode #sysbtns .sysbtn { visibility: hidden; } /* the touch #tmap/#tpause sit here */
+body.touch-mode #weaponbar { top: 8px; bottom: auto; gap: 6px; }
+body.touch-mode #slots { gap: 6px; }
+body.touch-mode .slot { width: 30px; height: 28px; font-size: 13px; }
+body.touch-mode .slot.active::after { bottom: -6px; height: 2px; }
+body.touch-mode .key { width: 34px; height: 28px; }
+body.touch-mode #objective { top: 50px; max-width: 40vw; }
+body.touch-mode #obj-main { font-size: 12px; padding: 4px 10px; gap: 8px; }
+body.touch-mode #obj-nav { font-size: 12px; }
+body.touch-mode #ammo-block { display: none; }
+body.touch-mode #messages { top: 52px; left: 10px; font-size: 11px; max-width: 30vw; gap: 2px; }
 body.touch-mode #fps { display: none; }
-body.touch-mode #score { top: 56px; right: 10px; font-size: 13px; }
-body.touch-mode #kills { top: 78px; right: 10px; font-size: 12px; }
-body.touch-mode #buffs { top: 98px; right: 10px; }
-body.touch-mode #objective { top: 74px; max-width: 40vw; }
-body.touch-mode #obj-head { font-size: 9px; }
-body.touch-mode #obj-main { font-size: 11px; padding: 3px 8px; letter-spacing: 1px; }
+body.touch-mode #score { font-size: 12px; }
+body.touch-mode #kills { font-size: 11px; }
 body.touch-mode .buff { font-size: 10px; padding: 2px 6px; }
 body.touch-mode .streak { font-size: 19px; letter-spacing: 4px; }
-/* the stat bar moves to the top on touch: the hint sits low, between the thumbs */
+/* the hint sits low, between the thumbs */
 body.touch-mode #hint { bottom: 12px; max-width: 46vw; font-size: 11px; padding: 6px 10px; gap: 6px; }
 
 /* ---------------- small screens ---------------- */
 @media (max-width: 760px) {
-  #statbar { padding: 6px 8px; }
-  .stat { min-width: 62px; }
-  .stat .value { font-size: 22px; }
-  .stat .label { font-size: 9px; }
-  #weaponname { font-size: 10px; letter-spacing: 2px; }
-  .slot { width: 30px; height: 24px; }
-  #messages { font-size: 12px; left: 10px; top: 92px; max-width: 40vw; }
-  #objective { max-width: 56vw; }
-  #obj-main { font-size: 12px; letter-spacing: 1px; }
+  #weaponname { font-size: 11px; letter-spacing: 2px; }
+  #ammo .value { font-size: 26px; }
+  #objective { max-width: 40vw; }
+  #obj-main { font-size: 12px; letter-spacing: 0; padding: 4px 10px; }
   .screen h1 { font-size: 32px; letter-spacing: 4px; }
   .panel { padding: 20px 22px 18px; max-width: 92vw; }
   .title-menu-row { flex-wrap: wrap; justify-content: center; }
@@ -427,7 +455,7 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   .title-menu { margin-top: 18px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .screen .prompt, #hp.low .value { animation: none; }
+  .screen .prompt, #hp.low .value, #obj-main.flash { animation: none; }
 }
 `;
 
@@ -453,7 +481,13 @@ export class HUD {
   private hintEl!: HTMLElement;
   private hintTimer: number | null = null;
   private objMainEl!: HTMLElement;
-  private objSqEl!: HTMLElement;
+  private objIconEl!: HTMLElement;
+  private objIconCache = '';
+  private ammoIcoEl!: HTMLElement;
+  private ammoIconCache: AmmoIcon = 'bullets';
+  /** desktop HUD buttons (wired by Game) */
+  onMapClick: (() => void) | null = null;
+  onPauseClick: (() => void) | null = null;
   private objTextEl!: HTMLElement;
   private objArrowEl!: HTMLElement;
   private objDistEl!: HTMLElement;
@@ -481,26 +515,37 @@ export class HUD {
       <div id="crosshair">+</div>
       <div id="messages"></div>
       <div id="fps"></div>
-      <div id="score"><span class="label">SCORE</span><span id="score-num">000000</span><span id="score-mult"></span></div>
-      <div id="kills"><span class="label">KILLS</span><span id="kills-num">0 / 0</span></div>
-      <div id="objective">
+      <div id="vitals">
+        <div class="pill hpanel" id="hp">${ICONS.health()}<span class="value">100</span><span class="unit">HP</span></div>
+        <div class="pill hpanel" id="armor">${ICONS.armor()}<span class="value">0</span><span class="unit">ARMOR</span></div>
+      </div>
+      <div id="topright">
         <div id="obj-head">SECTOR <b id="obj-sector">1</b> / <span id="obj-total">3</span></div>
-        <div id="obj-main"><i id="obj-sq"></i><span id="obj-text"></span></div>
+        <div id="sysbtns">
+          <button id="hud-map" class="sysbtn" title="Map (Tab / M)">MAP</button>
+          <button id="hud-pause" class="sysbtn" title="Pause (Esc)">&#10073;&#10073;</button>
+        </div>
+        <div id="score"><span class="label">SCORE</span><span id="score-num">000000</span><span id="score-mult"></span></div>
+        <div id="kills"><span class="label">KILLS</span><span id="kills-num">0 / 0</span></div>
+        <div id="buffs"></div>
+      </div>
+      <div id="objective">
+        <div id="obj-main" class="hpanel"><i id="obj-icon"></i><span id="obj-text"></span></div>
         <div id="obj-nav"><div id="obj-arrow"></div><span id="obj-dist"></span></div>
       </div>
       <div id="hint"></div>
-      <div id="buffs"></div>
-      <div id="statbar">
-        <div class="stat" id="hp"><div class="value">100</div><div class="label">HEALTH</div></div>
-        <div class="stat" id="armor"><div class="value">0</div><div class="label">ARMOR</div></div>
-        <div class="stat" id="center">
-          <div id="weaponname">SIDEARM</div>
-          <div id="slots"></div>
-          <div id="keys">
-            <div class="key red"></div><div class="key blue"></div><div class="key yellow"></div>
-          </div>
+      <div id="weaponbar">
+        <div id="slots"></div>
+        <div id="keys">
+          <div class="key red">${ICONS.keycard()}</div>
+          <div class="key blue">${ICONS.keycard()}</div>
+          <div class="key yellow">${ICONS.keycard()}</div>
         </div>
-        <div class="stat" id="ammo"><div class="value">48</div><div class="label">AMMO</div></div>
+      </div>
+      <div id="ammo-block">
+        <div id="weaponname">SIDEARM</div>
+        <div id="ammo"><i id="ammo-ico">${ICONS.bullets()}</i><span class="value">48</span></div>
+        <div class="label">AMMO</div>
       </div>
     `;
     parent.appendChild(this.root);
@@ -522,7 +567,15 @@ export class HUD {
     this.buffsEl = this.root.querySelector('#buffs')!;
     this.hintEl = this.root.querySelector('#hint')!;
     this.objMainEl = this.root.querySelector('#obj-main')!;
-    this.objSqEl = this.root.querySelector('#obj-sq')!;
+    this.objIconEl = this.root.querySelector('#obj-icon')!;
+    this.ammoIcoEl = this.root.querySelector('#ammo-ico')!;
+    // desktop MAP / pause buttons (usable whenever the mouse isn't captured);
+    // mousedown must not reach Input, which would treat it as a recapture click
+    for (const [sel, cb] of [['#hud-map', () => this.onMapClick?.()], ['#hud-pause', () => this.onPauseClick?.()]] as const) {
+      const btn = this.root.querySelector(sel) as HTMLElement;
+      btn.addEventListener('mousedown', (e) => e.stopPropagation());
+      btn.addEventListener('click', (e) => { e.stopPropagation(); cb(); });
+    }
     this.objTextEl = this.root.querySelector('#obj-text')!;
     this.objArrowEl = this.root.querySelector('#obj-arrow')!;
     this.objDistEl = this.root.querySelector('#obj-dist')!;
@@ -546,14 +599,22 @@ export class HUD {
     });
   }
 
-  private tammoEl: HTMLElement | null = null;
+  private tammoNumEl: HTMLElement | null = null;
+  private tammoIcoEl: HTMLElement | null = null;
 
   updateAmmo(p: Player, w: WeaponSystem): void {
-    const text = String(p.ammo[WEAPONS[w.current].ammoType]);
-    this.ammoEl.textContent = text;
+    const type = WEAPONS[w.current].ammoType;
+    const text = String(p.ammo[type]);
+    if (this.ammoEl.textContent !== text) this.ammoEl.textContent = text;
     // mirror next to the touch FIRE button when mobile controls are mounted
-    this.tammoEl ??= this.root.querySelector('#tammo');
-    if (this.tammoEl && this.tammoEl.textContent !== text) this.tammoEl.textContent = text;
+    this.tammoNumEl ??= this.root.querySelector('#tammo-num');
+    this.tammoIcoEl ??= this.root.querySelector('#tammo-ico');
+    if (this.tammoNumEl && this.tammoNumEl.textContent !== text) this.tammoNumEl.textContent = text;
+    if (type !== this.ammoIconCache || (this.tammoIcoEl && !this.tammoIcoEl.firstChild)) {
+      this.ammoIconCache = type;
+      this.ammoIcoEl.innerHTML = ICONS[type]();
+      if (this.tammoIcoEl) this.tammoIcoEl.innerHTML = ICONS[type](18);
+    }
   }
 
   updateWeapon(w: WeaponSystem): void {
@@ -573,13 +634,19 @@ export class HUD {
     setTimeout(() => div.remove(), 3600);
   }
 
-  /** objective tracker: current step text + color; `flash` pops it on a change */
-  setObjective(sector: number, total: number, text: string, color: string, flash: boolean): void {
+  /** objective tracker: step icon + text in its color; `flash` pops it on a change */
+  setObjective(
+    sector: number, total: number, text: string, color: string, flash: boolean,
+    icon: 'keycard' | 'door' | 'lift' | 'pad' = 'keycard',
+  ): void {
     (this.root.querySelector('#obj-sector') as HTMLElement).textContent = String(sector);
     (this.root.querySelector('#obj-total') as HTMLElement).textContent = String(total);
     this.objTextEl.textContent = text;
-    this.objSqEl.style.background = color;
-    this.objSqEl.style.color = color;
+    if (icon !== this.objIconCache) {
+      this.objIconCache = icon;
+      this.objIconEl.innerHTML = ICONS[icon](16);
+    }
+    this.objIconEl.style.color = color;
     if (flash) {
       this.objMainEl.classList.remove('flash');
       void this.objMainEl.offsetWidth; // restart the animation

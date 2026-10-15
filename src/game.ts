@@ -43,11 +43,11 @@ export interface PlayerTarget {
 
 /** the sector's critical path, as shown by the HUD objective tracker */
 type ObjectiveStage = 'key' | 'door' | 'lift' | 'pad';
-const OBJECTIVES: Record<ObjectiveStage, { text: string; color: string }> = {
-  key: { text: 'FIND THE RED KEYCARD', color: '#ff3428' },
-  door: { text: 'OPEN THE RED DOOR', color: '#ff3428' },
-  lift: { text: 'RIDE THE LIFT UP', color: '#ffd028' },
-  pad: { text: 'STEP ON THE EXIT PAD', color: '#4cc26a' },
+const OBJECTIVES: Record<ObjectiveStage, { text: string; color: string; icon: 'keycard' | 'door' | 'lift' | 'pad' }> = {
+  key: { text: 'Find red keycard', color: '#ff3428', icon: 'keycard' },
+  door: { text: 'Open the red door', color: '#ff3428', icon: 'door' },
+  lift: { text: 'Ride the lift up', color: '#ffd028', icon: 'lift' },
+  pad: { text: 'Step on the exit pad', color: '#4cc26a', icon: 'pad' },
 };
 
 /** localStorage flag: the first-run control hints have been shown */
@@ -185,6 +185,8 @@ export class Game {
 
     this.automap = new Automap(this.hud.container);
     this.input.onToggleMap = () => this.toggleMap();
+    this.hud.onMapClick = () => this.toggleMap();
+    this.hud.onPauseClick = () => this.requestPause();
 
     if (this.isTouch) {
       new TouchControls(this.hud.container, this.input, () => this.requestPause(), () => this.toggleMap());
@@ -1147,7 +1149,7 @@ export class Game {
       const changed = this.objStage !== null;
       this.objStage = stage;
       const o = OBJECTIVES[stage];
-      this.hud.setObjective(this.levelIndex, TOTAL_SECTORS, o.text, o.color, changed);
+      this.hud.setObjective(this.levelIndex, TOTAL_SECTORS, o.text, o.color, changed, o.icon);
     }
     const t = this.objectiveTarget(stage);
     if (!t) {

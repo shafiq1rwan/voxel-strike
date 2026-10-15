@@ -10,6 +10,8 @@ import type { Game } from '../game';
 
 const SCALE = 4; // canvas px per world cell
 const REVEAL_RADIUS = 10;
+/** desktop minimap: cells shown either side of the player (canvas = 31 cells × 4px = 124px) */
+const MINI_R = 15;
 
 const CSS = `
 #automap-wrap {
@@ -66,6 +68,10 @@ export class Automap {
   private sz = 0;
   private markTick = 0;
   private drawTick = 0;
+  private miniTick = 0;
+  /** always-on corner map (desktop only — hidden by CSS in touch mode) */
+  private mini: HTMLCanvasElement;
+  private miniCtx: CanvasRenderingContext2D;
   visible = false;
 
   constructor(parent: HTMLElement) {
@@ -90,6 +96,11 @@ export class Automap {
     this.canvas = this.wrap.querySelector('#automap-canvas') as HTMLCanvasElement;
     this.ctx = this.canvas.getContext('2d')!;
     this.title = this.wrap.querySelector('#automap-title') as HTMLElement;
+    this.mini = document.createElement('canvas');
+    this.mini.id = 'minimap';
+    this.mini.width = this.mini.height = (MINI_R * 2 + 1) * SCALE;
+    parent.insertBefore(this.mini, this.wrap); // under the full automap overlay
+    this.miniCtx = this.mini.getContext('2d')!;
   }
 
   /** new level: forget everything */
@@ -99,6 +110,8 @@ export class Automap {
     this.explored = new Uint8Array(this.sx * this.sz);
     this.canvas.width = this.sx * SCALE;
     this.canvas.height = this.sz * SCALE;
+    this.miniCtx.clearRect(0, 0, this.mini.width, this.mini.height);
+    this.miniTick = 0;
     this.setVisible(false);
   }
 
@@ -127,6 +140,12 @@ export class Automap {
       if (this.drawTick <= 0) {
         this.drawTick = 0.12;
         this.draw(game);
+      }
+    } else if (!document.body.classList.contains('touch-mode')) {
+      this.miniTick -= dt;
+      if (this.miniTick <= 0) {
+        this.miniTick = 0.1;
+        this.drawMini(game);
       }
     }
   }
@@ -163,14 +182,36 @@ export class Automap {
     }
   }
 
+  /** full-screen automap: the whole sector, yellow player arrow */
   private draw(game: Game): void {
-    const ctx = this.ctx;
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.drawRegion(game, this.ctx, 0, 0, this.sx, this.sz, '#ffd028');
+  }
+
+  /** desktop corner map: a north-up window centred on the player, green arrow */
+  private drawMini(game: Game): void {
+    const ctx = this.miniCtx;
+    ctx.clearRect(0, 0, this.mini.width, this.mini.height);
+    const x0 = Math.floor(game.player.pos.x) - MINI_R;
+    const z0 = Math.floor(game.player.pos.z) - MINI_R;
+    ctx.save();
+    ctx.translate(-x0 * SCALE, -z0 * SCALE);
+    this.drawRegion(game, ctx, x0, z0, x0 + MINI_R * 2 + 1, z0 + MINI_R * 2 + 1, '#4cc26a');
+    ctx.restore();
+  }
+
+  /** seen cells, lift, doors, keycard and player arrow within [x0,x1) × [z0,z1), in world-cell coords */
+  private drawRegion(
+    game: Game, ctx: CanvasRenderingContext2D,
+    x0: number, z0: number, x1: number, z1: number, arrowColor: string,
+  ): void {
     const S = SCALE;
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const seen = (x: number, z: number): number =>
+      x < 0 || z < 0 || x >= this.sx || z >= this.sz ? 0 : this.explored[x + z * this.sx];
 
     // seen cells
-    for (let z = 0; z < this.sz; z++) {
-      for (let x = 0; x < this.sx; x++) {
+    for (let z = Math.max(0, z0); z < Math.min(this.sz, z1); z++) {
+      for (let x = Math.max(0, x0); x < Math.min(this.sx, x1); x++) {
         const v = this.explored[x + z * this.sx];
         if (v === 0) continue;
         if (v === 2) {
@@ -188,7 +229,7 @@ export class Automap {
     // elevator platform
     if (game.elevator) {
       const e = game.elevator.spec;
-      if (this.explored[e.x + e.z * this.sx]) {
+      if (seen(e.x, e.z)) {
         ctx.fillStyle = '#55e0ff';
         ctx.fillRect(e.x * S, e.z * S, 2 * S, 2 * S);
       }
@@ -199,7 +240,7 @@ export class Automap {
       const cells: Array<[number, number]> = d.spec.dir === 'x'
         ? [[d.spec.x, d.spec.z], [d.spec.x, d.spec.z + 1]]
         : [[d.spec.x, d.spec.z], [d.spec.x + 1, d.spec.z]];
-      if (!cells.some(([cx, cz]) => this.explored[cx + cz * this.sx])) continue;
+      if (!cells.some(([cx, cz]) => seen(cx, cz))) continue;
       ctx.fillStyle = d.locked ? LOCK_COLORS[d.locked] : '#9aa4ba';
       for (const [cx, cz] of cells) ctx.fillRect(cx * S, cz * S, S, S);
     }
@@ -208,7 +249,7 @@ export class Automap {
     const key = game.level.pickups.find((p) => p.kind === 'keyRed');
     if (key && !game.player.hasKey('red')) {
       const kx = Math.floor(key.x), kz = Math.floor(key.z);
-      if (this.explored[kx + kz * this.sx]) {
+      if (seen(kx, kz)) {
         const blink = 0.5 + 0.5 * Math.sin(performance.now() * 0.008);
         ctx.fillStyle = `rgba(255,52,40,${(0.4 + blink * 0.6).toFixed(2)})`;
         ctx.fillRect(kx * S - 1, kz * S - 1, S + 2, S + 2);
@@ -221,7 +262,7 @@ export class Automap {
     ctx.translate(p.pos.x * S, p.pos.z * S);
     // forward in the (x, z) plane is (-sin yaw, -cos yaw)
     ctx.rotate(Math.atan2(-Math.cos(p.yaw), -Math.sin(p.yaw)));
-    ctx.fillStyle = '#ffd028';
+    ctx.fillStyle = arrowColor;
     ctx.beginPath();
     ctx.moveTo(S * 1.6, 0);
     ctx.lineTo(-S * 1.1, -S * 0.95);

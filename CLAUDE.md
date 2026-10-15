@@ -201,6 +201,18 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   `poki.measure()` (no `/` or `^` in any value — Poki reserves them) plus a
   row in POKI.md and an assert in `poki.mjs`. Poki builds hide co-op and
   skip the SW/manifest/fullscreen.
+- HUD layout (desktop): HP/armor pills + minimap top-left, objective
+  (stage icon + text + arrow/distance) top-center, SECTOR + MAP/pause
+  buttons + score/kills/buffs top-right, weapon slots + keycards
+  bottom-center, weapon name + ammo bottom-right. Touch mode moves the slots
+  to the top, hides the minimap and the bottom-right block (ammo mirrors
+  over FIRE as `#tammo`), and puts `#tmap`/`#tpause` exactly over the hidden
+  desktop `#sysbtns`. Icons come from `src/ui/icons.ts`: Font Awesome Free
+  solid icons imported from npm and inlined as SVG (no CDN/font — Poki and
+  offline safe) plus hand-drawn bullet/shell rounds. FA is CC BY 4.0 and
+  minification strips its license comment, so the credit lives in
+  `public/THIRD-PARTY-NOTICES.txt` (ships in web + Poki builds) — list any
+  newly used icon there.
 - `src/ui/hud.ts` — DOM HUD + all screens; the voxel wordmark renderer
   (`startVoxelLogo`) draws 5×7 glyphs as extruded blocks (add glyphs to
   `GLYPHS` before using new letters in a wordmark). `hud.hint()` is the
@@ -209,6 +221,10 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   only while playing, then sets `voxelstrike-tutorial-done` in localStorage
   (same key as the earlier Poki build — don't rename it). Update its text
   when controls change.
+- `src/ui/automap.ts` — also draws the desktop minimap (`#minimap`, a
+  north-up 31×31-cell window around the player, green arrow) from the same
+  explored data via `drawRegion`; it skips drawing in touch mode and while
+  the full map is open.
 - `src/ui/automap.ts` — Tab/M (MAP button on touch) overlay canvas; reveal is
   LOS-checked per cell (rooms behind walls stay dark), doors draw in their
   lock color, exit pads green, the un-taken red key blinks. Its canvas rule
