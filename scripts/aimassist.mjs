@@ -1,10 +1,13 @@
 /**
  * Aim assist regression: on touch profiles, a slightly off-target hitscan
- * snaps onto the enemy (bullet magnetism) and look sensitivity drops while
- * tracking (sticky aim); on desktop the identical shot must miss.
+ * snaps onto the enemy (bullet magnetism), look sensitivity drops while
+ * tracking (sticky aim), and holding fire eases the view onto a nearby target
+ * (rotation assist) without ever drifting on its own; on desktop the
+ * identical shots must miss and the view must never move.
  * Usage: node scripts/aimassist.mjs [url]
  */
 import puppeteer from 'puppeteer-core';
+import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 
 const URL = process.argv[2] ?? 'http://localhost:5173/?seed=12345';
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
@@ -132,6 +135,31 @@ try {
     return near / free;
   });
   check(sticky > 0.4 && sticky < 0.75, `mobile: sticky aim friction near target (ratio ${sticky.toFixed(2)})`);
+
+  // rotation assist: no input → the view must not drift onto a nearby target
+  await setupShot(pg, 0.12);
+  const drift = await pg.evaluate(async () => {
+    const p2 = window.__voxelstrike.player;
+    const y0 = p2.yaw;
+    await new Promise((r) => setTimeout(r, 400));
+    return Math.abs(p2.yaw - y0);
+  });
+  check(drift < 1e-6, `mobile: no view drift without input (${drift.toFixed(4)} rad)`);
+
+  // rotation assist: holding fire 7 deg off (outside magnetism) pulls onto the husk
+  s = await setupShot(pg, 0.12);
+  const pull = await pg.evaluate(async () => {
+    const g = window.__voxelstrike;
+    const err0 = g.player.yaw;
+    g.input.touchState.fire = true;
+    g.input.pressFire();
+    await new Promise((r) => setTimeout(r, 650));
+    g.input.touchState.fire = false;
+    return { moved: err0 - g.player.yaw };
+  });
+  hp = await hpNow(pg);
+  check(pull.moved > 0.07, `mobile: held fire pulls the view toward the target (${pull.moved.toFixed(3)} of 0.12 rad)`);
+  check(hp < s.hp, `mobile: rotation assist turned a 7-deg miss into hits (hp ${s.hp} -> ${hp})`);
   await pg.close();
 
   // ---- desktop profile: identical shot must miss ---------------------------
@@ -149,6 +177,15 @@ try {
   await new Promise((r) => setTimeout(r, 150));
   hp = await hpNow(pg);
   check(hp === s.hp, 'desktop: identical off-target shot missed (no assist)');
+
+  // desktop: holding fire near a target never rotates the view
+  await setupShot(pg, 0.12);
+  const y0 = await pg.evaluate(() => window.__voxelstrike.player.yaw);
+  await pg.mouse.down();
+  await new Promise((r) => setTimeout(r, 400));
+  await pg.mouse.up();
+  const y1 = await pg.evaluate(() => window.__voxelstrike.player.yaw);
+  check(Math.abs(y1 - y0) < 1e-6, 'desktop: no rotation assist while firing');
   await pg.close();
 } finally {
   await browser.close();

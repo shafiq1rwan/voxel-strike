@@ -2,7 +2,12 @@ import * as THREE from 'three';
 import { moveBody, Box } from '../core/physics';
 import { Input } from '../core/input';
 import { KeyColor, AmmoType } from '../types';
+import { AimCone, AimTarget, findAimTarget } from './aimassist';
 import type { Game } from '../game';
+
+// touch aim assist cones (see aimassist.ts)
+const STICKY_CONE: AimCone = { margin: 0.9, min: 0.08, max: 0.14, maxDist: 30 };
+const PULL_CONE: AimCone = { margin: 1.6, min: 0.1, max: 0.26, maxDist: 30 };
 
 const EYE_OFFSET = 0.62; // eyes above body center
 const MAX_SPEED = 7.8;
@@ -123,12 +128,14 @@ export class Player {
     const [mdx, mdy] = input.consumeMouse();
     if (!this.dead) {
       let sens = 0.0022 * this.sensitivity;
+      const assist = game.isTouch && game.settings.aimAssist;
       // sticky aim (touch only): tracking friction while aiming near a target
-      if (game.isTouch && game.settings.aimAssist && (mdx !== 0 || mdy !== 0) && this.aimNearEnemy(game)) {
+      if (assist && (mdx !== 0 || mdy !== 0) && this.aimTarget(game, STICKY_CONE)) {
         sens *= 0.55;
       }
       this.yaw -= mdx * sens;
       this.pitch -= mdy * sens;
+      if (assist) this.rotationAssist(dt, input, game, mdx, mdy);
       this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch));
     }
 
@@ -193,34 +200,34 @@ export class Player {
     }
   }
 
-  /** is a live, visible enemy within a small cone of the aim direction? */
-  private aimNearEnemy(game: Game): boolean {
-    const CONE = 0.1; // ~6 degrees
+  /** best live, visible enemy within `cone` of the view direction */
+  private aimTarget(game: Game, cone: AimCone): AimTarget | null {
     const cosPitch = Math.cos(this.pitch);
-    const fx = -Math.sin(this.yaw) * cosPitch;
-    const fy = Math.sin(this.pitch);
-    const fz = -Math.cos(this.yaw) * cosPitch;
-    const hFwd = Math.hypot(fx, fz);
-    if (hFwd < 0.05) return false;
-    const ox = this.pos.x;
-    const oy = this.eyeY();
-    const oz = this.pos.z;
-    for (const e of game.enemies.list) {
-      if (!e.alive) continue;
-      const dx = e.pos.x - ox;
-      const dz = e.pos.z - oz;
-      const hDist = Math.hypot(dx, dz);
-      if (hDist > 30 || hDist < 1) continue;
-      // vertical error measured against the enemy's body span, not its center
-      const rayY = oy + (fy / hFwd) * hDist;
-      const ty = Math.max(e.pos.y - e.half.y + 0.15, Math.min(e.pos.y + e.half.y - 0.1, rayY));
-      const dy = ty - oy;
-      const dist = Math.sqrt(hDist * hDist + dy * dy);
-      const dot = (dx * fx + dy * fy + dz * fz) / dist;
-      if (dot < Math.cos(CONE)) continue;
-      if (game.hasLOS(ox, oy, oz, e.pos.x, ty, e.pos.z)) return true;
-    }
-    return false;
+    return findAimTarget(game, this.pos.x, this.eyeY(), this.pos.z,
+      -Math.sin(this.yaw) * cosPitch, Math.sin(this.pitch), -Math.cos(this.yaw) * cosPitch, cone);
+  }
+
+  /**
+   * Rotation assist (touch only): while the player is steering — look drag,
+   * movement or trigger held — the view eases toward the enemy they're already
+   * aiming near, so weaving targets stay under the crosshair. No input means
+   * no drift, and a drag away from the target is never fought.
+   */
+  private rotationAssist(dt: number, input: Input, game: Game, mdx: number, mdy: number): void {
+    const firing = input.fire;
+    if (!firing && mdx === 0 && mdy === 0 && input.forward === 0 && input.strafe === 0) return;
+    const t = this.aimTarget(game, PULL_CONE);
+    if (!t) return;
+    const dx = t.x - this.pos.x;
+    const dz = t.z - this.pos.z;
+    let dYaw = Math.atan2(-dx, -dz) - this.yaw;
+    dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
+    // aim point is clamped into the body, so this is 0 while already on it
+    const dPitch = Math.atan2(t.y - this.eyeY(), Math.hypot(dx, dz)) - this.pitch;
+    // stronger toward the cone center, and while firing
+    const f = 1 - Math.exp(-(firing ? 7 : 4) * (1 - t.score) * dt);
+    if (mdx === 0 || Math.sign(-mdx) === Math.sign(dYaw)) this.yaw += dYaw * f;
+    if (mdy === 0 || Math.sign(-mdy) === Math.sign(dPitch)) this.pitch += dPitch * f;
   }
 
   /** apply position/orientation to the camera */

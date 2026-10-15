@@ -3,7 +3,11 @@ import { AmmoType, WeaponId } from '../types';
 import { Input } from '../core/input';
 import { rayBox } from '../core/physics';
 import type { Enemy } from '../entities/enemies';
+import { AimCone, findAimTarget } from '../entities/aimassist';
 import type { Game } from '../game';
+
+/** touch bullet magnetism: miss by up to ~0.7u beside the body; 4–7 degrees */
+const MAGNET_CONE: AimCone = { margin: 0.7, min: 0.07, max: 0.12, maxDist: 40 };
 
 interface WeaponDef {
   id: WeaponId;
@@ -389,39 +393,13 @@ export class WeaponSystem {
   }
 
   /**
-   * Touch-only aim assist: if a live, visible enemy sits within a small cone
-   * of the aim direction, snap the shot onto it. Desktop aim is never touched.
+   * Touch-only bullet magnetism: if a live, visible enemy sits within a small
+   * cone of the aim direction, snap the shot onto it. Desktop aim is never touched.
    */
   private applyAimAssist(origin: THREE.Vector3, fwd: THREE.Vector3, game: Game): void {
     if (!game.isTouch || !game.settings.aimAssist) return;
-    const MAX_ANGLE = 0.07; // ~4 degrees
-    const MAX_DIST = 40;
-    let best: THREE.Vector3 | null = null;
-    let bestAngle = MAX_ANGLE;
-    const to = new THREE.Vector3();
-    for (const e of game.enemies.list) {
-      if (!e.alive) continue;
-      const dx = e.pos.x - origin.x;
-      const dz = e.pos.z - origin.z;
-      const hDist = Math.hypot(dx, dz);
-      if (hDist > MAX_DIST || hDist < 1) continue;
-      // snap target: enemy column at the height the ray naturally passes,
-      // clamped into the body — so aiming level at a torso costs 0 vertical
-      // error and the cone only measures the actual horizontal miss
-      const hFwd = Math.hypot(fwd.x, fwd.z);
-      if (hFwd < 0.05) continue; // aiming almost straight up/down
-      const rayY = origin.y + (fwd.y / hFwd) * hDist;
-      const ty = Math.max(e.pos.y - e.half.y + 0.15, Math.min(e.pos.y + e.half.y - 0.1, rayY));
-      to.set(dx, ty - origin.y, dz);
-      const dist = to.length();
-      to.divideScalar(dist);
-      const angle = fwd.angleTo(to);
-      if (angle >= bestAngle) continue;
-      if (!game.hasLOS(origin.x, origin.y, origin.z, e.pos.x, ty, e.pos.z)) continue;
-      bestAngle = angle;
-      best = to.clone();
-    }
-    if (best) fwd.copy(best);
+    const t = findAimTarget(game, origin.x, origin.y, origin.z, fwd.x, fwd.y, fwd.z, MAGNET_CONE);
+    if (t) fwd.set(t.x - origin.x, t.y - origin.y, t.z - origin.z).normalize();
   }
 
   /**
