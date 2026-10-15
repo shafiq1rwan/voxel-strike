@@ -6,6 +6,14 @@ export class Renderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
+  /**
+   * First-person weapon pass: drawn after the world over a cleared depth
+   * buffer, so the gun never clips into walls yet its parts still occlude
+   * each other properly. Its camera sits at the origin with a fixed FOV —
+   * the FOV setting and FOV punches don't stretch the gun.
+   */
+  readonly overlay = new THREE.Scene();
+  private readonly overlayCamera = new THREE.PerspectiveCamera(75, 1, 0.01, 10);
   readonly fogColor = new THREE.Color(0x070a10);
   readonly fogNear = 13;
   readonly fogFar = 52;
@@ -35,6 +43,8 @@ export class Renderer {
     this.renderer.setSize(w, this.resH, false);
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
+    this.overlayCamera.aspect = aspect;
+    this.overlayCamera.updateProjectionMatrix();
   }
 
   setResolution(h: number): void {
@@ -45,5 +55,10 @@ export class Renderer {
 
   render(): void {
     this.renderer.render(this.scene, this.camera);
+    if (!this.overlay.children.some((o) => o.visible)) return;
+    this.renderer.autoClear = false;
+    this.renderer.clearDepth();
+    this.renderer.render(this.overlay, this.overlayCamera);
+    this.renderer.autoClear = true;
   }
 }

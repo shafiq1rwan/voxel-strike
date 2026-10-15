@@ -57,38 +57,124 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 
 const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
 
-function vmPart(parent: THREE.Object3D, w: number, h: number, d: number, color: number): THREE.Mesh {
-  const m = new THREE.MeshBasicMaterial({ color, depthTest: false, fog: false });
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-  mesh.renderOrder = 1000;
-  mesh.userData.baseColor = new THREE.Color(color);
+// view-model palette (theme-locked)
+const VOID = 0x05060a;
+const HAZARD = 0xffd028;
+const KEY_RED = 0xff3428;
+const EXIT_GREEN = 0x4cc26a;
+const STEEL = 0x566076;
+const STEEL_LIGHT = 0x7a859b;
+const GUNMETAL = 0x3c4252;
+const GRIP = 0x2a2e38;
+
+/**
+ * Baked per-face shade, lit from above-left like a key light, in
+ * BoxGeometry face order: +x, -x, +y, -y, +z, -z. Reads the boxes as solid
+ * forms instead of flat silhouettes.
+ */
+const FACE_SHADE = [0.6, 0.86, 1.0, 0.42, 0.74, 0.52];
+/** 1-pixel edge at the 240p internal resolution, a darker shade of the part's own color */
+const OUTLINE = 0.007;
+const OUTLINE_SHADE = 0.55;
+
+/** a hex color taken as-is (matches the NoColorSpace textures everywhere else) */
+function rawColor(hex: number): THREE.Color {
+  return new THREE.Color().setHex(hex, THREE.LinearSRGBColorSpace);
+}
+
+function shadedBox(w: number, h: number, d: number): THREE.BoxGeometry {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const n = geo.attributes.position.count; // 4 verts per face, 6 faces
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) col.fill(FACE_SHADE[Math.floor(i / 4)], i * 3, i * 3 + 3);
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return geo;
+}
+
+interface PartOpts {
+  /** full-bright, never tinted by the room light (sights, coils, LEDs) */
+  glow?: boolean;
+  /** dark rim around the part (default on) */
+  outline?: boolean;
+  rx?: number;
+}
+
+/** one box of a view model; tinted by local light unless `glow` */
+function vmPart(
+  parent: THREE.Object3D, w: number, h: number, d: number, color: number,
+  x: number, y: number, z: number, opts: PartOpts = {},
+): THREE.Mesh {
+  const glow = !!opts.glow;
+  // raw palette values: the renderer outputs linear, so a plain hex would be
+  // sRGB-decoded on the way in and every part would render near-black
+  const base = rawColor(color);
+  const m = new THREE.MeshBasicMaterial({ color: base, vertexColors: !glow, fog: false });
+  const mesh = new THREE.Mesh(glow ? new THREE.BoxGeometry(w, h, d) : shadedBox(w, h, d), m);
+  mesh.position.set(x, y, z);
+  if (opts.rx) mesh.rotation.x = opts.rx;
+  mesh.userData.baseColor = base;
+  mesh.userData.glow = glow;
+  if (opts.outline !== false) {
+    // inverted hull: a slightly larger back-face box behind the part, in a
+    // darker shade of the part itself (a black rim fights the world's look)
+    const rimColor = base.clone().multiplyScalar(OUTLINE_SHADE);
+    const rimMat = new THREE.MeshBasicMaterial({ color: rimColor, side: THREE.BackSide, fog: false });
+    const rim = new THREE.Mesh(mesh.geometry, rimMat);
+    rim.scale.set((w + OUTLINE * 2) / w, (h + OUTLINE * 2) / h, (d + OUTLINE * 2) / d);
+    rim.userData.baseColor = rimColor;
+    rim.userData.glow = glow;
+    mesh.add(rim);
+  }
   parent.add(mesh);
   return mesh;
 }
 
+/** muzzle flash: hot core + uneven star spikes (reads at 240p, unlike a soft blob) */
 function makeFlashTexture(cool = false): THREE.CanvasTexture {
+  const S = 64;
   const c = document.createElement('canvas');
-  c.width = 32;
-  c.height = 32;
+  c.width = S;
+  c.height = S;
   const ctx = c.getContext('2d')!;
-  const grad = ctx.createRadialGradient(16, 16, 1, 16, 16, 16);
-  if (cool) {
-    // electric-blue burst for the arc caster
-    grad.addColorStop(0, 'rgba(220,250,255,1)');
-    grad.addColorStop(0.35, 'rgba(110,215,255,0.9)');
-    grad.addColorStop(0.7, 'rgba(40,120,255,0.35)');
-    grad.addColorStop(1, 'rgba(20,80,255,0)');
-  } else {
-    grad.addColorStop(0, 'rgba(255,240,180,1)');
-    grad.addColorStop(0.35, 'rgba(255,180,60,0.9)');
-    grad.addColorStop(0.7, 'rgba(255,90,20,0.35)');
-    grad.addColorStop(1, 'rgba(255,60,0,0)');
+  const cx = S / 2;
+  const [core, mid, edge] = cool
+    ? ['rgba(230,252,255,1)', 'rgba(110,215,255,0.9)', 'rgba(30,110,255,0)'] // arc caster
+    : ['rgba(255,246,200,1)', 'rgba(255,176,60,0.9)', 'rgba(255,70,0,0)'];
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + (i % 2) * 0.25;
+    const len = cx * (i % 2 ? 0.6 : 0.97);
+    const wd = S * 0.07;
+    const grad = ctx.createLinearGradient(cx, cx, cx + Math.cos(a) * len, cx + Math.sin(a) * len);
+    grad.addColorStop(0, mid);
+    grad.addColorStop(1, edge);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(cx - Math.sin(a) * wd, cx + Math.cos(a) * wd);
+    ctx.lineTo(cx + Math.cos(a) * len, cx + Math.sin(a) * len);
+    ctx.lineTo(cx + Math.sin(a) * wd, cx - Math.cos(a) * wd);
+    ctx.fill();
   }
+  const grad = ctx.createRadialGradient(cx, cx, 1, cx, cx, S * 0.3);
+  grad.addColorStop(0, core);
+  grad.addColorStop(0.45, mid);
+  grad.addColorStop(1, edge);
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 32, 32);
+  ctx.fillRect(0, 0, S, S);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.NoColorSpace;
   return tex;
+}
+
+/** set a glow part to its base color × f */
+function glowAt(m: THREE.Mesh, f: number): void {
+  (m.material as THREE.MeshBasicMaterial).color.copy(m.userData.baseColor as THREE.Color).multiplyScalar(f);
+}
+
+/** 0→1→0 blowback curve: snaps back over `snap`s, returns over `ret`s */
+function blowback(t: number, snap: number, ret: number): number {
+  if (t < snap) return t / snap;
+  return Math.max(0, 1 - (t - snap) / ret);
 }
 
 /** Weapon inventory + firing + first-person view model. */
@@ -111,6 +197,26 @@ export class WeaponSystem {
   private dryFired = false;
   private lightTick = 0;
 
+  // view-model motion state
+  /** seconds since the current weapon last fired (drives slide/pump/bolt/coils) */
+  private shotT = 10;
+  private kickRoll = 0;
+  private swayX = 0;
+  private swayY = 0;
+  private lastYaw = 0;
+  private lastPitch = 0;
+  private airVy = 0;
+  private landDip = 0;
+  private pumpStage = 2; // 0 waiting, 1 racked back, 2 done
+  /** last LED state shown on the launcher (null = repaint without a chirp) */
+  private rocketReady: boolean | null = null;
+  /** moving parts, by weapon */
+  private parts: {
+    slide?: THREE.Mesh; pump?: THREE.Mesh; bolt?: THREE.Mesh; led?: THREE.Mesh;
+    coils: THREE.Mesh[]; core?: THREE.Mesh; tips: THREE.Mesh[]; cellWindow?: THREE.Mesh;
+  } = { coils: [], tips: [] };
+  private readonly basePos = new Map<THREE.Object3D, number>(); // rest z of moving parts
+
   constructor() {
     this.viewModel.position.set(0.3, -0.34, -0.62);
     this.buildModels();
@@ -121,7 +227,7 @@ export class WeaponSystem {
       depthTest: false, depthWrite: false, fog: false,
     });
     this.flash = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5), flashMat);
-    this.flash.renderOrder = 1001;
+    this.flash.renderOrder = 10;
     this.flash.visible = false;
     this.viewModel.add(this.flash);
     this.showModel(this.current);
@@ -145,102 +251,139 @@ export class WeaponSystem {
     this.showModel(this.current);
   }
 
+  /** forget in-flight shot animations (fresh weapon in hand) */
+  private resetAction(): void {
+    this.shotT = 10;
+    this.pumpStage = 2;
+    this.rocketReady = null;
+  }
+
   private buildModels(): void {
-    // SIDEARM — compact pistol
+    const p = this.parts;
+    // SIDEARM — compact pistol: blowback slide, glowing three-dot sights
     {
       const g = new THREE.Group();
-      const slide = vmPart(g, 0.09, 0.09, 0.34, 0x565e70);
-      slide.position.set(0, 0.02, -0.1);
-      const frame = vmPart(g, 0.08, 0.07, 0.26, 0x3a404e);
-      frame.position.set(0, -0.05, -0.05);
-      const grip = vmPart(g, 0.075, 0.16, 0.09, 0x2a2e38);
-      grip.position.set(0, -0.14, 0.06);
-      grip.rotation.x = 0.25;
-      const sight = vmPart(g, 0.02, 0.03, 0.03, 0x222630);
-      sight.position.set(0, 0.08, -0.24);
+      const slide = vmPart(g, 0.09, 0.085, 0.34, STEEL, 0, 0.025, -0.1);
+      for (let i = 0; i < 2; i++) {
+        vmPart(slide, 0.096, 0.05, 0.016, GUNMETAL, 0, -0.005, 0.1 + i * 0.035, { outline: false });
+      }
+      vmPart(slide, 0.03, 0.008, 0.08, VOID, 0.018, 0.043, -0.03, { outline: false }); // ejection port
+      const front = vmPart(slide, 0.022, 0.028, 0.02, GRIP, 0, 0.055, -0.15);
+      vmPart(front, 0.012, 0.012, 0.006, EXIT_GREEN, 0, 0.004, 0.012, { glow: true, outline: false });
+      for (const sx of [-0.026, 0.026]) {
+        const post = vmPart(slide, 0.02, 0.026, 0.02, GRIP, sx, 0.054, 0.15);
+        vmPart(post, 0.01, 0.01, 0.006, EXIT_GREEN, 0, 0.004, 0.012, { glow: true, outline: false });
+      }
+      vmPart(g, 0.08, 0.06, 0.26, GUNMETAL, 0, -0.045, -0.06); // frame
+      vmPart(g, 0.022, 0.018, 0.09, GRIP, 0, -0.1, -0.05); // trigger guard
+      vmPart(g, 0.014, 0.04, 0.014, STEEL, 0, -0.08, -0.025, { outline: false }); // trigger
+      const grip = vmPart(g, 0.076, 0.17, 0.1, GRIP, 0, -0.14, 0.06, { rx: 0.25 });
+      vmPart(grip, 0.082, 0.026, 0.08, HAZARD, 0, -0.035, 0, { outline: false });
+      vmPart(g, 0.032, 0.03, 0.022, GRIP, 0, 0.05, 0.085); // hammer
       this.models.set('pistol', g);
       this.muzzleTips.set('pistol', -0.32);
+      p.slide = slide;
     }
-    // SCATTERGUN — pump shotgun
+    // SCATTERGUN — pump shotgun: racks the forend after every shot
     {
       const g = new THREE.Group();
-      const barrel = vmPart(g, 0.1, 0.1, 0.62, 0x4c5364);
-      barrel.position.set(0, 0.03, -0.25);
-      const tube = vmPart(g, 0.07, 0.07, 0.5, 0x393f4c);
-      tube.position.set(0, -0.06, -0.2);
-      const pump = vmPart(g, 0.13, 0.09, 0.18, 0x6d4a2a);
-      pump.position.set(0, -0.07, -0.3);
-      const stock = vmPart(g, 0.09, 0.13, 0.3, 0x5c3e22);
-      stock.position.set(0, -0.06, 0.18);
-      const rib = vmPart(g, 0.02, 0.02, 0.5, 0x666e80);
-      rib.position.set(0, 0.09, -0.25);
+      vmPart(g, 0.11, 0.12, 0.22, GUNMETAL, 0, 0, 0.03); // receiver
+      for (let i = 0; i < 3; i++) {
+        // side saddle: spare shells, red hulls + brass heads
+        const shell = vmPart(g, 0.02, 0.028, 0.05, KEY_RED, -0.064, -0.034 + i * 0.034, 0.03);
+        vmPart(shell, 0.022, 0.03, 0.014, 0xc8a030, 0, 0, 0.026, { outline: false });
+      }
+      vmPart(g, 0.075, 0.075, 0.58, STEEL, 0, 0.035, -0.36); // barrel
+      vmPart(g, 0.022, 0.014, 0.52, STEEL_LIGHT, 0, 0.079, -0.36); // vent rib
+      vmPart(g, 0.016, 0.016, 0.016, HAZARD, 0, 0.093, -0.61, { glow: true }); // bead sight
+      vmPart(g, 0.09, 0.09, 0.035, GRIP, 0, 0.035, -0.645); // muzzle ring
+      vmPart(g, 0.065, 0.065, 0.46, GUNMETAL, 0, -0.045, -0.32); // magazine tube
+      vmPart(g, 0.075, 0.075, 0.03, GRIP, 0, -0.045, -0.56); // tube cap
+      const pump = vmPart(g, 0.125, 0.095, 0.2, 0x8a5a32, 0, -0.05, -0.3);
+      for (const gz of [-0.06, 0, 0.06]) vmPart(pump, 0.129, 0.099, 0.014, 0x5a3a1e, 0, 0, gz, { outline: false });
+      vmPart(g, 0.022, 0.02, 0.08, GRIP, 0, -0.072, 0.05); // trigger guard
+      const stock = vmPart(g, 0.09, 0.12, 0.28, 0x6e4626, 0, -0.075, 0.27);
+      vmPart(stock, 0.095, 0.128, 0.025, GRIP, 0, 0, 0.145, { outline: false }); // butt pad
       this.models.set('shotgun', g);
-      this.muzzleTips.set('shotgun', -0.6);
+      this.muzzleTips.set('shotgun', -0.67);
+      p.pump = pump;
     }
-    // RIPPER — boxy SMG
+    // RIPPER — boxy SMG: red-dot optic, reciprocating charging handle
     {
       const g = new THREE.Group();
-      const body = vmPart(g, 0.11, 0.14, 0.42, 0x424858);
-      body.position.set(0, -0.02, -0.08);
-      const barrel = vmPart(g, 0.06, 0.06, 0.24, 0x565e70);
-      barrel.position.set(0, 0.01, -0.38);
-      const shroud = vmPart(g, 0.09, 0.09, 0.14, 0x333845);
-      shroud.position.set(0, 0.01, -0.3);
-      const mag = vmPart(g, 0.07, 0.22, 0.1, 0x2a2e38);
-      mag.position.set(0, -0.2, -0.02);
-      mag.rotation.x = -0.15;
-      const sight = vmPart(g, 0.03, 0.04, 0.06, 0x222630);
-      sight.position.set(0, 0.09, -0.15);
+      vmPart(g, 0.11, 0.13, 0.4, 0x4a5162, 0, -0.01, -0.06); // body
+      const rail = vmPart(g, 0.05, 0.016, 0.34, GRIP, 0, 0.063, -0.08);
+      for (let i = 0; i < 5; i++) vmPart(rail, 0.056, 0.008, 0.016, GUNMETAL, 0, 0.008, -0.13 + i * 0.065, { outline: false });
+      const optic = vmPart(g, 0.06, 0.055, 0.08, GRIP, 0, 0.1, -0.02);
+      vmPart(optic, 0.046, 0.04, 0.004, 0x1a2a2a, 0, 0.002, 0.041, { outline: false }); // lens
+      vmPart(optic, 0.012, 0.012, 0.004, KEY_RED, 0, 0.003, 0.044, { glow: true, outline: false }); // dot
+      const shroud = vmPart(g, 0.1, 0.1, 0.2, 0x353a47, 0, 0, -0.36);
+      for (let i = 0; i < 3; i++) vmPart(shroud, 0.006, 0.032, 0.03, VOID, -0.05, 0, -0.06 + i * 0.06, { outline: false });
+      vmPart(g, 0.045, 0.045, 0.1, STEEL_LIGHT, 0, 0, -0.5); // barrel
+      const mag = vmPart(g, 0.065, 0.22, 0.09, GRIP, 0, -0.19, -0.02, { rx: -0.15 });
+      vmPart(mag, 0.072, 0.026, 0.096, HAZARD, 0, -0.105, 0, { outline: false }); // base plate
+      vmPart(g, 0.05, 0.12, 0.06, GRIP, 0, -0.13, -0.27); // front grip
+      vmPart(g, 0.07, 0.14, 0.08, GRIP, 0, -0.12, 0.1, { rx: 0.25 }); // pistol grip
+      vmPart(g, 0.07, 0.07, 0.16, GUNMETAL, 0, -0.02, 0.2); // stock stub
+      const bolt = vmPart(g, 0.03, 0.022, 0.035, STEEL_LIGHT, -0.066, 0.02, -0.02);
       this.models.set('smg', g);
-      this.muzzleTips.set('smg', -0.5);
+      this.muzzleTips.set('smg', -0.56);
+      p.bolt = bolt;
     }
-    // THUMPER — rocket launcher
+    // THUMPER — rocket launcher: hazard bands, ready LED on the back cap
     {
       const g = new THREE.Group();
-      const tube = vmPart(g, 0.17, 0.17, 0.7, 0x3f5a3f);
-      tube.position.set(0, 0.02, -0.15);
-      const muzzle = vmPart(g, 0.21, 0.21, 0.12, 0x2a3a2a);
-      muzzle.position.set(0, 0.02, -0.52);
-      const back = vmPart(g, 0.19, 0.19, 0.08, 0x2a3a2a);
-      back.position.set(0, 0.02, 0.22);
-      const grip = vmPart(g, 0.06, 0.14, 0.08, 0x222630);
-      grip.position.set(0, -0.12, -0.05);
-      const stripe = vmPart(g, 0.18, 0.03, 0.2, 0xc8a030);
-      stripe.position.set(0, 0.02, -0.4);
+      vmPart(g, 0.17, 0.17, 0.7, 0x56784e, 0, 0.02, -0.15); // tube
+      for (let i = 0; i < 4; i++) {
+        vmPart(g, 0.178, 0.178, 0.03, i % 2 ? GRIP : HAZARD, 0, 0.02, -0.43 + i * 0.03, { outline: false });
+      }
+      vmPart(g, 0.21, 0.21, 0.12, 0x2e3e2e, 0, 0.02, -0.52); // muzzle
+      const cap = vmPart(g, 0.2, 0.2, 0.09, 0x2e3e2e, 0, 0.02, 0.22);
+      vmPart(cap, 0.12, 0.12, 0.006, VOID, 0, 0, 0.046, { outline: false }); // exhaust
+      const led = vmPart(cap, 0.035, 0.035, 0.008, EXIT_GREEN, 0.065, 0.065, 0.048, { glow: true, outline: false });
+      const optic = vmPart(g, 0.055, 0.065, 0.14, GRIP, -0.05, 0.14, -0.02);
+      vmPart(optic, 0.03, 0.03, 0.006, EXIT_GREEN, 0, 0.005, 0.071, { glow: true, outline: false });
+      vmPart(g, 0.06, 0.15, 0.08, GRIP, 0, -0.13, 0, { rx: 0.2 }); // grip
+      vmPart(g, 0.05, 0.12, 0.06, GRIP, 0, -0.12, -0.3); // front grip
       g.scale.setScalar(0.72);
       g.position.set(0.04, -0.03, 0);
       this.models.set('rocket', g);
       this.muzzleTips.set('rocket', -0.5);
+      p.led = led;
     }
-    // ARC CASTER — coil gun with a forked emitter
+    // ARC CASTER — coil gun: coils pulse, charge with the cooldown, flare on fire
     {
       const g = new THREE.Group();
-      const body = vmPart(g, 0.12, 0.13, 0.4, 0x3a4452);
-      body.position.set(0, -0.02, -0.05);
-      const coilA = vmPart(g, 0.16, 0.16, 0.07, 0x55e0ff);
-      coilA.position.set(0, 0, -0.22);
-      const coilB = vmPart(g, 0.14, 0.14, 0.06, 0x2898c8);
-      coilB.position.set(0, 0, -0.32);
-      const core = vmPart(g, 0.05, 0.05, 0.44, 0xd8f8ff);
-      core.position.set(0, 0, -0.2);
-      const prongL = vmPart(g, 0.03, 0.05, 0.16, 0x8a94a8);
-      prongL.position.set(-0.06, 0.01, -0.46);
-      const prongR = vmPart(g, 0.03, 0.05, 0.16, 0x8a94a8);
-      prongR.position.set(0.06, 0.01, -0.46);
-      const grip = vmPart(g, 0.07, 0.15, 0.09, 0x2a2e38);
-      grip.position.set(0, -0.14, 0.08);
-      grip.rotation.x = 0.25;
+      vmPart(g, 0.12, 0.13, 0.36, 0x3e4858, 0, -0.02, 0); // body
+      vmPart(g, 0.03, 0.04, 0.22, STEEL, 0, 0.065, 0); // top fin
+      for (let i = 0; i < 4; i++) {
+        p.coils.push(vmPart(g, 0.15, 0.15, 0.045, 0x34d0ff, 0, 0, -0.2 - i * 0.075, { glow: true }));
+        if (i < 3) vmPart(g, 0.12, 0.12, 0.03, 0x2a3240, 0, 0, -0.2375 - i * 0.075, { outline: false });
+      }
+      p.core = vmPart(g, 0.045, 0.045, 0.42, 0xd8f8ff, 0, 0, -0.3, { glow: true, outline: false });
+      for (const sx of [-0.055, 0.055]) {
+        vmPart(g, 0.025, 0.04, 0.15, 0x8a94a8, sx, 0, -0.52); // prong
+        p.tips.push(vmPart(g, 0.03, 0.045, 0.03, 0x9aeaff, sx, 0, -0.6, { glow: true }));
+      }
+      const cell = vmPart(g, 0.05, 0.09, 0.12, GRIP, -0.085, -0.02, 0.02);
+      p.cellWindow = vmPart(cell, 0.006, 0.05, 0.08, 0x34d0ff, -0.026, 0, 0, { glow: true, outline: false });
+      vmPart(g, 0.07, 0.15, 0.09, GRIP, 0, -0.14, 0.1, { rx: 0.25 }); // grip
+      const rear = vmPart(g, 0.11, 0.12, 0.03, GRIP, 0, -0.02, 0.195);
+      vmPart(rear, 0.114, 0.024, 0.034, HAZARD, 0, 0.03, 0, { outline: false });
       this.models.set('arc', g);
-      this.muzzleTips.set('arc', -0.5);
+      this.muzzleTips.set('arc', -0.55);
     }
     for (const [, g] of this.models) {
       g.visible = false;
       this.viewModel.add(g);
     }
+    for (const m of [p.slide, p.pump, p.bolt]) if (m) this.basePos.set(m, m.position.z);
   }
 
   private showModel(id: WeaponId): void {
     for (const [k, g] of this.models) g.visible = k === id;
+    this.resetAction();
+    this.lightTick = 1; // tint the new model by the room light on the next frame
   }
 
   give(id: WeaponId): void {
@@ -286,6 +429,7 @@ export class WeaponSystem {
         this.pending = null;
         this.showModel(this.current);
         game.hud.updateWeapon(this);
+        game.audio.play('weaponRaise');
       }
     } else if (this.raiseT < 1) {
       this.raiseT = Math.min(1, this.raiseT + dt * 6);
@@ -325,6 +469,10 @@ export class WeaponSystem {
     game.net?.sendShot(def.sound, pl.pos.x, pl.eyeY(), pl.pos.z);
     pl.recoilPitch += def.recoil;
     this.kickZ += def.kick;
+    this.kickRoll += (Math.random() - 0.5) * def.kick * 0.8;
+    this.shotT = 0;
+    this.pumpStage = 0;
+    this.lightTick = 1; // the gun catches its own muzzle light this frame
     this.flashTime = 0.055;
     (this.flash.material as THREE.MeshBasicMaterial).map =
       def.id === 'arc' ? this.coolFlashTex : this.warmFlashTex;
@@ -379,8 +527,11 @@ export class WeaponSystem {
       return;
     }
 
-    // brass + smoke off the muzzle (pushed forward so they don't fill the lens)
-    game.particles.casing(muzzle.x + fwd.x * 0.2, muzzle.y - 0.06, muzzle.z + fwd.z * 0.2, right.x, right.z);
+    // brass + smoke off the muzzle (pushed forward so they don't fill the lens);
+    // the scattergun ejects its hull later, when the pump racks
+    if (def.id !== 'shotgun') {
+      game.particles.casing(muzzle.x + fwd.x * 0.2, muzzle.y - 0.06, muzzle.z + fwd.z * 0.2, right.x, right.z);
+    }
     game.particles.smoke(muzzle.x + fwd.x * 0.25, muzzle.y + 0.03, muzzle.z + fwd.z * 0.25, def.id === 'shotgun' ? 3 : 1);
 
     for (let i = 0; i < def.pellets; i++) {
@@ -548,29 +699,113 @@ export class WeaponSystem {
 
   private animate(dt: number, game: Game): void {
     const pl = game.player;
-    // bob with movement
-    const speed = Math.hypot(pl.vel.x, pl.vel.z);
-    const bob = Math.min(1, speed / 6);
     const t = performance.now() * 0.001;
-    const bobX = Math.sin(t * 7.5) * 0.012 * bob;
-    const bobY = -Math.abs(Math.sin(t * 7.5)) * 0.014 * bob;
-    const lower = (1 - this.raiseT) * 0.35;
-    this.viewModel.position.set(0.3 + bobX, -0.34 + bobY - lower, -0.62 + this.kickZ);
-    this.viewModel.rotation.x = this.kickZ * 0.9;
-    this.viewModel.rotation.z = -this.kickZ * 0.35;
+    this.shotT += dt;
+    this.kickRoll *= Math.exp(-12 * dt);
 
-    // tint the gun by local light
+    // look sway: the gun lags behind turns (teleports/respawns ignored)
+    let dYaw = pl.yaw - this.lastYaw;
+    dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
+    const dPitch = pl.pitch - this.lastPitch;
+    this.lastYaw = pl.yaw;
+    this.lastPitch = pl.pitch;
+    const inv = 1 / Math.max(dt, 1 / 240);
+    const sx = Math.abs(dYaw) < 0.5 ? Math.max(-0.045, Math.min(0.045, dYaw * inv * 0.012)) : 0;
+    const sy = Math.abs(dPitch) < 0.5 ? Math.max(-0.03, Math.min(0.03, -dPitch * inv * 0.01)) : 0;
+    const k = 1 - Math.exp(-10 * dt);
+    this.swayX += (sx - this.swayX) * k;
+    this.swayY += (sy - this.swayY) * k;
+
+    // walk bob in step with the camera bob + footsteps (figure-8), breathing at rest
+    const amp = pl.bobAmp;
+    const bobX = Math.sin(pl.bobPhase) * 0.014 * amp;
+    const bobY = (Math.cos(pl.bobPhase * 2) - 1) * 0.0065 * amp + Math.sin(t * 1.7) * 0.0025 * (1 - amp);
+
+    // landing dip, scaled by fall speed
+    if (!pl.onGround) {
+      this.airVy = Math.min(this.airVy, pl.vel.y);
+    } else {
+      if (this.airVy < -5) this.landDip = Math.min(0.055, -this.airVy * 0.0035);
+      this.airVy = 0;
+    }
+    this.landDip *= Math.exp(-7 * dt);
+
+    // weapon switch swings the gun down and in, not just straight down
+    const lower = 1 - this.raiseT;
+
+    // per-weapon moving parts
+    const p = this.parts;
+    let jx = 0;
+    let jy = 0;
+    let pumpTilt = 0;
+    const s = this.shotT;
+    if (this.current === 'pistol' && p.slide) {
+      p.slide.position.z = this.basePos.get(p.slide)! + blowback(s, 0.025, 0.09) * 0.07;
+    } else if (this.current === 'shotgun' && p.pump) {
+      // rack the forend back and forward once the recoil settles
+      const ph = Math.max(0, Math.min(1, (s - 0.2) / 0.42));
+      const rack = Math.sin(ph * Math.PI);
+      p.pump.position.z = this.basePos.get(p.pump)! + rack * 0.12;
+      pumpTilt = rack * 0.07;
+      if (this.pumpStage === 0 && ph > 0.15) {
+        this.pumpStage = 1;
+        game.audio.play('pumpBack');
+        // spent hull out of the port
+        const fx = -Math.sin(pl.yaw), fz = -Math.cos(pl.yaw);
+        const rx = Math.cos(pl.yaw), rz = -Math.sin(pl.yaw);
+        game.particles.casing(pl.pos.x + fx * 0.6 + rx * 0.18, pl.eyeY() - 0.16, pl.pos.z + fz * 0.6 + rz * 0.18, rx, rz);
+      } else if (this.pumpStage === 1 && ph > 0.85) {
+        this.pumpStage = 2;
+        game.audio.play('pumpFwd');
+      }
+    } else if (this.current === 'smg' && p.bolt) {
+      p.bolt.position.z = this.basePos.get(p.bolt)! + (s < 0.045 ? 0.035 : 0);
+      if (s < 0.11) {
+        jx = (Math.random() - 0.5) * 0.007;
+        jy = (Math.random() - 0.5) * 0.007;
+      }
+    } else if (this.current === 'rocket' && p.led) {
+      const ready = this.cooldown === 0 && pl.ammo.rockets > 0;
+      if (ready !== this.rocketReady) {
+        if (ready && this.rocketReady === false) game.audio.play('rocketReady');
+        this.rocketReady = ready;
+        (p.led.material as THREE.MeshBasicMaterial).color.setHex(ready ? EXIT_GREEN : KEY_RED, THREE.LinearSRGBColorSpace);
+      }
+    } else if (this.current === 'arc') {
+      // coils: travelling pulse, dimmer while recharging, white flare on fire
+      const charge = 1 - Math.min(1, this.cooldown * WEAPONS.arc.rate);
+      const flare = s < 0.12 ? (1 - s / 0.12) * 0.9 : 0;
+      p.coils.forEach((c, i) => glowAt(c, (0.62 + 0.18 * Math.sin(t * 7 - i * 1.3)) * (0.5 + 0.5 * charge) + flare));
+      glowAt(p.core!, 0.75 + Math.random() * 0.25 * charge + flare);
+      for (const tip of p.tips) glowAt(tip, 0.45 + 0.55 * charge + flare);
+      const cells = Math.min(1, pl.ammo.cells / 30);
+      (p.cellWindow!.material as THREE.MeshBasicMaterial).color.setRGB(0.2 * cells, 0.82 * cells, cells);
+    }
+
+    this.viewModel.position.set(
+      0.3 + bobX + this.swayX + jx + lower * 0.05,
+      -0.34 + bobY + this.swayY + jy - lower * 0.3 - this.landDip,
+      -0.62 + this.kickZ,
+    );
+    this.viewModel.rotation.set(
+      this.kickZ * 0.9 - lower * 0.75 + this.swayY * 1.6,
+      -this.swayX * 1.4,
+      -this.kickZ * 0.35 + this.kickRoll + lower * 0.4 + bobX * 0.8 + pumpTilt,
+    );
+
+    // tint the gun (and its edges) by local light; glow parts stay full-bright
     this.lightTick += dt;
     if (this.lightTick > 0.12) {
       this.lightTick = 0;
       const l = game.world.sampleLight01(pl.pos.x, pl.pos.y, pl.pos.z);
       const d = game.dynLights.sampleAt(pl.pos.x, pl.pos.y, pl.pos.z);
-      const r = Math.min(1.25, 0.4 + l[0] * 1.4 + d[0]);
-      const g = Math.min(1.25, 0.4 + l[1] * 1.4 + d[1]);
-      const b = Math.min(1.25, 0.4 + l[2] * 1.4 + d[2]);
+      // high floor: the gun must read as a shape even in dark corridors
+      const r = Math.min(1.3, 0.62 + l[0] * 1.15 + d[0]);
+      const g = Math.min(1.3, 0.62 + l[1] * 1.15 + d[1]);
+      const b = Math.min(1.3, 0.62 + l[2] * 1.15 + d[2]);
       const model = this.models.get(this.current);
       model?.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
+        if (o instanceof THREE.Mesh && !o.userData.glow) {
           const m = o.material as THREE.MeshBasicMaterial;
           const base = o.userData.baseColor as THREE.Color;
           m.color.setRGB(base.r * r, base.g * g, base.b * b);

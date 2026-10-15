@@ -177,7 +177,8 @@ export class Game {
     scene.add(this.particles.mesh);
     scene.add(this.tracers.group);
     scene.add(this.projectiles.group);
-    this.camera.add(this.weapons.viewModel);
+    // the gun renders in its own depth-cleared pass (see Renderer.overlay)
+    this.rendererSys.overlay.add(this.weapons.viewModel);
     scene.add(this.camera);
     // menu shows the bare facility; the gun raises when the run starts
     this.weapons.viewModel.visible = false;

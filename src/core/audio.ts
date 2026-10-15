@@ -5,6 +5,7 @@
  */
 export type SoundName =
   | 'pistol' | 'shotgun' | 'smg' | 'rocketLaunch' | 'arcFire' | 'explosion' | 'dryfire'
+  | 'pumpBack' | 'pumpFwd' | 'weaponRaise' | 'rocketReady'
   | 'boltFire' | 'boltHit' | 'impact' | 'crateBreak' | 'wallBreak'
   | 'fleshHit' | 'headshot'
   | 'enemyPainA' | 'enemyPainB' | 'enemyDieA' | 'enemyDieB'
@@ -231,6 +232,25 @@ export class AudioMan {
         break;
       case 'dryfire':
         this.tone(out, 'square', 0.25, 0.002, 0.03, 900, 500);
+        break;
+      case 'pumpBack':
+        // forend racked back: dull metal slide
+        this.noise(out, 0.32, 0.002, 0.06, 'bandpass', 1300, 650);
+        this.tone(out, 'square', 0.12, 0.002, 0.04, 380, 240);
+        break;
+      case 'pumpFwd':
+        // ...and slammed home: brighter clack
+        this.noise(out, 0.4, 0.002, 0.05, 'bandpass', 2100, 1000);
+        this.tone(out, 'square', 0.15, 0.002, 0.04, 560, 320);
+        break;
+      case 'weaponRaise':
+        this.noise(out, 0.2, 0.004, 0.07, 'bandpass', 2600, 1300);
+        this.tone(out, 'triangle', 0.1, 0.003, 0.06, 760, 460);
+        break;
+      case 'rocketReady':
+        // next rocket seated: low thunk + tiny confirm chirp
+        this.tone(out, 'sine', 0.22, 0.003, 0.08, 160, 90);
+        this.tone(out, 'square', 0.06, 0.002, 0.03, 1250, 1250, 0.05);
         break;
       case 'boltFire':
         this.tone(out, 'sawtooth', 0.5, 0.01, 0.18, 700, 180);

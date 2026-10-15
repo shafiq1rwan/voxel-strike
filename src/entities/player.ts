@@ -40,8 +40,9 @@ export class Player {
   shakeScale = 1;
   /** timed powerup buffs, seconds remaining */
   readonly buffs = { quad: 0, shield: 0, haste: 0 };
-  private bobPhase = 0;
-  private bobAmp = 0;
+  /** walk-cycle phase + strength (read by the weapon view model to bob in step) */
+  bobPhase = 0;
+  bobAmp = 0;
   private lastStride = 0;
   /** brief camera shake magnitude (explosions) */
   shake = 0;
