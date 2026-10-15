@@ -178,7 +178,19 @@ const CSS = `
 }
 .panel::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
 .panel::after { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
-#fps { position: absolute; top: 10px; right: 14px; font-size: 12px; color: #566076; }
+.screen.terminal-screen { background: #020704; cursor: default; padding: 24px; box-sizing: border-box; }
+.terminal-panel {
+  width: min(760px, 100%); text-align: left; color: #70ff92;
+  font-family: 'Courier New', Courier, monospace; text-shadow: 0 0 10px #38d56666;
+}
+.terminal-label { font-size: 12px; letter-spacing: 3px; opacity: .6; margin-bottom: 28px; }
+.terminal-output { white-space: pre-wrap; overflow-wrap: anywhere; font-size: clamp(17px, 3vw, 27px); line-height: 1.7; min-height: 8.5em; }
+.terminal-cursor { display: inline-block; background: #70ff92; width: .6em; height: 1em; vertical-align: -.12em; animation: terminal-blink 1s steps(1) infinite; }
+.terminal-action { margin-top: 24px; padding: 12px 16px; border: 1px solid #38794a; background: #06150b; color: #70ff92; font: inherit; cursor: pointer; }
+.terminal-action:focus-visible { outline: 2px solid #70ff92; outline-offset: 4px; }
+@keyframes terminal-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .terminal-cursor { animation: none; } }
+#fps { position: absolute; left: 14px; bottom: 10px; font-size: 12px; color: #566076; }
 
 /* ---------------- touch controls ---------------- */
 #touchui { position: absolute; inset: 0; pointer-events: none; }
@@ -450,6 +462,7 @@ export class HUD {
   private killsNumEl!: HTMLElement;
   private killsCache = '';
   private screenEl: HTMLElement | null = null;
+  private storyTimer: number | null = null;
   private hitTimer: number | null = null;
   private logoStop: (() => void) | null = null;
   private titleKey: ((ev: KeyboardEvent) => void) | null = null;
@@ -1089,11 +1102,64 @@ export class HUD {
     `, onNext);
   }
 
+  /** Final lift transmission. Sector 4 is a teaser until the next chapter ships. */
+  showCampaignEnding(stats: string, onAgain: () => void, onMenu?: () => void): void {
+    this.hideScreen();
+    const el = document.createElement('div');
+    el.className = 'screen terminal-screen';
+    el.innerHTML = `
+      <div class="terminal-panel">
+        <div class="terminal-label">FACILITY NETWORK // LIFT TERMINAL</div>
+        <div class="terminal-output"><span id="terminal-text"></span><span class="terminal-cursor" aria-hidden="true"></span></div>
+        <button class="terminal-action" type="button">REVEAL TRANSMISSION</button>
+      </div>`;
+    document.body.appendChild(el);
+    this.screenEl = el;
+    this.root.style.visibility = 'hidden';
+    const output = el.querySelector('#terminal-text')!;
+    const button = el.querySelector('button')!;
+    const story = 'UPPER FACILITY OFFLINE\n\nUnknown power source detected below.\n\nDescending to Sector 4…';
+    let index = 0;
+    let finished = false;
+    const finish = (): void => {
+      if (this.storyTimer !== null) window.clearTimeout(this.storyTimer);
+      this.storyTimer = null;
+      output.textContent = story;
+      finished = true;
+      button.textContent = 'CONTINUE TO RESULTS';
+      // Announce the complete message rather than every typed character.
+      output.setAttribute('role', 'status');
+      output.setAttribute('aria-label', story);
+    };
+    const type = (): void => {
+      if (this.screenEl !== el) return;
+      output.textContent = story.slice(0, ++index);
+      if (index >= story.length) finish();
+      else this.storyTimer = window.setTimeout(type, story[index - 1] === '\n' ? 340 : 45);
+    };
+    const openedAt = performance.now();
+    const advance = (): void => {
+      if (performance.now() - openedAt < 700) return;
+      if (!finished) finish();
+      else this.showWin(stats, onAgain, onMenu);
+    };
+    button.addEventListener('click', advance);
+    this.titleKey = (ev: KeyboardEvent) => {
+      if (!ev.repeat && (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space')) {
+        ev.preventDefault();
+        advance();
+      }
+    };
+    window.addEventListener('keydown', this.titleKey);
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) finish();
+    else this.storyTimer = window.setTimeout(type, 650);
+  }
+
   /** `onMenu` adds a "Main menu" button (solo); co-op has just the one action */
   showWin(stats: string, onAgain: () => void, onMenu?: () => void): void {
     this.showButtonScreen(`
       <h1 class="win">CAMPAIGN COMPLETE</h1>
-      <p>All sectors cleared. The facility is silent.</p>
+      <p>Upper facility cleared. The descent continues...</p>
       <p>${stats}</p>
       <div class="screen-btns">
         <button id="again-btn" class="tbtn tbtn-primary">Play a new layout</button>
@@ -1158,6 +1224,8 @@ export class HUD {
   }
 
   hideScreen(): void {
+    if (this.storyTimer !== null) window.clearTimeout(this.storyTimer);
+    this.storyTimer = null;
     this.root.style.visibility = 'visible';
     this.logoStop?.();
     this.logoStop = null;

@@ -151,6 +151,10 @@ try {
   await g(() => { const game = window.__voxelstrike; game.state = 'playing'; game.hud.hideScreen(); game.levelIndex = 3; game.win(); });
   await sleep(200);
   check((await save()) === null, 'campaign complete clears the save');
+  // the lift-terminal transmission comes first: reveal, then continue to results
+  await sleep(800); // terminal arms after 0.7s
+  await clickBtn('.terminal-action');
+  await clickBtn('.terminal-action');
   await sleep(1300); // win screen arms after 1.2s
   await clickBtn('#again-btn');
   await sleep(500);

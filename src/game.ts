@@ -458,7 +458,7 @@ export class Game {
     this.input.releaseLock();
     if (final) {
       this.state = 'won';
-      this.hud.showWin(stats, () => reloadToTitle());
+      this.hud.showCampaignEnding(stats, () => reloadToTitle());
     } else {
       this.state = 'intermission';
       this.hud.showWaiting(heading, stats, 'WAITING FOR THE HOST TO DESCEND...');
@@ -1274,7 +1274,7 @@ export class Game {
         `Secrets: ${this.totalSecretsFound} / ${this.totalSecretsSoFar} &nbsp;·&nbsp; ` +
         `Total time: ${this.formatTime(this.totalPlayTime)}<br><br>${scoreLine}`;
       this.net?.sendWin(true, 'CAMPAIGN COMPLETE', totals);
-      this.hud.showWin(
+      this.hud.showCampaignEnding(
         totals,
         () => {
           if (this.state !== 'won') return;
