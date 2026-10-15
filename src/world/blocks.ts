@@ -28,9 +28,17 @@ export const enum Block {
   CeilVent = 21,
   Chain = 22,
   CeilPipesZ = 23, // pipes running along world Z (rotated tile)
+  // Biofoundry (sector 4 preview) set — append-only like everything above.
+  LabFloor = 24, // one big tile per block, wide grout
+  LabCeil = 25, // near-black panelled ceiling
+  LabWall = 26, // one concrete panel per block, four rivets
+  LabWallRust = 27, // same, with rust runs from the top rivets
+  LampViolet = 28, // magenta emergency panel (emits)
+  TankGlass = 29, // specimen tank volume: solid + emits green, never meshed (shell is decoration)
+  LabCeilGrate = 30, // square extraction grate in the ceiling
 }
 
-export const BLOCK_COUNT = 24;
+export const BLOCK_COUNT = 31;
 
 /** Which lamp blocks emit light, and their color (0-255 per channel). */
 export const LAMP_COLORS: Partial<Record<Block, [number, number, number]>> = {
@@ -39,6 +47,10 @@ export const LAMP_COLORS: Partial<Record<Block, [number, number, number]>> = {
   [Block.LampTeal]: [70, 205, 255],
   [Block.LampGreen]: [90, 255, 120],
   [Block.ExitPad]: [60, 200, 90],
+  [Block.LampViolet]: [205, 90, 255],
+  // the glass faces are lit by their own flood, so this sets the liquid's
+  // brightness as much as the room's green tint — keep it mild
+  [Block.TankGlass]: [125, 190, 85],
 };
 
 export function isDestructible(b: Block): boolean {
@@ -87,9 +99,16 @@ export const enum Tile {
   CeilVent = 23,
   Chain = 24,
   CeilPipesZ = 25,
+  LabFloor = 26,
+  LabCeil = 27,
+  LabWall = 28,
+  LabWallRust = 29,
+  LampViolet = 30,
+  TankGlass = 31,
+  LabCeilGrate = 32,
 }
 
-export const TILE_COUNT = 26;
+export const TILE_COUNT = 33;
 
 /** Face dirs: 0:+x 1:-x 2:+y(top) 3:-y(bottom) 4:+z 5:-z */
 export function tileFor(block: Block, dir: number): Tile {
@@ -142,6 +161,20 @@ export function tileFor(block: Block, dir: number): Tile {
       return bottom ? Tile.CeilVent : Tile.Rock;
     case Block.Chain:
       return top || bottom ? Tile.Metal : Tile.Chain;
+    case Block.LabFloor:
+      return top ? Tile.LabFloor : Tile.Rock;
+    case Block.LabCeil:
+      return bottom ? Tile.LabCeil : Tile.Rock;
+    case Block.LabCeilGrate:
+      return bottom ? Tile.LabCeilGrate : Tile.Rock;
+    case Block.LabWall:
+      return top ? Tile.RockTop : bottom ? Tile.LabCeil : Tile.LabWall;
+    case Block.LabWallRust:
+      return top ? Tile.RockTop : bottom ? Tile.LabCeil : Tile.LabWallRust;
+    case Block.LampViolet:
+      return Tile.LampViolet;
+    case Block.TankGlass:
+      return Tile.TankGlass;
     default:
       return Tile.Rock;
   }
@@ -516,6 +549,98 @@ function drawTile(ctx: Ctx2D, tile: Tile): void {
         px(ctx, ox, oy, 7, y, shade(link ? [150, 158, 176] : [92, 98, 114], 1));
         px(ctx, ox, oy, 8, y, shade(link ? [104, 110, 128] : [64, 70, 84], 1));
       }
+      break;
+    }
+    // ---- Biofoundry set ------------------------------------------------
+    case Tile.LabFloor: {
+      // one large tile per block: wide dark grout on two edges, a lit
+      // bevel on the others, lighter centre so lamp light reads as sheen
+      fillNoise(ctx, ox, oy, [96, 94, 112], 0.16, 301);
+      for (let i = 0; i < TILE_PX; i++) {
+        px(ctx, ox, oy, i, 0, shade([38, 36, 48], 1));
+        px(ctx, ox, oy, i, 1, shade([52, 50, 64], 1));
+        px(ctx, ox, oy, 0, i, shade([38, 36, 48], 1));
+        px(ctx, ox, oy, 1, i, shade([52, 50, 64], 1));
+        px(ctx, ox, oy, i, 15, shade([66, 64, 80], 1));
+        px(ctx, ox, oy, 15, i, shade([66, 64, 80], 1));
+      }
+      for (const [sx, sy] of [[4, 4], [5, 4], [4, 5], [10, 11], [11, 11]] as const) {
+        px(ctx, ox, oy, sx, sy, shade([122, 120, 140], 1));
+      }
+      break;
+    }
+    case Tile.LabCeil: {
+      fillNoise(ctx, ox, oy, [30, 30, 40], 0.28, 311);
+      for (let i = 0; i < TILE_PX; i++) {
+        px(ctx, ox, oy, i, 0, shade([16, 16, 24], 1));
+        px(ctx, ox, oy, 0, i, shade([16, 16, 24], 1));
+      }
+      break;
+    }
+    case Tile.LabCeilGrate: {
+      // square extraction grate set into the panelled ceiling
+      fillNoise(ctx, ox, oy, [30, 30, 40], 0.28, 311);
+      for (let y = 2; y <= 13; y++) {
+        for (let x = 2; x <= 13; x++) {
+          const frame = y === 2 || y === 13 || x === 2 || x === 13;
+          if (frame) px(ctx, ox, oy, x, y, shade([78, 82, 98], 1));
+          else px(ctx, ox, oy, x, y, y % 2 === 0 ? shade([10, 10, 16], 1) : shade([52, 56, 70], 0.9));
+        }
+      }
+      break;
+    }
+    case Tile.LabWall:
+    case Tile.LabWallRust: {
+      // one concrete panel per block: dark seam top/left, lit bevel
+      // bottom/right, a rivet in each corner
+      fillNoise(ctx, ox, oy, [106, 110, 126], 0.14, 321);
+      for (let i = 0; i < TILE_PX; i++) {
+        px(ctx, ox, oy, i, 0, shade([58, 62, 78], 1));
+        px(ctx, ox, oy, 0, i, shade([58, 62, 78], 1));
+        px(ctx, ox, oy, i, 15, shade([134, 138, 156], 1));
+        px(ctx, ox, oy, 15, i, shade([134, 138, 156], 1));
+      }
+      for (const [rx, ry] of [[3, 3], [12, 3], [3, 12], [12, 12]] as const) {
+        px(ctx, ox, oy, rx, ry, shade([166, 172, 190], 1));
+        px(ctx, ox, oy, rx + 1, ry + 1, shade([46, 50, 64], 1));
+      }
+      for (const [sx, sy] of [[7, 6], [9, 9], [6, 11]] as const) px(ctx, ox, oy, sx, sy, shade([90, 94, 110], 1));
+      if (tile === Tile.LabWallRust) {
+        for (const [sx, len] of [[3, 9], [12, 6]] as const) {
+          for (let y = 4; y < 4 + len; y++) {
+            const f = 0.6 + hnoise(sx, y, 331) * 0.5;
+            px(ctx, ox, oy, sx, y, shade([150, 90, 42], f));
+            if (hnoise(sx + 1, y, 332) > 0.55) px(ctx, ox, oy, sx + 1, y, shade([112, 66, 32], f));
+          }
+        }
+      }
+      break;
+    }
+    case Tile.LampViolet: {
+      // magenta emergency panel: thin dark bezel, bright inset glass
+      fillNoise(ctx, ox, oy, [24, 22, 34], 0.2, 341);
+      for (let y = 1; y < 15; y++) {
+        for (let x = 1; x < 15; x++) {
+          const edge = x === 1 || x === 14 || y === 1 || y === 14;
+          px(ctx, ox, oy, x, y, edge ? shade([150, 60, 200], 1) : shade([225, 110, 255], 1));
+        }
+      }
+      break;
+    }
+    case Tile.TankGlass: {
+      // specimen tank: luminous green liquid, bright surface band at the
+      // top, a glass highlight stripe, a dark edge and a few bubbles
+      // (pale: the face colour is this × the tank's own lamp light)
+      fillNoise(ctx, ox, oy, [196, 250, 156], 0.12, 351);
+      for (let x = 0; x < TILE_PX; x++) {
+        px(ctx, ox, oy, x, 0, shade([244, 255, 205], 1));
+        px(ctx, ox, oy, x, 1, shade([232, 255, 192], 1));
+      }
+      for (let y = 0; y < TILE_PX; y++) {
+        px(ctx, ox, oy, 2, y, shade([236, 255, 196], 1));
+        px(ctx, ox, oy, 15, y, shade([128, 176, 96], 1));
+      }
+      for (const [bx, by] of [[6, 5], [11, 9], [8, 13], [12, 3]] as const) px(ctx, ox, oy, bx, by, shade([252, 255, 225], 1));
       break;
     }
   }

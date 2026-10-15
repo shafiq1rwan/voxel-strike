@@ -139,6 +139,31 @@ Full layout and behaviour are in [UI_SPEC.md](UI_SPEC.md). The visual rules:
 - **Primary buttons:** hazard-yellow outline with diagonal hazard stripes on
   both ends.
 
+## Sector 4 "Biofoundry" (development preview)
+
+Reference: `reference/sector4-biofoundry.png`. Authored in
+`src/preview/biofoundry.ts`, reached with `?sector4` on a dev server only.
+How it gets its look:
+
+- **Its own block set** (`LabFloor`, `LabCeil`, `LabCeilGrate`, `LabWall`,
+  `LabWallRust`, `LampViolet`, `TankGlass` — appended to the atlas, never
+  used by the campaign): one big tile per block, one concrete panel per
+  block, magenta emergency panels, and `TankGlass`, which is solid and a
+  green lamp but is **never meshed** — a voxel tank showed its block grid,
+  so the visible tank is decoration: a smooth translucent glass shell, a
+  liquid fill with one surface line, bubbles, and a near-black voxel dummy
+  floating inside (drawn opaque so it reads through the tint).
+- **Purple ambient:** `bakeLighting([36, 26, 52])` instead of the campaign's
+  near-black default — the wash on the tiles comes from that, not from more
+  lamps. Magenta ceiling pairs, cyan over doorways, warm bands on the 2×2
+  pillars, green from the tanks.
+- **Decoration is instanced boxes** with the same baked per-face shade as the
+  gun view models (and the same `rawColor` rule). Tank frames and fills,
+  crimson growth hugging pillars and walls with
+  orange nodes, slime puddles, the sealed-door frame and signs.
+- **Signs are deliberately low-res** (~1 texel per screen pixel at 240
+  lines); a large canvas minifies into unreadable speckle.
+
 ## Owner's calls
 
 Art direction is the owner's decision. Decisions made so far:

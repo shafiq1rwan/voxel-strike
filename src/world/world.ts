@@ -130,13 +130,13 @@ export class VoxelWorld {
    * Bake static lighting: dim ambient everywhere, then BFS colored light
    * outward through air from every lamp block.
    */
-  bakeLighting(): void {
+  bakeLighting(ambient: [number, number, number] = [16, 17, 22]): void {
     const { light, blocks, sx, sy, sz } = this;
-    // ambient
+    // ambient (the campaign's dark default; authored levels may tint it)
     for (let i = 0; i < blocks.length; i++) {
-      light[i * 3] = 16;
-      light[i * 3 + 1] = 17;
-      light[i * 3 + 2] = 22;
+      light[i * 3] = ambient[0];
+      light[i * 3 + 1] = ambient[1];
+      light[i * 3 + 2] = ambient[2];
     }
     const RANGE = 13;
     const FALLOFF = 235 / RANGE;

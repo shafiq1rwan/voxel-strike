@@ -27,6 +27,13 @@ import { POKI, poki } from './platform/poki';
 
 type GameState = 'title' | 'playing' | 'paused' | 'dead' | 'intermission' | 'won';
 
+/** Injected only by the development entry point; preview assets never ship. */
+export interface LevelPreview {
+  generate(seed: number): LevelData;
+  decorate(level: LevelData): { group: THREE.Group; dispose(): void };
+  showScreen(onStart: () => void, onLeave: () => void, cleared?: boolean): () => void;
+}
+
 const TOTAL_SECTORS = 3;
 
 /** what enemy AI / explosions / bolts need from "a player" — the local
@@ -163,7 +170,11 @@ export class Game {
   /** stays in combat music for a few seconds after the last contact */
   private combatLinger = 0;
 
-  constructor(parent: HTMLElement) {
+  private previewArt: ReturnType<LevelPreview['decorate']> | null = null;
+  private previewMenuStop: (() => void) | null = null;
+
+  constructor(parent: HTMLElement, private readonly preview?: LevelPreview) {
+    if (import.meta.env.DEV && preview) this.levelIndex = 4;
     this.rendererSys = new Renderer(parent);
     this.camera = this.rendererSys.camera;
     this.input = new Input(this.rendererSys.renderer.domElement);
@@ -221,7 +232,7 @@ export class Game {
     const q = new URLSearchParams(location.search);
     const role = q.get('role');
     const room = q.get('room');
-    if (!POKI && (role === 'host' || role === 'join') && room) {
+    if (!POKI && !this.preview && (role === 'host' || role === 'join') && room) {
       void this.startCoop(role, room, q.get('mp') === 'local');
     }
 
@@ -308,6 +319,11 @@ export class Game {
 
   private teardownLevel(): void {
     const scene = this.rendererSys.scene;
+    if (this.previewArt) {
+      scene.remove(this.previewArt.group);
+      this.previewArt.dispose();
+      this.previewArt = null;
+    }
     if (this.chunks) {
       scene.remove(this.chunks.group);
       this.chunks.dispose();
@@ -346,7 +362,7 @@ export class Game {
     this.teardownLevel();
     const seed = this.levelSeed();
     console.log(`[voxelstrike] generating sector ${this.levelIndex}, seed=${seed}`);
-    this.level = generateLevel(seed, this.levelIndex);
+    this.level = (import.meta.env.DEV && this.preview) ? this.preview.generate(seed) : generateLevel(seed, this.levelIndex);
     this.world = this.level.world;
     const scene = this.rendererSys.scene;
 
@@ -356,6 +372,10 @@ export class Game {
     );
     this.chunks.buildAll();
     scene.add(this.chunks.group);
+    if (import.meta.env.DEV && this.preview) {
+      this.previewArt = this.preview.decorate(this.level);
+      scene.add(this.previewArt.group);
+    }
 
     for (const spec of this.level.doors) {
       const door = new Door(spec, this.world);
@@ -553,11 +573,12 @@ export class Game {
   /** remember the run as it enters `sector`; solo runs past sector 1 are saved */
   private captureCheckpoint(sector = this.levelIndex): void {
     this.checkpoint = this.makeCheckpoint(sector);
-    if (!this.net && sector >= 2) storageSet(RUN_KEY, JSON.stringify(this.checkpoint));
+    if (!this.preview && !this.net && sector >= 2) storageSet(RUN_KEY, JSON.stringify(this.checkpoint));
   }
 
   /** the saved run, if there is a valid one to continue */
   private loadSave(): Checkpoint | null {
+    if (this.preview) return null;
     const raw = storageGet(RUN_KEY);
     if (!raw) return null;
     try {
@@ -595,7 +616,7 @@ export class Game {
   private resetRun(): void {
     this.baseSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
     this.applyCheckpoint({
-      v: 1, seed: this.baseSeed, sector: 1, score: 0, health: 100, armor: 0,
+      v: 1, seed: this.baseSeed, sector: (import.meta.env.DEV && this.preview) ? 4 : 1, score: 0, health: 100, armor: 0,
       ammo: { bullets: 48, shells: 0, rockets: 0, cells: 0 },
       owned: ['pistol'], current: 'pistol',
       totalKills: 0, totalEnemies: 0, totalSecretsFound: 0, totalSecrets: 0, totalTime: 0,
@@ -634,6 +655,8 @@ export class Game {
    * ("READY — click to continue") to re-capture the mouse.
    */
   private enterSector(message: string, adShown: boolean): void {
+    this.previewMenuStop?.();
+    this.previewMenuStop = null;
     this.hud.hideScreen();
     this.clearTransientFX();
     this.weapons.viewModel.visible = true;
@@ -655,12 +678,18 @@ export class Game {
     else this.resetRun();
     this.buildLevel();
     this.captureCheckpoint();
-    this.enterSector(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — second attempt. Follow the arrow.`, adShown);
+    this.enterSector((import.meta.env.DEV && this.preview) ? 'BIOFOUNDRY PREVIEW: second attempt.' : `SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — second attempt. Follow the arrow.`, adShown);
   }
 
   /** abandon the run: new layout, sector 1, no save */
   private newRunNow(adShown: boolean): void {
-    storageSet(RUN_KEY, null);
+    if (import.meta.env.DEV && this.preview) {
+      this.resetRun();
+      this.buildLevel();
+      this.startGame();
+      return;
+    }
+    if (!this.preview) storageSet(RUN_KEY, null);
     this.resetRun();
     this.buildLevel();
     this.captureCheckpoint();
@@ -702,6 +731,20 @@ export class Game {
   /** start the sector-1 level that's already built behind the title screen */
   private startGame(adShown = false): void {
     this.audio.init();
+    if (import.meta.env.DEV && this.preview) {
+      this.player.health = 100;
+      this.player.armor = 75;
+      this.player.ammo.bullets = 160;
+      this.player.ammo.shells = 36;
+      this.player.ammo.rockets = 8;
+      this.player.ammo.cells = 45;
+      this.weapons.restoreLoadout(['pistol', 'shotgun', 'smg', 'rocket', 'arc'], 'shotgun');
+      this.hud.updateStats(this.player);
+      this.hud.updateWeapon(this.weapons);
+      this.captureCheckpoint();
+      this.enterSector('BIOFOUNDRY PREVIEW — find the red keycard. Campaign saves are untouched.', false);
+      return;
+    }
     if (this.isTouch && !POKI) {
       // go immersive: fullscreen + landscape lock where the platform allows it
       // (not on Poki — its page owns fullscreen around the game iframe)
@@ -793,6 +836,12 @@ export class Game {
   }
 
   private showTitleScreen(): void {
+    if (import.meta.env.DEV && this.preview) {
+      this.hud.hideScreen();
+      this.previewMenuStop?.();
+      this.previewMenuStop = this.preview.showScreen(() => this.startGame(), () => { location.href = location.pathname; });
+      return;
+    }
     const save = this.loadSave();
     this.hud.showTitle({
       seed: this.baseSeed,
@@ -842,7 +891,7 @@ export class Game {
     this.hud.showPause(
       {
         sector: this.levelIndex,
-        totalSectors: TOTAL_SECTORS,
+        totalSectors: (import.meta.env.DEV && this.preview) ? 4 : TOTAL_SECTORS,
         kills: this.kills,
         totalEnemies: this.level.totalEnemies,
         secrets: this.secretsFound,
@@ -1147,7 +1196,7 @@ export class Game {
       const changed = this.objStage !== null;
       this.objStage = stage;
       const o = OBJECTIVES[stage];
-      this.hud.setObjective(this.levelIndex, TOTAL_SECTORS, o.text, o.color, changed, o.icon);
+      this.hud.setObjective(this.levelIndex, (import.meta.env.DEV && this.preview) ? 4 : TOTAL_SECTORS, o.text, o.color, changed, o.icon);
     }
     const t = this.objectiveTarget(stage);
     if (!t) {
@@ -1226,6 +1275,18 @@ export class Game {
 
   private win(): void {
     if (this.state !== 'playing') return;
+    if (import.meta.env.DEV && this.preview) {
+      this.state = 'won';
+      this.input.releaseLock();
+      this.clearTransientFX();
+      this.audio.play('win');
+      this.previewMenuStop = this.preview.showScreen(() => {
+        this.resetRun();
+        this.buildLevel();
+        this.startGame();
+      }, () => { location.href = location.pathname; }, true);
+      return;
+    }
     const levelTime = this.time - this.levelStartTime;
     this.totalPlayTime += levelTime;
     this.totalKills += this.kills;

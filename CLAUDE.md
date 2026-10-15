@@ -99,7 +99,14 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   `blockHP`, and `drawTile` must stay in sync when adding a block — and new
   blocks are APPEND-ONLY (tests hardcode ids like Barrel=15, ExitPad=13).**
   Deco variants (WallRust/WallVent/WallPipes/WallWorn/CeilPipes/CeilPipesZ/
-  CeilVent/Chain) are cosmetic-only: same physics as Wall/Ceil. Ceiling UVs
+  CeilVent/Chain) are cosmetic-only: same physics as Wall/Ceil. Ids 24–30
+  (LabFloor…LabCeilGrate, LampViolet, TankGlass) are the sector 4 preview's
+  set (`src/preview/biofoundry.ts`, dev-only `?sector4`); levelgen never
+  places them. TankGlass is solid and a lamp but the mesher skips it (the
+  tank's smooth glass is decoration geometry). LampViolet is a lamp — a lamp
+  block's own faces are lit by its flood, so its emission colour sets how
+  bright the block itself looks. `VoxelWorld.bakeLighting(ambient?)` takes
+  an optional ambient; the campaign must keep the default. Ceiling UVs
   map tile-x to world X, so direction-locked art needs a rotated twin —
   CeilPipes runs along X, CeilPipesZ along Z; levelgen picks per lane. The cosmetic WallWorn
   cracks must stay visually SOFTER than the secret-marking `Cracked` tile

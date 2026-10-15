@@ -13,7 +13,11 @@ if (POKI) {
     poki.loadingFinished();
   });
 } else {
-  new Game(app);
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has('sector4')) {
+    void import('./preview/biofoundry').then(({ biofoundry }) => new Game(app, biofoundry));
+  } else {
+    new Game(app);
+  }
 }
 
 // PWA: offline cache + installability (production builds only, so the

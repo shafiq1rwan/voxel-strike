@@ -182,8 +182,10 @@ export class ChunkManager {
             cellB[v] = cell[v];
             const a = w.get(cell[0], cell[1], cell[2]);
             const b = w.get(cellB[0], cellB[1], cellB[2]);
-            const aSolid = a !== Block.Air;
-            const bSolid = b !== Block.Air;
+            // TankGlass is solid for physics and a lamp for the light bake,
+            // but draws nothing: the smooth glass shell is decoration geometry
+            const aSolid = a !== Block.Air && a !== Block.TankGlass;
+            const bSolid = b !== Block.Air && b !== Block.TankGlass;
             mask[n] = 0;
             if (aSolid === bSolid) continue;
             if (aSolid) {
