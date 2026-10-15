@@ -167,6 +167,7 @@ build is also a PWA (`public/manifest.webmanifest` + network-first
 | To change… | Look at |
 |---|---|
 | A weapon's stats or feel | `WEAPONS` + `animate()` in `weapons/weapons.ts` |
+| A weapon's look | `buildWeaponModel()` in `weapons/weapons.ts` — the held gun and the floor pickup both come from it |
 | Add a weapon | Both `ORDER` arrays (weapons.ts, hud.ts), `DRY_SWITCH`, the Digit list in `input.ts` |
 | Add a block | `world/blocks.ts` — the enums and tables must stay in sync, and ids are append-only |
 | Level layout rules | `world/levelgen.ts` (keep the BFS validation passing) |

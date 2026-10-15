@@ -165,7 +165,10 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   and the Digit list in input.ts. Hitscan headshots: husk/brute hits above
   `pos.y + half.y * 0.45` deal ×2 (gold marker, +50 kill bonus via
   `Enemy.lastHitHead`, which damage() clears after each hit so splash kills
-  don't inherit it). View models are built from `vmPart` boxes: baked
+  don't inherit it). Every gun's look comes from `buildWeaponModel(id)` —
+  the view model AND the floor pickup (`weaponPickup` in pickups.ts) — so
+  never give pickups their own gun models again (they drifted once). View
+  models are built from `vmPart` boxes: baked
   per-face shade (vertex colors), an inverted-hull 1px edge in a darker
   shade of the part's own color (×0.55, light-tinted with it — a black
   rim clashed with the world's look), and

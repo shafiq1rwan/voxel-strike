@@ -96,7 +96,10 @@ a thwack sound, knockback.
 
 ## First-person weapons
 
-Built from `vmPart` boxes in `weapons/weapons.ts`:
+Built from `vmPart` boxes by `buildWeaponModel()` in `weapons/weapons.ts`.
+The **floor pickup uses the same model** (scaled up 1.15×, with fog), so what
+players see on the floor is exactly what they'll hold. Change a gun's look
+there and both update.
 
 - **Shading:** each box has baked per-face shade (lit from the upper left):
   top brightest, left side next, the facing and right sides darker, the

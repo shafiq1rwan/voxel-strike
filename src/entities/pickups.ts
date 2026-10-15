@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { PickupKind, PickupSpec } from '../types';
+import { PickupKind, PickupSpec, WeaponId } from '../types';
+import { buildWeaponModel } from '../weapons/weapons';
 import { VoxelWorld } from '../world/world';
 import type { Game } from '../game';
 
@@ -71,6 +72,29 @@ function makeKey(color: number): THREE.Object3D {
   const chip = box(0.14, 0.12, 0.09, 0x202028);
   chip.position.y = -0.1;
   g.add(card, stripe, chip);
+  return g;
+}
+
+/** size of a floor weapon relative to the held one, so it reads across a room */
+const WEAPON_PICKUP_SCALE = 1.15;
+
+/**
+ * A weapon pickup is the same box model as the first-person gun
+ * (`buildWeaponModel`), so what you see on the floor is what you get. It
+ * spins around its own middle, and unlike the view model it sits in the
+ * world, so it takes fog.
+ */
+function weaponPickup(id: WeaponId): THREE.Object3D {
+  const gun = buildWeaponModel(id).group;
+  gun.scale.setScalar(WEAPON_PICKUP_SCALE); // drop the view model's own scale/offset
+  gun.position.set(0, 0, 0);
+  const center = new THREE.Box3().setFromObject(gun).getCenter(new THREE.Vector3());
+  gun.position.sub(center);
+  gun.traverse((o) => {
+    if (o instanceof THREE.Mesh) (o.material as THREE.MeshBasicMaterial).fog = true;
+  });
+  const g = new THREE.Group();
+  g.add(gun);
   return g;
 }
 
@@ -164,49 +188,11 @@ const BUILDERS: Record<PickupKind, () => THREE.Object3D> = {
   keyRed: () => makeKey(0xff3428),
   keyBlue: () => makeKey(0x3878ff),
   keyYellow: () => makeKey(0xffd028),
-  weaponShotgun: () => {
-    const g = new THREE.Group();
-    const barrel = box(0.14, 0.14, 0.9, 0x6a7488);
-    const pump = box(0.18, 0.14, 0.3, 0x8a5c34);
-    pump.position.set(0, -0.12, 0.1);
-    const stock = box(0.12, 0.2, 0.3, 0x8a5c34);
-    stock.position.set(0, -0.06, 0.55);
-    g.add(barrel, pump, stock);
-    return g;
-  },
-  weaponSMG: () => {
-    const g = new THREE.Group();
-    const body = box(0.16, 0.22, 0.62, 0x5a6274);
-    const mag = box(0.1, 0.3, 0.14, 0x454c5c);
-    mag.position.set(0, -0.24, 0.05);
-    const barrel = box(0.08, 0.08, 0.3, 0x6a7488);
-    barrel.position.z = -0.42;
-    g.add(body, mag, barrel);
-    return g;
-  },
-  weaponRocket: () => {
-    const g = new THREE.Group();
-    const tube = box(0.26, 0.26, 1.0, 0x4c7a4c);
-    const muzzle = box(0.32, 0.32, 0.16, 0x35502f);
-    muzzle.position.z = -0.5;
-    const grip = box(0.1, 0.2, 0.12, 0x2a3038);
-    grip.position.set(0, -0.22, 0.1);
-    g.add(tube, muzzle, grip);
-    return g;
-  },
-  weaponArc: () => {
-    const g = new THREE.Group();
-    const body = box(0.2, 0.22, 0.66, 0x3a4452);
-    const coilA = box(0.28, 0.28, 0.12, 0x55e0ff);
-    coilA.position.z = -0.28;
-    const coilB = box(0.24, 0.24, 0.1, 0x2898c8);
-    coilB.position.z = -0.44;
-    const core = box(0.08, 0.08, 0.7, 0xd8f8ff);
-    const grip = box(0.1, 0.22, 0.14, 0x2a2e38);
-    grip.position.set(0, -0.2, 0.14);
-    g.add(body, coilA, coilB, core, grip);
-    return g;
-  },
+  // weapons: the exact model you'll hold (weapons.ts builds both)
+  weaponShotgun: () => weaponPickup('shotgun'),
+  weaponSMG: () => weaponPickup('smg'),
+  weaponRocket: () => weaponPickup('rocket'),
+  weaponArc: () => weaponPickup('arc'),
   // energy cells: teal battery brick with charge pips
   ammoCells: () => {
     const g = new THREE.Group();
