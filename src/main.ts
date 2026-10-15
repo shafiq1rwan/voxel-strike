@@ -13,7 +13,9 @@ if (POKI) {
     poki.loadingFinished();
   });
 } else {
-  if (import.meta.env.DEV && new URLSearchParams(location.search).has('sector4')) {
+  // ?sector4 opens the Biofoundry preview (web builds only — never Poki);
+  // the module is lazy-loaded, so ordinary visits never download it
+  if (new URLSearchParams(location.search).has('sector4')) {
     void import('./preview/biofoundry').then(({ biofoundry }) => new Game(app, biofoundry));
   } else {
     new Game(app);

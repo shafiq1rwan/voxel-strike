@@ -27,7 +27,7 @@ import { POKI, poki } from './platform/poki';
 
 type GameState = 'title' | 'playing' | 'paused' | 'dead' | 'intermission' | 'won';
 
-/** Injected only by the development entry point; preview assets never ship. */
+/** Injected by main.ts for `?sector4` (web builds only; lazy-loaded, never on Poki). */
 export interface LevelPreview {
   generate(seed: number): LevelData;
   decorate(level: LevelData): { group: THREE.Group; dispose(): void };
@@ -174,7 +174,7 @@ export class Game {
   private previewMenuStop: (() => void) | null = null;
 
   constructor(parent: HTMLElement, private readonly preview?: LevelPreview) {
-    if (import.meta.env.DEV && preview) this.levelIndex = 4;
+    if (preview) this.levelIndex = 4;
     this.rendererSys = new Renderer(parent);
     this.camera = this.rendererSys.camera;
     this.input = new Input(this.rendererSys.renderer.domElement);
@@ -362,7 +362,7 @@ export class Game {
     this.teardownLevel();
     const seed = this.levelSeed();
     console.log(`[voxelstrike] generating sector ${this.levelIndex}, seed=${seed}`);
-    this.level = (import.meta.env.DEV && this.preview) ? this.preview.generate(seed) : generateLevel(seed, this.levelIndex);
+    this.level = (this.preview) ? this.preview.generate(seed) : generateLevel(seed, this.levelIndex);
     this.world = this.level.world;
     const scene = this.rendererSys.scene;
 
@@ -372,7 +372,7 @@ export class Game {
     );
     this.chunks.buildAll();
     scene.add(this.chunks.group);
-    if (import.meta.env.DEV && this.preview) {
+    if (this.preview) {
       this.previewArt = this.preview.decorate(this.level);
       scene.add(this.previewArt.group);
     }
@@ -616,7 +616,7 @@ export class Game {
   private resetRun(): void {
     this.baseSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
     this.applyCheckpoint({
-      v: 1, seed: this.baseSeed, sector: (import.meta.env.DEV && this.preview) ? 4 : 1, score: 0, health: 100, armor: 0,
+      v: 1, seed: this.baseSeed, sector: (this.preview) ? 4 : 1, score: 0, health: 100, armor: 0,
       ammo: { bullets: 48, shells: 0, rockets: 0, cells: 0 },
       owned: ['pistol'], current: 'pistol',
       totalKills: 0, totalEnemies: 0, totalSecretsFound: 0, totalSecrets: 0, totalTime: 0,
@@ -678,12 +678,12 @@ export class Game {
     else this.resetRun();
     this.buildLevel();
     this.captureCheckpoint();
-    this.enterSector((import.meta.env.DEV && this.preview) ? 'BIOFOUNDRY PREVIEW: second attempt.' : `SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — second attempt. Follow the arrow.`, adShown);
+    this.enterSector((this.preview) ? 'BIOFOUNDRY PREVIEW: second attempt.' : `SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — second attempt. Follow the arrow.`, adShown);
   }
 
   /** abandon the run: new layout, sector 1, no save */
   private newRunNow(adShown: boolean): void {
-    if (import.meta.env.DEV && this.preview) {
+    if (this.preview) {
       this.resetRun();
       this.buildLevel();
       this.startGame();
@@ -731,7 +731,7 @@ export class Game {
   /** start the sector-1 level that's already built behind the title screen */
   private startGame(adShown = false): void {
     this.audio.init();
-    if (import.meta.env.DEV && this.preview) {
+    if (this.preview) {
       this.player.health = 100;
       this.player.armor = 75;
       this.player.ammo.bullets = 160;
@@ -836,7 +836,7 @@ export class Game {
   }
 
   private showTitleScreen(): void {
-    if (import.meta.env.DEV && this.preview) {
+    if (this.preview) {
       this.hud.hideScreen();
       this.previewMenuStop?.();
       this.previewMenuStop = this.preview.showScreen(() => this.startGame(), () => { location.href = location.pathname; });
@@ -891,7 +891,7 @@ export class Game {
     this.hud.showPause(
       {
         sector: this.levelIndex,
-        totalSectors: (import.meta.env.DEV && this.preview) ? 4 : TOTAL_SECTORS,
+        totalSectors: (this.preview) ? 4 : TOTAL_SECTORS,
         kills: this.kills,
         totalEnemies: this.level.totalEnemies,
         secrets: this.secretsFound,
@@ -1196,7 +1196,7 @@ export class Game {
       const changed = this.objStage !== null;
       this.objStage = stage;
       const o = OBJECTIVES[stage];
-      this.hud.setObjective(this.levelIndex, (import.meta.env.DEV && this.preview) ? 4 : TOTAL_SECTORS, o.text, o.color, changed, o.icon);
+      this.hud.setObjective(this.levelIndex, (this.preview) ? 4 : TOTAL_SECTORS, o.text, o.color, changed, o.icon);
     }
     const t = this.objectiveTarget(stage);
     if (!t) {
@@ -1275,7 +1275,7 @@ export class Game {
 
   private win(): void {
     if (this.state !== 'playing') return;
-    if (import.meta.env.DEV && this.preview) {
+    if (this.preview) {
       this.state = 'won';
       this.input.releaseLock();
       this.clearTransientFX();

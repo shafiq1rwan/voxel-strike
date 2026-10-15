@@ -101,7 +101,8 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   Deco variants (WallRust/WallVent/WallPipes/WallWorn/CeilPipes/CeilPipesZ/
   CeilVent/Chain) are cosmetic-only: same physics as Wall/Ceil. Ids 24–30
   (LabFloor…LabCeilGrate, LampViolet, TankGlass) are the sector 4 preview's
-  set (`src/preview/biofoundry.ts`, dev-only `?sector4`); levelgen never
+  set (`src/preview/biofoundry.ts`, opened by `?sector4` on web builds,
+  lazy-loaded, ignored on Poki); levelgen never
   places them. TankGlass is solid and a lamp but the mesher skips it (the
   tank's smooth glass is decoration geometry). LampViolet is a lamp — a lamp
   block's own faces are lit by its flood, so its emission colour sets how

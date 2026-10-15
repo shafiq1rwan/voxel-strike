@@ -4,7 +4,8 @@ import { mkdirSync } from 'node:fs';
 import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 
 const base = process.argv[2] ?? 'http://127.0.0.1:5174/';
-const normalOnly = process.argv.includes('--normal-only');
+// --poki: against a Poki-mode server, assert that ?sector4 is ignored
+const normalOnly = process.argv.includes('--poki');
 const browser = await puppeteer.launch({
   executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--mute-audio'],
@@ -37,7 +38,7 @@ try {
     assert.equal(await page.evaluate(() => window.__voxelstrike.levelIndex), 1);
     assert.equal(await page.$('#preview-start'), null);
     assert.equal(await page.evaluate(() => !!window.__voxelstrike.rendererSys.scene.getObjectByName('biofoundry-preview-art')), false);
-    console.log('PASS: shipped build ignores ?sector4');
+    console.log('PASS: Poki build ignores ?sector4');
   } else {
     await page.waitForSelector('#preview-start');
     await new Promise(r => setTimeout(r, 800));

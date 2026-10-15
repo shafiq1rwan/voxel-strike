@@ -142,7 +142,8 @@ Full layout and behaviour are in [UI_SPEC.md](UI_SPEC.md). The visual rules:
 ## Sector 4 "Biofoundry" (development preview)
 
 Reference: `reference/sector4-biofoundry.png`. Authored in
-`src/preview/biofoundry.ts`, reached with `?sector4` on a dev server only.
+`src/preview/biofoundry.ts`, reached with `?sector4` on any web build
+(GitHub Pages included); the Poki build ignores it.
 How it gets its look:
 
 - **Its own block set** (`LabFloor`, `LabCeil`, `LabCeilGrate`, `LabWall`,

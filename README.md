@@ -35,21 +35,23 @@ replay a specific layout — the same seed always produces the same dungeon.
 
 ## Biofoundry development preview
 
-Run `npm run dev` and open `http://localhost:5173/?sector4` (or add
-`&seed=12345` for repeatable decoration). This opens a standalone Sector 4
+Add `?sector4` to the game's URL — on the deployed site or a dev server
+(`http://localhost:5173/?sector4`; add `&seed=12345` for repeatable
+decoration). This opens a standalone Sector 4
 preview with seven authored rooms, specimen tanks, purple emergency lighting,
 organic growth, a red-key route, and an exit lift. All weapons and supplies
 are provided; enemies use the current roster. Spills and organic scenery are
 cosmetic in this first environment preview.
 
 The preview does not change campaign saves or leaderboard scores and has no
-co-op. Normal URLs still play the three-sector campaign. The preview module
-is development-only: regular production and Poki builds omit the map and
-ignore `?sector4`.
+co-op. Normal URLs still play the three-sector campaign, and the preview
+module is lazy-loaded, so ordinary visits never download it. The Poki build
+ignores `?sector4` entirely.
 
-With the dev server running, `node scripts/sector4.mjs` checks progression,
-replay/retry, save isolation, and mobile rendering. To check a built server,
-use `node scripts/sector4.mjs http://localhost:4173/ --normal-only`.
+With a dev or preview server running, `node scripts/sector4.mjs <url>` checks
+progression, replay/retry, save isolation, and mobile rendering. Against a
+Poki-mode server, `node scripts/sector4.mjs <url> --poki` checks that the
+flag is ignored.
 
 ## How to play
 
