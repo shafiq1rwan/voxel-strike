@@ -95,6 +95,7 @@ const browser = await puppeteer.launch({
   headless: true,
   args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--mute-audio'],
 });
+fakePointerLock(browser); // keep the real OS cursor free
 
 try {
   // ---- mobile profile ------------------------------------------------------

@@ -6,6 +6,7 @@
  * Usage: node scripts/monkey.mjs [url]
  */
 import puppeteer from 'puppeteer-core';
+import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 
 const URL = process.argv[2] ?? `http://localhost:5173/?seed=${Math.floor(Math.random() * 1e9)}`;
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
@@ -18,6 +19,7 @@ const browser = await puppeteer.launch({
   args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--mute-audio'],
   defaultViewport: { width: 1280, height: 720 },
 });
+fakePointerLock(browser); // keep the real OS cursor free
 
 try {
   const page = await browser.newPage();

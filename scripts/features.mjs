@@ -10,6 +10,7 @@
  * Usage: node scripts/features.mjs [url]
  */
 import puppeteer from 'puppeteer-core';
+import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 import { mkdirSync } from 'node:fs';
 
 const URL = process.argv[2] ?? 'http://localhost:5173/?seed=12345';
@@ -28,6 +29,7 @@ const browser = await puppeteer.launch({
   args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--mute-audio'],
   defaultViewport: { width: 1280, height: 720 },
 });
+fakePointerLock(browser); // keep the real OS cursor free
 
 try {
   const page = await browser.newPage();

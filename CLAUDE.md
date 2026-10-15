@@ -221,15 +221,25 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   load-bearing for physics (see the sky-ejection bug history in README/tests).
 - Splash damage and husk bites are LOS-checked; don't add damage paths that
   ignore occlusion.
-- Aim assist (`WeaponSystem.applyAimAssist` magnetism + `Player.aimNearEnemy`
-  sticky aim) is hard-gated on `game.isTouch` — desktop mouse aim must stay
-  raw. Both cones clamp the target height into the enemy's body span before
-  measuring the angle; if you compare against the enemy CENTER instead, the
-  vertical error alone exceeds the cone at close range and the assist silently
-  never fires (that bug already happened once).
-- Pointer lock **does** engage in headless Chrome: while locked, real mouse
-  clicks hit the canvas, not DOM buttons. Tests must `document.exitPointerLock()`
-  (or use JS `.click()`) before clicking menu buttons mid-game.
+- Aim assist (`WeaponSystem.applyAimAssist` magnetism, sticky aim, and
+  `Player.rotationAssist`) is hard-gated on `game.isTouch` — desktop mouse aim
+  must stay raw. All three pick targets via `findAimTarget`
+  (`src/entities/aimassist.ts`) with size-aware cones (body half-width +
+  margin, clamped). Rotation assist eases the view toward the target only
+  while the player is steering (look drag / move / fire held) — never idle
+  drift, never fighting a drag away. Cones clamp the target height into the
+  enemy's body span before measuring the angle; if you compare against the
+  enemy CENTER instead, the vertical error alone exceeds the cone at close
+  range and the assist silently never fires (that bug already happened once).
+- Real pointer lock in headless Edge captures the developer's OS cursor
+  (hidden window, cursor clipped/warped to the top-left). Every browser test
+  calls `fakePointerLock(browser)` (`scripts/lib/fake-pointer-lock.mjs`) right
+  after launch — an in-page emulation that keeps the real rules (fresh gesture,
+  visible + focused tab, ESC releases). New test scripts must call it too.
+  Tests should still `document.exitPointerLock()` (or use JS `.click()`)
+  before clicking menu buttons mid-game, as with a real lock.
+- Don't run the test suites while source files are being edited: Vite reloads
+  the page on save and the tests fail with "page reload" / "barely moved".
 - Pointer lock needs a FRESH user gesture: a co-op host's game starts whenever
   the partner joins (long after the HOST click), so the automatic lock is
   refused. `Input.onUnlockedClick` → `requestLock()` recaptures on any

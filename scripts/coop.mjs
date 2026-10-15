@@ -7,6 +7,7 @@
  * Usage: node scripts/coop.mjs [baseUrl]
  */
 import puppeteer from 'puppeteer-core';
+import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 
 const BASE = (process.argv[2] ?? 'http://localhost:5173/').replace(/\/$/, '');
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
@@ -32,6 +33,7 @@ const browser = await puppeteer.launch({
   ],
   defaultViewport: { width: 1280, height: 720 },
 });
+fakePointerLock(browser); // keep the real OS cursor free
 
 try {
   const host = await browser.newPage();
