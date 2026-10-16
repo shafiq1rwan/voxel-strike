@@ -178,6 +178,89 @@ How it gets its look:
 - **Signs are deliberately low-res** (~1 texel per screen pixel at 240
   lines); a large canvas minifies into unreadable speckle.
 
+## Main character: the Facility Operative
+
+Reference: `reference/main-character-facility-operative.png`. Built in
+`src/entities/operative.ts` (`buildOperative()`), viewed with `?operative`
+on any web build (lazy-loaded; never in the Poki build, whose bundle also
+drops the reference art). The viewer has a SHEET mode laid out like the
+concept sheet (front / side / back orthographic, 3/4 perspective; the side
+view is turned ~14° towards the front, as drawn), an ORBIT mode (drag,
+zoom, snap views, walk cycle), 240P for the in-game read and COMPARE, which
+puts the reference sheet above the live model.
+
+- **The image wins over the notes' 26-box table** (owner's call): sizes were
+  measured off the sheet. That adds a dark visor frame proud of the face, a
+  back spine that rises to helmet height, two-step boots (ankle + foot),
+  elbow tabs on the forearm guards and a knee band seen front and back.
+  The owner then asked for fingers that fold like a real hand.
+- **Hands are jointed** (`buildHandRig`, shared by the rig and the first-
+  person arms): a palm (the metacarpals) with a dark steel knuckle plate on
+  its back; four fingers of three phalanges each (proximal : middle : distal
+  ≈ 1 : 0.7 : 0.55, the middle finger longest, the little finger shortest)
+  hinged at the knuckle, middle and tip joints; a thumb rooted low on the
+  palm side with its own metacarpal and two phalanges that swings across
+  the palm as it folds. One curl value folds every joint at natural ratios
+  (the middle joint most, the tip least); `pose()` sets explicit angles for
+  holds the ratios can't make. Rigid stiff blocks read as wrong — the joints
+  are the point. The viewer's FINGERS button cycles relaxed / fist / open;
+  holding a gun closes them round the grip. 65 boxes with the helmet on.
+- **First-person hands** (`buildFirstPersonHand`) pose that rig in each
+  gun's own space: 'grip' round a vertical grip (knuckle ~90°, the rest
+  round the far corner; the trigger finger nearly straight along the frame),
+  'side' (a C-grip on the near side of a handguard, pump or tube, fingers
+  over the top — the support hold the camera can see; under the gun, the
+  gun hid it) and 'cradle' (from below). The forearm starts at the wrist and
+  angles down and out, not at the camera, or it covers its own hand. At 240
+  lines the charcoal fingers are small dark shapes against the dark guns.
+- **Palette** sampled from the sheet (front colour ÷ the front shade): light
+  steel helmet, shoulders, forearm guards, knees and spine; dark steel chest
+  plate, backpack and legs; steel abdomen and pelvis; charcoal gloves,
+  belt, respirator and ankles; cyan visor + chest light (full-bright).
+- **Edges are slightly rounded** (radius 0.009, as on the sheet) so they
+  catch the light.
+- **Shading:** `buildOperative({ shading: 'lit' })` is Lambert for a lit scene
+  (the viewer has an ambient + front key + back fill rig, so the back reads
+  as bright as the front, like the sheet). The default `'baked'` bakes a shade
+  per normal direction into vertex colours for the light-less game scene.
+  Both get sparse pixel scuffs from a shader hash in box-local space.
+- **Rig:** waist → neck, shoulders → elbows; hips → knees; a socket on the
+  right glove. Faces -Z, wearer's right is +X. Shoulder caps ride the torso
+  (on the arm they tipped up whenever it came forward).
+- **Guns:** `rig.hold()` carries the real `buildWeaponModel` gun (×0.85)
+  the way a shooter does, per `OPERATIVE_GRIPS[id].stance`:
+  'shoulder' (shotgun, SMG, arc caster) seats the stock's butt in the right
+  shoulder pocket, blades the body ~30° (part hips, part waist) so the left
+  shoulder comes forward — that is what lets the short arms reach the
+  pump / fore-grip — turns the head back to face front and tips it onto the
+  stock; 'launcher' rests the tube on top of the right shoulder; 'pistol'
+  is a squarer two-handed stance with both arms out. Both arms two-bone
+  solve onto the grip and fore-end points. Held straight out in front at
+  chest height with both arms locked (the first try) it read as zombie arms.
+- **First-person arms** (the `?play=operative` preview): each forearm runs
+  from its hand back towards its own bottom corner of the screen; steeply
+  down it hung under the gun like a brick, straight at the eye it hid its
+  own hand. They're drawn at ×0.68 — at the eye the full-size bracers
+  filled the corner. The gun is carried higher (`vmY -0.2`).
+- **Helmet off:** `rig.setHelmet(false)` swaps the helmet, visor, frame and
+  respirator for a bare human head after the Facility Survivor note
+  (`reference/main-character-human-survivor.md`): skin `#b9825f`, short dark
+  hair (cap, back, sides), small dark eyes, flat brows, a cuboid nose and a
+  mouth line. The head is a touch larger than the note's (.30 × .28 × .28)
+  so it holds its own on the armour; the suit collar stays. Skin and hair
+  take no scuffs.
+- **Play as the operative** (`?play=operative[&helmet=0]`, PLAY FPS in the
+  viewer; opt-in preview, not the shipped look): his gloves and forearm
+  guards hold every gun, forearms running down and back off the bottom of
+  the screen, the gun carried higher (`vmY -0.25`) so they read. Looking
+  down shows the belt, legs and walking boots; the chest, shoulder caps and
+  backpack are hidden because the eye sits 9cm above them and they filled
+  the screen. Helmet on adds a faint visor frame.
+- **Motion:** `animate(t, walk)` blends idle breathing and a walk cycle (the
+  knee folds while its leg swings forward; the other way round reads as
+  walking backwards); `jump(t)` plays crouch → take-off → tuck → absorbing
+  landing, with the gun held level throughout.
+
 ## Owner's calls
 
 Art direction is the owner's decision. Decisions made so far:
@@ -189,6 +272,7 @@ Art direction is the owner's decision. Decisions made so far:
 | Slim Font Awesome icons, not chunky pixel icons | The pixel icons felt too thick |
 | The touch joystick is invisible until touched | A permanent resting ring was rejected |
 | No "Sector 4" or sequel teases in the ending | The campaign is 3 sectors; don't promise content that doesn't exist |
+| The Facility Operative matches the concept image, not its notes' simplified box table | "It looks exactly like the image" |
 
 When a change affects the look, show a screenshot and let the owner decide
 before polishing further.

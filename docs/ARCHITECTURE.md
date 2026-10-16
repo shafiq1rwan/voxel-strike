@@ -24,7 +24,8 @@ off the core. The per-file rules and known gotchas live in
 
 | Area | Files | Owns |
 |---|---|---|
-| Entry | `main.ts` | Poki init (Poki builds), constructs `Game`, registers the service worker (web builds) |
+| Entry | `main.ts` | Poki init (Poki builds), constructs `Game`, registers the service worker (web builds); web builds route `?sector4` (Biofoundry preview) and `?operative` (character viewer) to lazy-loaded modules |
+| Previews | `preview/biofoundry.ts`, `preview/operative-viewer.ts` | Sector 4 preview level + its live scenery; the Facility Operative viewer (sheet / orbit / compare), standalone, no `Game` |
 | Orchestration | `game.ts` | State machine, frame loop, sector lifecycle + checkpoints, explosions queue, score/combo, objective tracker, co-op routing |
 | Shared types | `types.ts` | Plain-data types (no Three.js imports) |
 | Rendering | `core/renderer.ts` | WebGL renderer at a fixed 240-line internal resolution, fog, the world pass + the weapon overlay pass |
@@ -34,7 +35,7 @@ off the core. The per-file rules and known gotchas live in
 | Settings | `core/settings.ts` | Persisted options (sensitivity, volumes, FOV, resolution, shake, aim assist) |
 | RNG | `core/rng.ts` | Seeded mulberry32 — the same seed always builds the same dungeon |
 | World | `world/blocks.ts`, `world.ts`, `mesher.ts`, `levelgen.ts` | Block types + procedural texture atlas, the voxel grid + light bake, greedy chunk mesher + shader, the dungeon generator + validator |
-| Entities | `entities/*.ts` | Player, enemies (AI + voxel rigs), doors + lift + exit beacon, pickups, pooled projectiles, co-op avatars, touch aim assist targeting |
+| Entities | `entities/*.ts` | Player, enemies (AI + voxel rigs), doors + lift + exit beacon, pickups, pooled projectiles, co-op avatars, touch aim assist targeting, the Facility Operative rig (`operative.ts`) |
 | Weapons | `weapons/weapons.ts` | Weapon defs, hold-to-fire, hitscan/rockets/arc, view models + their animation |
 | Effects | `fx/particles.ts`, `tracers.ts`, `dynlights.ts` | One `InstancedMesh` of particles, pooled tracers, the 6-slot dynamic light pool |
 | UI | `ui/hud.ts`, `automap.ts`, `icons.ts` | DOM HUD + every screen, automap + desktop minimap, inline SVG icons |

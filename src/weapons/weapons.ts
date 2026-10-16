@@ -6,6 +6,7 @@ import { rayBox } from '../core/physics';
 import type { Enemy } from '../entities/enemies';
 import { AimCone, findAimTarget } from '../entities/aimassist';
 import type { Game } from '../game';
+import { buildFirstPersonArm, buildFirstPersonHand } from '../entities/operative';
 
 /** touch bullet magnetism: miss by up to ~0.7u beside the body; 4–7 degrees */
 const MAGNET_CONE: AimCone = { margin: 0.7, min: 0.07, max: 0.12, maxDist: 40 };
@@ -462,6 +463,8 @@ export class WeaponSystem {
   private queuedShot = 0;
   private dryFired = false;
   private lightTick = 0;
+  /** view-model rest height (raised when the operative's arms are on) */
+  private vmY = VM_Y;
 
   // view-model motion state
   /** seconds since the current weapon last fired (drives slide/pump/bolt/coils) */
@@ -542,6 +545,76 @@ export class WeaponSystem {
       p.tips.push(...m.tips);
     }
     for (const part of [p.slide, p.pump, p.bolt]) if (part) this.basePos.set(part, part.position.z);
+  }
+
+  /**
+   * Play-as-operative preview (`?play=operative`): the operative's gloves and
+   * forearm guards on every gun. The arms ride the gun group, so they take
+   * its kick, sway and bob; the left hand rides the shotgun's pump so it
+   * racks with it. The forearms run back and down out of the bottom of the
+   * screen, as in any FPS. Off by default — the shipped view model is the
+   * owner-approved gun-only one.
+   */
+  useOperativeArms(): void {
+    // gun-local hand points (grip / support) and where each elbow lies
+    // each forearm runs from its hand back towards its own bottom corner of
+    // the screen, the way arms enter an FPS view: steeply down it hung below
+    // the gun like a brick; straight at the eye it hid its own hand
+    const R_ELBOW = new THREE.Vector3(0.18, -0.52, 0.83).normalize();
+    const L_ELBOW = new THREE.Vector3(-0.5, -0.25, 0.83).normalize();
+    // carried higher, as in any FPS with visible arms: at the gun-only
+    // height the trigger hand sat under the screen edge
+    this.vmY = -0.2;
+    // per gun, in its own model space: the trigger hand wraps the grip (half
+    // width / depth of that part) with the index finger laid along the frame;
+    // the support hand wraps a fore-grip or cradles the body / pump
+    type Hand = { at: [number, number, number]; pose: 'grip' | 'cradle' | 'side'; hw: number; hd?: number };
+    const HANDS: Record<WeaponId, { r: Hand; l: Hand; lOnPump?: boolean }> = {
+      pistol: { r: { at: [0, -0.14, 0.06], pose: 'grip', hw: 0.038, hd: 0.05 }, l: { at: [0, -0.225, 0.07], pose: 'cradle', hw: 0.05 } },
+      // support hands on the near (left) side with the fingers over the top:
+      // the pump (racks with it), the SMG shroud, the launcher tube, the arc
+      // caster body — under the gun the gun itself hid them
+      shotgun: { r: { at: [0, -0.085, 0.14], pose: 'grip', hw: 0.045, hd: 0.05 }, l: { at: [0, 0, 0.02], pose: 'side', hw: 0.0625, hd: 0.0475 }, lOnPump: true },
+      smg: { r: { at: [0, -0.12, 0.1], pose: 'grip', hw: 0.035, hd: 0.04 }, l: { at: [0, 0, -0.36], pose: 'side', hw: 0.05, hd: 0.05 } },
+      rocket: { r: { at: [0, -0.13, 0], pose: 'grip', hw: 0.03, hd: 0.04 }, l: { at: [0, 0.02, -0.26], pose: 'side', hw: 0.085, hd: 0.085 } },
+      arc: { r: { at: [0, -0.14, 0.1], pose: 'grip', hw: 0.035, hd: 0.045 }, l: { at: [0, -0.02, -0.07], pose: 'side', hw: 0.06, hd: 0.065 } },
+    };
+    // the forearms smaller than the third-person ones: right by the eye, the
+    // concept's chunky bracers filled the corner and buried the hands
+    const SCALE = 0.68;
+    const UP = new THREE.Vector3(0, 1, 0);
+    const mount = (side: 1 | -1, parent: THREE.Object3D, hand: Hand, elbow: THREE.Vector3, groupScale: number): void => {
+      // the hand: built round the part in gun space, at the gun's rendered
+      // size (its own scale undoes the launcher group's)
+      const h = buildFirstPersonHand(side, hand.pose, hand.hw * groupScale, (hand.hd ?? 0.04) * groupScale,
+        side > 0 ? 'straight' : 'wrap');
+      h.position.set(...hand.at);
+      h.scale.setScalar(1 / groupScale);
+      parent.add(h);
+      // the forearm starts at the wrist, not at the middle of the grip
+      const wrist = (h.userData.wrist as THREE.Vector3).clone().multiplyScalar(1 / groupScale);
+      const at: [number, number, number] = [hand.at[0] + wrist.x, hand.at[1] + wrist.y, hand.at[2] + wrist.z];
+      const arm = buildFirstPersonArm(side);
+      // local +Y (glove → elbow) along the elbow direction, the guard's face
+      // (-Z) turned up towards the sky
+      const y = elbow.clone();
+      const z = UP.clone().addScaledVector(y, -UP.dot(y)).normalize().negate();
+      const x = new THREE.Vector3().crossVectors(y, z);
+      arm.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+      arm.position.set(...at);
+      arm.scale.setScalar(SCALE / groupScale); // the launcher group is scaled down
+      parent.add(arm);
+    };
+    for (const id of ORDER) {
+      const g = this.models.get(id);
+      if (!g) continue;
+      const h = HANDS[id];
+      const s = g.scale.x;
+      mount(1, g, h.r, R_ELBOW, s);
+      const pump = h.lOnPump ? this.parts.pump : undefined;
+      mount(-1, pump ?? g, h.l, L_ELBOW, s);
+    }
+    this.lightTick = 1; // tint the new arms on the next frame
   }
 
   private showModel(id: WeaponId): void {
@@ -954,7 +1027,7 @@ export class WeaponSystem {
 
     this.viewModel.position.set(
       0.3 + bobX + this.swayX + jx + lower * 0.05,
-      VM_Y + bobY + this.swayY + jy - lower * 0.3 - this.landDip,
+      this.vmY + bobY + this.swayY + jy - lower * 0.3 - this.landDip,
       -0.62 + this.kickZ,
     );
     this.viewModel.rotation.set(

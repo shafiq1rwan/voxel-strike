@@ -18,6 +18,7 @@ import { Particles } from './fx/particles';
 import { Tracers } from './fx/tracers';
 import { DynLights } from './fx/dynlights';
 import { WeaponSystem } from './weapons/weapons';
+import { buildOperative, type OperativeRig } from './entities/operative';
 import { HUD } from './ui/hud';
 import { Automap } from './ui/automap';
 import { Netplay } from './net/netplay';
@@ -185,6 +186,16 @@ export class Game {
   private previewArt: PreviewArt | null = null;
   private previewMenuStop: (() => void) | null = null;
 
+  /**
+   * Play-as-operative preview (`?play=operative[&helmet=0]`, web builds only):
+   * the operative's arms on the guns, his body under you when you look
+   * down, and with the helmet on a faint visor frame. Off by default.
+   */
+  private fpBody: OperativeRig | null = null;
+  private fpStride = 0;
+  private fpLightTick = 0;
+  private fpWasGround = true;
+
   constructor(parent: HTMLElement, private readonly preview?: LevelPreview) {
     if (preview) this.levelIndex = 4;
     this.rendererSys = new Renderer(parent);
@@ -205,6 +216,9 @@ export class Game {
     scene.add(this.camera);
     // menu shows the bare facility; the gun raises when the run starts
     this.weapons.viewModel.visible = false;
+
+    const params = new URLSearchParams(location.search);
+    if (!POKI && params.get('play') === 'operative') this.setupOperativePlay(params.get('helmet') !== '0');
 
     this.automap = new Automap(this.hud.container);
     this.input.onToggleMap = () => this.toggleMap();
@@ -296,6 +310,78 @@ export class Game {
     this.doorActors[i] = a;
     return i + 1;
   }
+
+  private setupOperativePlay(helmet: boolean): void {
+    this.weapons.useOperativeArms();
+    // the body: game physics moves it, so the jump only poses the legs. The
+    // camera sits inside the head, and the first-person arms replace the
+    // rig's own, so both are hidden.
+    const rig = buildOperative({ jumpLift: false });
+    rig.setHelmet(helmet);
+    rig.neck.visible = false;
+    rig.shoulderL.visible = false;
+    rig.shoulderR.visible = false;
+    // the eye is 9cm above the chest: the plates, shoulder caps and backpack
+    // filled the screen as a grey slab when looking down. Keep the belt and
+    // below (belt, pelvis, legs, boots), as FPS bodies do.
+    for (const c of rig.torso.children) {
+      if ((c as THREE.Mesh).isMesh && c.position.y + rig.torso.position.y > 1.0) c.visible = false;
+    }
+    rig.root.visible = false;
+    this.rendererSys.scene.add(rig.root);
+    this.fpBody = rig;
+    if (helmet) {
+      // the inside of the visor: darkened corners and a faint cyan rim,
+      // under every HUD element
+      const visor = document.createElement('div');
+      visor.id = 'fp-visor';
+      visor.style.cssText = [
+        'position:absolute', 'inset:0', 'pointer-events:none', 'z-index:0',
+        'background:radial-gradient(ellipse 78% 74% at 50% 50%, transparent 68%, rgba(4,12,20,0.5) 92%, rgba(2,6,12,0.78) 100%)',
+        'box-shadow:inset 0 0 0 2px rgba(85,224,255,0.10), inset 0 0 70px rgba(40,150,190,0.16)',
+      ].join(';');
+      this.hud.container.prepend(visor);
+    }
+  }
+
+  /** keep the operative's body under the player: placed, posed, CPU-lit */
+  private updateOperativeBody(dt: number): void {
+    const rig = this.fpBody;
+    if (!rig) return;
+    const p = this.player;
+    const show = this.state !== 'title' && !p.dead && !!this.world;
+    rig.root.visible = show;
+    if (!show) return;
+    // a step behind the eye, so looking down shows the boots ahead of you
+    const BACK = 0.1;
+    rig.root.position.set(p.pos.x + Math.sin(p.yaw) * BACK, p.pos.y - p.half.y, p.pos.z + Math.cos(p.yaw) * BACK);
+    rig.root.rotation.y = p.yaw;
+    // stride with the ground speed; backpedalling runs the cycle backwards
+    const v = Math.hypot(p.vel.x, p.vel.z);
+    const fwd = -(p.vel.x * Math.sin(p.yaw) + p.vel.z * Math.cos(p.yaw));
+    this.fpStride += dt * Math.min(1.4, v / 5.5) * (fwd < -0.3 ? -1 : 1);
+    if (this.fpWasGround && !p.onGround && p.vel.y > 1) rig.jump(this.time);
+    this.fpWasGround = p.onGround;
+    rig.animate(this.time, p.onGround ? Math.min(1, v / 2.5) : 0, this.fpStride);
+    // CPU-lit like the enemies: baked light + dynamic lights at the body
+    this.fpLightTick += dt;
+    if (this.fpLightTick >= 0.08) {
+      this.fpLightTick = 0;
+      const l = this.world.sampleLight01(p.pos.x, p.pos.y, p.pos.z, this.fpLight);
+      const d = this.dynLights.sampleAt(p.pos.x, p.pos.y, p.pos.z, this.fpDyn);
+      // softer than the enemies' tint: seen this close under a lamp, the top
+      // faces washed out to pale blue
+      const lum = 0.38 + (l[0] + l[1] + l[2]) * 0.25;
+      rig.tint(
+        Math.min(1.05, lum + l[0] * 0.6 + d[0] * 0.6),
+        Math.min(1.05, lum + l[1] * 0.6 + d[1] * 0.6),
+        Math.min(1.05, lum + l[2] * 0.6 + d[2] * 0.6),
+      );
+    }
+  }
+
+  private readonly fpLight: [number, number, number] = [0, 0, 0];
+  private readonly fpDyn: [number, number, number] = [0, 0, 0];
 
   /** reused arrays: every enemy asks every frame */
   private readonly soloTargets: PlayerTarget[] = [];
@@ -1443,6 +1529,7 @@ export class Game {
       // slow orbit of the spawn room behind the title
       this.player.yaw += dt * 0.1;
       this.player.applyToCamera(this.camera, this.time);
+      this.updateOperativeBody(dt);
       this.dynLights.update(dt, this.camera.position);
       this.cullHidden(dt);
       this.rendererSys.render();
@@ -1461,6 +1548,7 @@ export class Game {
     }
 
     this.player.applyToCamera(this.camera, this.time);
+    this.updateOperativeBody(dt);
     this.audio.listener.x = this.player.pos.x;
     this.audio.listener.y = this.player.eyeY();
     this.audio.listener.z = this.player.pos.z;

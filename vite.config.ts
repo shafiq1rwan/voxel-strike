@@ -9,6 +9,9 @@ const POKI_SDK = 'https://game-cdn.poki.com/scripts/v2/poki-sdk.js';
  * strip the PWA bits — Poki hosts the game in its own iframe, so the web
  * manifest and service worker must not ship. Store art in public/marketing
  * is for the Poki dashboard, not the game bundle, so it's dropped too.
+ * Concept art under reference/ (the web-only ?operative viewer imports one
+ * sheet) is emitted even though that code is tree-shaken out of the Poki
+ * build, so those assets are removed from the bundle as well.
  */
 function pokiPlugin(outDir: string): Plugin {
   return {
@@ -17,6 +20,13 @@ function pokiPlugin(outDir: string): Plugin {
       return html
         .replace(/\s*<link rel="manifest"[^>]*>/, '')
         .replace('</title>', `</title>\n    <script src="${POKI_SDK}"></script>`);
+    },
+    generateBundle(_options, bundle) {
+      for (const [file, out] of Object.entries(bundle)) {
+        if (out.type !== 'asset') continue;
+        const sources = [...(out.originalFileNames ?? []), ...(out.names ?? [])].join(' ');
+        if (/reference[\/]|main-character-|facility-sector-concept/.test(sources + ' ' + file)) delete bundle[file];
+      }
     },
     closeBundle() {
       for (const f of ['sw.js', 'manifest.webmanifest', 'marketing']) {

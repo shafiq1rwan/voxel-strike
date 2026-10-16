@@ -179,6 +179,29 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   'fleshHit' thwack, micro-stagger, and knockback (brutes ×0.25) — routing it
   through the light tick alone makes hits feel like nothing.
 - `src/fx/` — pooled particles (one InstancedMesh), tracers, dynamic light pool.
+- `src/entities/operative.ts` — the main character, the Facility Operative:
+  `buildOperative()` returns a jointed 65-box rig (hands are jointed: three-bone fingers + opposable thumb, buildHandRig; waist/neck/shoulders/
+  elbows/hips/knees, right-hand weapon socket, `animate(t, walk)`, `jump(t)`,
+  `hold(gun)` — a two-handed chest carry solved onto `OPERATIVE_GRIPS`,
+  `setHelmet(on)` — off shows a bare human head from the survivor note). It
+  matches `reference/main-character-facility-operative.png` — the owner
+  wants the IMAGE, so where the reference notes' 26-box table disagrees
+  (visor frame, tall back spine, two-step boots, elbow tabs, knee bands) the
+  image wins. Not used in gameplay yet. `?operative` on web builds opens
+  `src/preview/operative-viewer.ts` (standalone, no Game: SHEET like the
+  concept sheet, ORBIT with WALK/JUMP, GUN cycles the five real gun models,
+  HELMET on/off, PLAY FPS → `?play=operative[&helmet=0]`, a web-only
+  play-as-operative preview of the campaign: `WeaponSystem.useOperativeArms()`
+  puts his jointed gloves (`buildFirstPersonHand`: 'grip', 'side' C-grip
+  over the handguard, 'cradle') + forearm guards on every gun (left hand rides the shotgun
+  pump; view model raised to `vmY = -0.25` so the arms read), his body
+  (belt down, CPU-tinted, `jumpLift: false`) stands a step behind the eye
+  for looking down, and a faint visor frame (`#fp-visor`) shows with the
+  helmet on. Without the flag the shipped gun-only view model is unchanged —
+  the owner removed hands before, so this stays opt-in until approved,
+  240P, COMPARE with the reference). The Poki build
+  tree-shakes the viewer, and `pokiPlugin.generateBundle` drops reference
+  art that Vite would otherwise still emit.
 - `src/weapons/weapons.ts` — defs, hold-to-fire with a 0.25s click buffer,
   hitscan + rockets, viewmodels, muzzle flash. Slot 5 is the ARC CASTER
   (cells ammo): `fireArc` raycasts the first target then chains to up to 3

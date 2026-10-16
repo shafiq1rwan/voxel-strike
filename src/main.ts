@@ -13,9 +13,13 @@ if (POKI) {
     poki.loadingFinished();
   });
 } else {
-  // ?sector4 opens the Biofoundry preview (web builds only — never Poki);
-  // the module is lazy-loaded, so ordinary visits never download it
-  if (new URLSearchParams(location.search).has('sector4')) {
+  // ?sector4 opens the Biofoundry preview, ?operative the main-character
+  // viewer (web builds only — never Poki); both modules are lazy-loaded, so
+  // ordinary visits never download them
+  const params = new URLSearchParams(location.search);
+  if (params.has('operative')) {
+    void import('./preview/operative-viewer').then(({ startOperativeViewer }) => startOperativeViewer(app));
+  } else if (params.has('sector4')) {
     void import('./preview/biofoundry').then(({ biofoundry }) => new Game(app, biofoundry));
   } else {
     new Game(app);
