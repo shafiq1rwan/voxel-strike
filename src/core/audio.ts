@@ -5,7 +5,7 @@
  */
 export type SoundName =
   | 'pistol' | 'shotgun' | 'smg' | 'rocketLaunch' | 'arcFire' | 'explosion' | 'dryfire'
-  | 'pumpBack' | 'pumpFwd' | 'weaponRaise' | 'rocketReady'
+  | 'pumpBack' | 'pumpFwd' | 'weaponRaise' | 'rocketReady' | 'gush'
   | 'boltFire' | 'boltHit' | 'impact' | 'crateBreak' | 'wallBreak'
   | 'fleshHit' | 'headshot'
   | 'enemyPainA' | 'enemyPainB' | 'enemyDieA' | 'enemyDieB'
@@ -246,6 +246,11 @@ export class AudioMan {
       case 'weaponRaise':
         this.noise(out, 0.2, 0.004, 0.07, 'bandpass', 2600, 1300);
         this.tone(out, 'triangle', 0.1, 0.003, 0.06, 760, 460);
+        break;
+      case 'gush':
+        // a tank emptying onto the tiles: a long wet rush that settles
+        this.noise(out, 0.55, 0.04, 1.1, 'lowpass', 1400, 260);
+        this.noise(out, 0.25, 0.02, 0.5, 'bandpass', 2600, 900);
         break;
       case 'rocketReady':
         // next rocket seated: low thunk + tiny confirm chirp

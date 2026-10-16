@@ -90,7 +90,7 @@ one glowing tell:
 | Arc Sentinel | Hovering teal drone with rotating fins; glows brighter as it charges |
 | Ticker | Squat, hazard-striped, amber core that beeps faster before it blows |
 | Brute | Bone-plated wall of meat with tusks; the arena boss |
-| Vatborn *(sector 4 preview only)* | Pale gray-beige hunched specimen with olive tank stains, a narrow amber eye slit, a dark chest restraint with a green mark, one oversized right forearm wearing a broken shackle, a thin left arm. Reference: `reference/sector4-vatborn.png` |
+| Vatborn *(sector 4 preview only)* | Pale gray-beige hunched specimen. Its right arm is a club: a huge olive-stained shoulder, a thick forearm in a dark restraint cuff with a broken bolt, and an enormous dark fist that hangs to the floor (the silhouette's defining feature — keep it oversized). Thin left arm, dark chest band with a green mark, blunt head pushed forward with an amber eye slot, olive shins, dark boots. Seen from the front, the club is on the viewer's left. Reference: `reference/sector4-vatborn.png` |
 
 Hits must read on the same frame: white-hot flash, a jolt and scale pop,
 a thwack sound, knockback.
@@ -161,9 +161,12 @@ How it gets its look:
   liquid fill with one surface line, bubbles, and a near-black voxel dummy
   floating inside (drawn opaque so it reads through the tint). Occupied
   tanks (an amber status light on the cap) are built from separate meshes
-  so the breach can play: the dummy stirs and the light blinks for 1.2 s,
-  then the room-facing pane vanishes in a burst of pale-green shards, the
-  liquid drains and spills on the tiles, and the Vatborn steps out.
+  so the breach can play. The occupant is the real Vatborn, dormant and
+  tinted green by the liquid: it thrashes and pounds the glass while the
+  light blinks for 1.2 s, then the room-facing pane bursts, liquid gushes
+  out as droplets that fall, splash and skid across the tiles while the
+  tank drains and the puddle spreads, and the Vatborn wades out through
+  the gap.
 - **Purple ambient:** `bakeLighting([36, 26, 52])` instead of the campaign's
   near-black default — the wash on the tiles comes from that, not from more
   lamps. Magenta ceiling pairs, cyan over doorways, warm bands on the 2×2

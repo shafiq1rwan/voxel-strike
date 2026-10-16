@@ -48,7 +48,7 @@ node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups,
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
-node scripts/breach.mjs     # sector 4 preview: shoot an occupied tank → sealed during agitation, real collision gap at breach, one Vatborn, no damage in the warning, releases once
+node scripts/breach.mjs     # sector 4 preview: dormant Vatborn in each occupied tank; shoot one → sealed during agitation, real collision gap, liquid gush, it walks out and hunts, releases once
 node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 start, level complete/fail), hidden co-op, boots with SDK blocked
 ```
 
@@ -154,8 +154,13 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   `stunTime`, and always drop a powerup; deaths burst into per-part gibs;
   `vatborn` is the sector 4 preview's escaped specimen — husk skeleton via
   `humanoid()`, 0.65s heavy-swing windup + 1.1s recovery, short rush, never
-  placed by levelgen. It starts dormant inside an occupied tank and is
-  released by the preview's breach sequence: `PreviewArt` hooks in game.ts —
+  placed by levelgen. Its right arm (+x — the model faces -z) is a giant
+  club ending in a huge dark fist; keep that oversized. A real Vatborn sits
+  in each occupied tank with `dormant = true` (no AI/physics/wake, green
+  tint, thrashes with `agitation`) and leaves via `startEmerge()` — a
+  scripted 0.8s walk through the gap — so `scripted` enemies are skipped by
+  separation and the out-of-world net. It is released by the preview's
+  breach sequence: `PreviewArt` hooks in game.ts —
   `tankHit` from `applyVoxelDamage` when a TankGlass voxel is shot, `noise`
   from `Game.noise()` (gunfire), `update` per frame — drive dormant →
   agitated 1.2s → breach (front glass voxels become air via `setAndDirty`)

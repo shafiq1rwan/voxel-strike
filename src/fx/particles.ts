@@ -106,6 +106,11 @@ export class Particles {
     }
   }
 
+  /** one droplet of liquid: falls under gravity, splashes and skids along the floor */
+  droplet(x: number, y: number, z: number, vx: number, vy: number, vz: number, r: number, g: number, b: number): void {
+    this.emit(x, y, z, vx, vy, vz, 0.9 + Math.random() * 0.6, 0.07 + Math.random() * 0.07, r, g, b, 20, true);
+  }
+
   /** block break debris tinted like the block */
   debris(x: number, y: number, z: number, r: number, g: number, b: number, count = 14): void {
     for (let i = 0; i < count; i++) {

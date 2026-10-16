@@ -26,7 +26,7 @@ const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
   brute: { hp: 170, speed: 2.3, halfX: 0.62, halfY: 1.05, painChance: 0.12, bloodColor: [0.85, 0.4, 0.1] },
   // sector 4 preview: the escaped specimen (reference/sector4-monsters.md).
   // Shambles, short rush, one heavy swing with a long recovery; green blood
-  vatborn: { hp: 55, speed: 3.4, halfX: 0.42, halfY: 0.9, painChance: 0.3, bloodColor: [0.55, 0.8, 0.3] },
+  vatborn: { hp: 55, speed: 3.4, halfX: 0.5, halfY: 0.9, painChance: 0.3, bloodColor: [0.55, 0.8, 0.3] },
 };
 
 const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'tickerAlert' | 'bruteRoar'> = {
@@ -96,6 +96,14 @@ export class Enemy {
   lastHitHead = false;
   /** co-op client: this enemy is a network puppet — no AI, interpolate only */
   puppet = false;
+  /**
+   * Tank occupant (sector 4 preview): floats in place behind solid glass —
+   * no AI, no physics, can't be woken by noise. `agitation` (0..1) is set by
+   * the tank and makes it thrash. startEmerge() walks it out.
+   */
+  dormant = false;
+  agitation = 0;
+  private emerge: { fx: number; fy: number; fz: number; tx: number; ty: number; tz: number; t: number } | null = null;
   private ntx = 0;
   private nty = 0;
   private ntz = 0;
@@ -258,22 +266,24 @@ export class Enemy {
   }
 
   private buildVatborn(): void {
-    // Pale gray-beige hunched adult with olive tank stains, a narrow amber
-    // eye, a dark chest restraint with a green mark, one oversized right
-    // forearm with broken wrist hardware and a thin left arm. Same jointed
-    // skeleton as the husk so its gait/attack animation applies.
-    const PALE = 0xc9c2ae, PALE_DARK = 0xa9a38f, STAIN = 0x7d8a52, BAND = 0x2f3338;
+    // reference/sector4-vatborn.png: a hunched pale mutant whose right arm is
+    // a club — huge stained shoulder, thick forearm in a dark restraint cuff
+    // with a broken bolt, and an enormous dark fist that hangs to the floor.
+    // The left arm stays thin. Dark chest band with the green specimen mark,
+    // a blunt head pushed forward with a dark visor and an amber eye slot,
+    // olive-stained shins, dark boots. Husk skeleton, so the husk gait and
+    // attack animation drive it. Model faces -z, so its right side is +x
+    // (a viewer in front sees the club on their left, as in the concept).
+    const PALE = 0xcfc7b0, PALE_DARK = 0xb3ab95, STAIN = 0x7f8c4f, BAND = 0x2c3034, FIST = 0x46433f;
     const mkLeg = (side: number): THREE.Group => {
       const g = new THREE.Group();
-      g.position.set(0.2 * side, -0.22, 0);
-      const thigh = part(g, 0.22, 0.38, 0.24, PALE);
-      thigh.position.y = -0.17;
-      const stain = part(g, 0.23, 0.14, 0.25, STAIN);
-      stain.position.set(0, -0.3, 0);
-      const shin = part(g, 0.18, 0.32, 0.2, PALE_DARK);
-      shin.position.set(0, -0.5, -0.02);
-      const foot = part(g, 0.22, 0.12, 0.3, BAND);
-      foot.position.set(0, -0.68, -0.06);
+      g.position.set(0.2 * side, -0.25, 0);
+      const thigh = part(g, 0.25, 0.34, 0.27, PALE);
+      thigh.position.y = -0.15;
+      const shin = part(g, 0.22, 0.3, 0.24, STAIN);
+      shin.position.set(0, -0.43, -0.01);
+      const boot = part(g, 0.28, 0.16, 0.36, BAND);
+      boot.position.set(0, -0.6, -0.06);
       this.body.add(g);
       return g;
     };
@@ -281,73 +291,74 @@ export class Enemy {
     this.legRG = mkLeg(1);
 
     this.torsoG = new THREE.Group();
-    this.torsoG.position.y = -0.1;
+    this.torsoG.position.y = -0.12;
     this.body.add(this.torsoG);
-    const torso = part(this.torsoG, 0.66, 0.6, 0.44, PALE);
-    torso.position.y = 0.36;
-    torso.rotation.x = 0.2;
-    const belly = part(this.torsoG, 0.5, 0.26, 0.36, PALE_DARK);
-    belly.position.y = 0.02;
-    // tank stains: one shoulder and the back
-    const shoulderStain = part(this.torsoG, 0.3, 0.2, 0.3, STAIN);
-    shoulderStain.position.set(-0.22, 0.6, 0.02);
-    const backStain = part(this.torsoG, 0.4, 0.3, 0.1, STAIN);
-    backStain.position.set(0.08, 0.4, 0.2);
-    // chest restraint band with the green specimen mark
-    const band = part(this.torsoG, 0.68, 0.18, 0.46, BAND);
-    band.position.set(0, 0.3, 0);
-    band.rotation.x = 0.2;
-    const mark = part(this.torsoG, 0.14, 0.12, 0.03, 0x7ee04a, true);
-    mark.position.set(0, 0.3, -0.24);
+    const pelvis = part(this.torsoG, 0.5, 0.26, 0.36, PALE_DARK);
+    pelvis.position.y = 0.0;
+    const chest = part(this.torsoG, 0.78, 0.58, 0.52, PALE);
+    chest.position.y = 0.4;
+    const band = part(this.torsoG, 0.8, 0.2, 0.54, BAND);
+    band.position.y = 0.34;
+    const mark = part(this.torsoG, 0.16, 0.14, 0.03, 0x86e64e, true);
+    mark.position.set(-0.04, 0.34, -0.285);
     this.glowParts.push(mark);
+    // the hump between the shoulders, and the giant right shoulder with its stain
+    const hump = part(this.torsoG, 0.46, 0.32, 0.42, PALE);
+    hump.position.set(0.06, 0.78, 0.1);
+    const shoulderR = part(this.torsoG, 0.5, 0.44, 0.52, PALE);
+    shoulderR.position.set(0.5, 0.66, 0);
+    const shoulderStain = part(this.torsoG, 0.52, 0.2, 0.54, STAIN);
+    shoulderStain.position.set(0.52, 0.84, 0);
+    const shoulderL = part(this.torsoG, 0.26, 0.24, 0.3, PALE_DARK);
+    shoulderL.position.set(-0.42, 0.6, 0);
 
-    // head: a blunt pale block, dark visor slit with the amber eye
+    // head: pushed forward and toward the thin-arm side, below the hump line
     this.headG = new THREE.Group();
-    this.headG.position.set(0, 0.7, -0.2);
+    this.headG.position.set(-0.14, 0.62, -0.34);
     this.torsoG.add(this.headG);
-    const skull = part(this.headG, 0.42, 0.34, 0.4, PALE);
+    const skull = part(this.headG, 0.42, 0.38, 0.42, PALE);
     skull.position.y = 0.1;
-    const visor = part(this.headG, 0.36, 0.12, 0.05, BAND);
-    visor.position.set(0, 0.1, -0.215);
-    const eye = part(this.headG, 0.2, 0.05, 0.03, 0xffa030, true);
-    eye.position.set(0.03, 0.1, -0.245);
+    const visor = part(this.headG, 0.38, 0.16, 0.05, BAND);
+    visor.position.set(0, 0.08, -0.225);
+    const eye = part(this.headG, 0.24, 0.06, 0.03, 0xffa030, true);
+    eye.position.set(0, 0.08, -0.255);
     this.glowParts.push(eye);
-    this.jaw = part(this.headG, 0.3, 0.08, 0.3, PALE_DARK);
-    this.jaw.position.set(0, -0.08, -0.06);
+    this.jaw = part(this.headG, 0.32, 0.08, 0.3, PALE_DARK);
+    this.jaw.position.set(0, -0.11, -0.04);
 
-    // arms: the right forearm is the weapon; the left stays thin
-    const mkArm = (side: number, heavy: boolean): THREE.Group => {
-      const g = new THREE.Group();
-      g.position.set(0.42 * side, 0.56, -0.02);
-      const upper = part(g, heavy ? 0.26 : 0.16, 0.4, heavy ? 0.26 : 0.16, PALE);
-      upper.position.y = -0.2;
-      if (heavy) {
-        const cuff = part(g, 0.3, 0.1, 0.3, BAND);
-        cuff.position.y = -0.42;
-        const fore = part(g, 0.36, 0.56, 0.36, PALE);
-        fore.position.set(0, -0.74, -0.04);
-        const foreStain = part(g, 0.37, 0.2, 0.37, STAIN);
-        foreStain.position.set(0, -0.6, -0.04);
-        // broken wrist hardware: a dark shackle with a grey bracket sticking out
-        const shackle = part(g, 0.4, 0.12, 0.4, BAND);
-        shackle.position.set(0, -0.98, -0.04);
-        const bracket = part(g, 0.14, 0.1, 0.14, 0x6a7280);
-        bracket.position.set(0.24 * side, -0.98, -0.1);
-        const fist = part(g, 0.32, 0.22, 0.3, PALE_DARK);
-        fist.position.set(0, -1.14, -0.06);
-      } else {
-        const fore = part(g, 0.14, 0.36, 0.14, PALE_DARK);
-        fore.position.set(0, -0.56, -0.05);
-        fore.rotation.x = -0.2;
-        const hand = part(g, 0.16, 0.14, 0.16, PALE_DARK);
-        hand.position.set(0, -0.78, -0.1);
-      }
-      this.torsoG!.add(g);
-      return g;
-    };
-    // the model faces -z, so its right side is -x
-    this.armRG = mkArm(-1, true);
-    this.armLG = mkArm(1, false);
+    // right arm: the club
+    const armR = new THREE.Group();
+    armR.position.set(0.56, 0.6, -0.02);
+    this.torsoG.add(armR);
+    const upperR = part(armR, 0.36, 0.48, 0.38, PALE);
+    upperR.position.y = -0.24;
+    const foreR = part(armR, 0.44, 0.44, 0.44, PALE);
+    foreR.position.set(0, -0.66, -0.05);
+    const cuff = part(armR, 0.5, 0.18, 0.5, BAND);
+    cuff.position.set(0, -0.84, -0.05);
+    const bolt = part(armR, 0.16, 0.12, 0.16, 0x6a7280);
+    bolt.position.set(0.32, -0.84, -0.05);
+    const fist = part(armR, 0.64, 0.5, 0.58, FIST);
+    fist.position.set(0, -1.14, -0.08);
+    const knuckles = part(armR, 0.66, 0.12, 0.2, 0x3a3734);
+    knuckles.position.set(0, -1.02, -0.36);
+    this.armRG = armR;
+
+    // left arm: thin, stained at the elbow, a small hand
+    const armL = new THREE.Group();
+    armL.position.set(-0.44, 0.56, -0.02);
+    this.torsoG.add(armL);
+    const upperL = part(armL, 0.15, 0.38, 0.15, PALE);
+    upperL.position.y = -0.19;
+    const elbow = part(armL, 0.16, 0.14, 0.16, STAIN);
+    elbow.position.y = -0.4;
+    const foreL = part(armL, 0.14, 0.34, 0.14, PALE_DARK);
+    foreL.position.set(0, -0.58, -0.03);
+    const wrist = part(armL, 0.16, 0.07, 0.16, BAND);
+    wrist.position.set(0, -0.76, -0.03);
+    const handL = part(armL, 0.17, 0.15, 0.18, PALE_DARK);
+    handL.position.set(0, -0.86, -0.05);
+    this.armLG = armL;
   }
 
   private buildTicker(): void {
@@ -400,6 +411,22 @@ export class Enemy {
     return this.state !== 'dead';
   }
 
+  /** dormant in a tank or walking out of one: scripted, outside the AI */
+  get scripted(): boolean {
+    return this.dormant || this.emerge !== null;
+  }
+
+  /**
+   * Leave the tank: walk from where it floats to the floor at (tx, tz) over
+   * 0.8s (through the gap the tank already opened), then start hunting.
+   */
+  startEmerge(tx: number, tz: number, floorY: number): void {
+    this.dormant = false;
+    this.agitation = 0;
+    this.emerge = { fx: this.pos.x, fy: this.pos.y, fz: this.pos.z, tx, ty: floorY + this.half.y + 0.05, tz, t: 0 };
+    this.vel.set(0, 0, 0);
+  }
+
   /** last-resort recovery for a body that escaped the world */
   respawnInRoom(): void {
     if (this.room) {
@@ -411,7 +438,7 @@ export class Enemy {
   }
 
   wake(game: Game): void {
-    if (this.awake || !this.alive) return;
+    if (this.awake || !this.alive || this.scripted) return;
     this.awake = true;
     game.audio.play(ALERT_SOUND[this.kind], this.pos);
     if (this.state === 'idle' || this.state === 'patrol') this.setState('chase');
@@ -518,6 +545,14 @@ export class Enemy {
 
     // dead: the voxel rig already burst into gibs in die()
     if (this.state === 'dead') return;
+    if (this.dormant) {
+      this.dormantUpdate(dt, game);
+      return;
+    }
+    if (this.emerge) {
+      this.emergeUpdate(dt, game);
+      return;
+    }
 
     const toPlayer = new THREE.Vector3().subVectors(pl.pos, this.pos);
     const distSq = toPlayer.x * toPlayer.x + toPlayer.z * toPlayer.z;
@@ -612,6 +647,55 @@ export class Enemy {
     this.mesh.scale.setScalar(1 + this.flashTime * 1.6);
     this.mesh.rotation.z = this.flashTime * this.flinchSign * 1.4;
     this.updateLighting(game, dt);
+  }
+
+  /** floating in the tank: a slow drift, thrashing and pounding the glass when agitated */
+  private dormantUpdate(dt: number, game: Game): void {
+    this.animPhase += dt;
+    const a = this.agitation;
+    const t = this.animPhase;
+    const k = t * 20;
+    this.body.position.y = Math.sin(t * 1.3) * 0.06 + Math.sin(k) * 0.05 * a;
+    this.body.rotation.z = Math.sin(k * 0.8) * 0.14 * a;
+    this.torsoG!.rotation.x = 0.45 - a * 0.35 + Math.sin(k * 1.3) * 0.12 * a;
+    this.torsoG!.rotation.z = 0;
+    this.headG!.rotation.x = 0.35 * (1 - a);
+    this.headG!.rotation.y = Math.sin(t * 0.5) * 0.2 * (1 - a);
+    this.armRG!.rotation.x = -0.2 + Math.sin(t * 0.9) * 0.08 - a * (1.1 + Math.sin(k) * 0.7);
+    this.armLG!.rotation.x = -0.1 + Math.sin(t * 1.1 + 1) * 0.1 - a * Math.abs(Math.sin(k * 1.4)) * 0.8;
+    this.armRG!.rotation.z = 0.12;
+    this.armLG!.rotation.z = -0.2;
+    this.legLG!.rotation.x = Math.sin(t * 0.8) * 0.12;
+    this.legRG!.rotation.x = -Math.sin(t * 0.8) * 0.12;
+    this.jaw!.rotation.x = 0.1 + a * 0.3;
+    this.mesh.position.copy(this.pos);
+    this.updateLighting(game, dt);
+  }
+
+  /** the 0.8s walk out of the breached tank: no collision, no attacks */
+  private emergeUpdate(dt: number, game: Game): void {
+    const e = this.emerge!;
+    const DUR = 0.8;
+    e.t += dt;
+    const k = Math.min(1, e.t / DUR);
+    const ease = k * k * (3 - 2 * k);
+    this.pos.set(
+      e.fx + (e.tx - e.fx) * ease,
+      e.fy + (e.ty - e.fy) * ease + Math.sin(k * Math.PI) * 0.2, // over the tank lip
+      e.fz + (e.tz - e.fz) * ease,
+    );
+    // the walk speed drives the gait animation
+    this.vel.set((e.tx - e.fx) / DUR, 0, (e.tz - e.fz) / DUR);
+    this.animateHusk(dt, Math.hypot(this.vel.x, this.vel.z), game);
+    this.vel.set(0, 0, 0);
+    this.mesh.position.copy(this.pos);
+    this.mesh.scale.setScalar(1 + this.flashTime * 1.6);
+    this.mesh.rotation.z = this.flashTime * this.flinchSign * 1.4;
+    this.updateLighting(game, dt);
+    if (k >= 1) {
+      this.emerge = null;
+      this.wake(game);
+    }
   }
 
   /** nearest non-dead player-like target (falls back to the local player) */
@@ -1089,6 +1173,13 @@ export class Enemy {
       this.armRG!.rotation.z = -0.25 + slash * 0.35;
       lean += slash * 0.35 - windup * 0.15;
       this.jaw!.rotation.x = 0.15 + windup * 0.6 - slash * 0.35;
+    } else if (hunting && this.kind === 'vatborn') {
+      // the club drags low and swings with the gait; the thin arm reaches
+      this.armRG!.rotation.x = -0.3 + Math.sin(g) * 0.18;
+      this.armLG!.rotation.x = -0.7 + Math.sin(g * 2) * 0.2;
+      this.armRG!.rotation.z = 0.1;
+      this.armLG!.rotation.z = -0.15;
+      this.jaw!.rotation.x = 0.2;
     } else if (hunting) {
       // claws up and raking as it closes in, maw hanging open
       this.armLG!.rotation.x = -1.05 + Math.sin(g * 2) * 0.25;
@@ -1144,6 +1235,16 @@ export class Enemy {
     const g = Math.min(1.3, lum + l[1] * 0.9 + d[1]);
     const b = Math.min(1.3, lum + l[2] * 0.9 + d[2]);
     const flash = this.flashTime > 0;
+    // inside a tank the light grid has nothing (it's solid glass): use the
+    // liquid's own green glow so the occupant reads through it
+    if (this.dormant) {
+      this.mesh.traverse((o) => {
+        if (!(o instanceof THREE.Mesh) || o.userData.fullBright) return;
+        const base = o.userData.baseColor as THREE.Color;
+        (o.material as THREE.MeshBasicMaterial).color.setRGB(base.r * 0.55, base.g * 0.9, base.b * 0.5);
+      });
+      return;
+    }
     this.mesh.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       if (o.userData.fullBright) return;
@@ -1204,10 +1305,10 @@ export class EnemyManager {
     // enemy in a wall, which breaks collision resolution entirely)
     for (let i = 0; i < this.list.length; i++) {
       const a = this.list[i];
-      if (!a.alive) continue;
+      if (!a.alive || a.scripted) continue;
       for (let j = i + 1; j < this.list.length; j++) {
         const b = this.list[j];
-        if (!b.alive) continue;
+        if (!b.alive || b.scripted) continue;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
         const d2 = dx * dx + dz * dz;
@@ -1226,7 +1327,7 @@ export class EnemyManager {
     }
     // safety net: anything that somehow leaves the world snaps back to its room
     for (const e of this.list) {
-      if (!e.alive) continue;
+      if (!e.alive || e.scripted) continue;
       if (e.pos.y < -8 || e.pos.y > game.world.sy + 6 ||
           e.pos.x < -4 || e.pos.x > game.world.sx + 4 ||
           e.pos.z < -4 || e.pos.z > game.world.sz + 4) {

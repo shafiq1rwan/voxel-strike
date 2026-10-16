@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Game, LevelPreview, PreviewArt } from '../game';
+import type { Enemy } from '../entities/enemies';
 import type { LevelData } from '../world/levelgen';
 import { Block } from '../world/blocks';
 import { VoxelWorld } from '../world/world';
@@ -14,12 +15,14 @@ import type { RoomDef, PickupSpec, EnemySpec } from '../types';
  * atlas has a dedicated Lab* block set (append-only); everything softer is
  * instanced boxes from decorate().
  *
- * Occupied tanks hold a dormant Vatborn (reference/sector4-monsters.md):
- * shooting the tank or loud gunfire nearby starts a 1.2s agitation (knocks,
- * blinking status light, the specimen stirring), then the front pane
- * breaches — the front glass voxels become air — the liquid drains, and after
- * 0.8s the Vatborn steps onto a verified clear tile in front. Each tank
- * releases once; at most two tanks breach at a time.
+ * Occupied tanks hold a real, dormant Vatborn (reference/sector4-monsters.md):
+ * shooting the tank or loud gunfire nearby starts a 1.2s agitation (it
+ * thrashes and pounds the glass, the status light blinks, the glass knocks),
+ * then the front pane breaches — the front glass voxels become air — liquid
+ * gushes out as droplets that fall, splash and skid across the tiles while
+ * the tank drains and the puddle spreads, and the Vatborn walks out through
+ * the gap onto a verified clear tile. Each tank releases once; at most two
+ * tanks breach at a time.
  */
 
 const ROOMS: Array<[string, number, number, number, number, RoomDef['kind'], number]> = [
@@ -51,7 +54,12 @@ const AMBIENT: [number, number, number] = [36, 26, 52];
 
 // breach timings from the monster notes
 const AGITATE_S = 1.2;
-const STEP_OUT_S = 0.8;
+/** the tank drains (and gushes) over this long after the breach */
+const DRAIN_S = 1.1;
+/** the occupant starts wading out this long after the breach (it walks for 0.8s) */
+const EMERGE_AT_S = 0.35;
+/** droplets per second at the start of the gush */
+const GUSH_RATE = 280;
 const MAX_BREACHING = 2;
 /** gunfire this close counts as "nearby loud combat" for a dormant tank */
 const NOISE_RANGE = 9;
@@ -195,6 +203,8 @@ interface OccupiedTank {
   x: number; z: number;
   /** which side faces the room: +1 = the +x face, -1 = the -x face */
   side: number;
+  /** yaw that faces the room */
+  facing: number;
   /** reserved standing spot in front of the pane */
   exitX: number; exitZ: number;
   roomId: number;
@@ -202,12 +212,15 @@ interface OccupiedTank {
   t: number;
   knocks: number;
   group: THREE.Group;
-  dummy: THREE.Group;
-  dummyRestY: number;
+  /** the occupant: a real Vatborn, dormant until the breach */
+  vat: Enemy | null;
   liquid: THREE.Mesh;
   surface: THREE.Mesh;
   front: THREE.Mesh;
   light: THREE.Mesh;
+  /** puddle pieces that spread out from the pane after the breach */
+  spill: THREE.Mesh[];
+  gushAcc: number;
 }
 
 function decorate(level: LevelData): PreviewArt {
@@ -316,14 +329,6 @@ function decorate(level: LevelData): PreviewArt {
       liquid.position.set(cx, (2.05 + level0) / 2, cz);
       const surface = mesh(LIQUID_TOP, TANK_W - 0.06, 0.05, TANK_D - 0.06, { flat: true, alpha: 0.8 });
       surface.position.set(cx, level0, cz);
-      const dummy = new THREE.Group();
-      dummy.position.set(cx + (rng.next() - 0.5) * 0.3, 3.5, cz);
-      dummyParts(facing, 0.12, (color, px, py, pz, w, h, d, ry, rz) => {
-        const m = mesh(color, w, h, d);
-        m.position.set(px, py, pz);
-        m.rotation.set(0, ry, rz);
-        dummy.add(m);
-      });
       // glass as five panes so the front one can go
       const panes: THREE.Mesh[] = [];
       const pane = (w: number, h: number, d: number, px: number, py: number, pz: number): THREE.Mesh => {
@@ -343,13 +348,13 @@ function decorate(level: LevelData): PreviewArt {
       const light = mesh(STATUS, 0.14, 0.14, 0.06, { flat: true });
       light.position.set(side === -1 ? x - 0.18 : x + TANK_W + 0.18, 5.45, cz);
       light.rotation.y = Math.PI / 2;
-      g.add(liquid, surface, dummy, light, ...panes);
+      g.add(liquid, surface, light, ...panes);
       // reserved standing spot: 1.5 tiles out from the pane
       const exitX = side === -1 ? x - 1.5 : x + TANK_W + 1.5;
       const room = level.rooms.find((r) => exitX >= r.x && exitX < r.x + r.w && cz >= r.z && cz < r.z + r.d);
       tanks.push({
-        x, z, side, exitX, exitZ: cz, roomId: room?.id ?? 1, phase: 'dormant', t: 0, knocks: 0,
-        group: g, dummy, dummyRestY: dummy.position.y, liquid, surface, front, light,
+        x, z, side, facing, exitX, exitZ: cz, roomId: room?.id ?? 1, phase: 'dormant', t: 0, knocks: 0,
+        group: g, vat: null, liquid, surface, front, light, spill: [], gushAcc: 0,
       });
     }
     if (broken) {
@@ -506,6 +511,25 @@ function decorate(level: LevelData): PreviewArt {
     tank.knocks = 0;
     game.audio.play('clank', { x: tank.exitX, y: 3, z: tank.exitZ });
   };
+  /** put a real, dormant Vatborn in every occupied tank (first sim frame) */
+  let occupantsSpawned = false;
+  const spawnOccupants = (game: Game): void => {
+    occupantsSpawned = true;
+    for (const tank of tanks) {
+      const cx = tank.x + TANK_W / 2, cz = tank.z + TANK_D / 2;
+      game.enemies.spawnFromSpecs([{ kind: 'vatborn', x: cx, z: cz, roomId: tank.roomId }], level.rooms, game);
+      const v = game.enemies.list[game.enemies.list.length - 1];
+      v.dormant = true;
+      v.awake = false;
+      v.state = 'idle';
+      v.vel.set(0, 0, 0);
+      // floating off the tank floor (y=2), clear of the glass above
+      v.pos.set(cx, 2 + v.half.y + 0.3, cz);
+      v.mesh.position.copy(v.pos);
+      v.mesh.rotation.y = tank.facing;
+      tank.vat = v;
+    }
+  };
   /** the standing spot (or one tile either side) is air and nobody is on it */
   const clearSpot = (tank: OccupiedTank, game: Game): [number, number] | null => {
     for (const dz of [0, 1, -1]) {
@@ -514,7 +538,7 @@ function decorate(level: LevelData): PreviewArt {
       if (!airAt(bx, 1, bz) || !airAt(bx, 2, bz)) continue;
       const near = (px: number, pz: number, r: number): boolean => (px - ex) ** 2 + (pz - ez) ** 2 < r * r;
       if (game.playerTargets().some((t) => !t.dead && near(t.pos.x, t.pos.z, 1.3))) continue;
-      if (game.enemies.list.some((en) => en.alive && near(en.pos.x, en.pos.z, 1.1))) continue;
+      if (game.enemies.list.some((en) => en !== tank.vat && en.alive && near(en.pos.x, en.pos.z, 1.1))) continue;
       return [ex, ez];
     }
     return null;
@@ -522,6 +546,7 @@ function decorate(level: LevelData): PreviewArt {
   const breach = (tank: OccupiedTank, game: Game): void => {
     tank.phase = 'breaching';
     tank.t = 0;
+    tank.gushAcc = 0;
     // a real collision gap: the front column of glass voxels becomes air
     const fx = tank.side === -1 ? tank.x : tank.x + TANK_W - 1;
     for (let zz = tank.z; zz < tank.z + TANK_D; zz++) for (let y = 2; y <= 4; y++) world.setAndDirty(fx, y, zz, Block.Air);
@@ -529,41 +554,48 @@ function decorate(level: LevelData): PreviewArt {
     tank.light.visible = false;
     const px = tank.side === -1 ? tank.x - 0.1 : tank.x + TANK_W + 0.1;
     game.audio.play('wallBreak', { x: px, y: 3, z: tank.exitZ });
+    game.audio.play('gush', { x: px, y: 2, z: tank.exitZ });
     game.particles.debris(px, 3.2, tank.exitZ, 0.6, 0.95, 0.55, 22);
     game.dynLights.flash(px, 3, tank.exitZ, 0.45, 1, 0.5, 1.6, 7, 0.4);
     game.player.shake = Math.min(0.5, game.player.shake + 0.15);
-    // the spill in front
-    const spill = new THREE.Group();
-    for (let i = 0; i < 7; i++) {
-      const sm = mesh(i % 2 ? SLIME : SLIME_LIGHT, 0.6 + rng.next() * 0.9, 0.02, 0.5 + rng.next() * 0.7, { flat: true });
-      sm.position.set(tank.exitX - tank.side * 0.5 + (rng.next() - 0.5) * 1.4, 1.012 + (i % 2) * 0.004, tank.exitZ + (rng.next() - 0.5) * 1.6);
+    // the puddle: pieces that start tiny at the pane and spread outward
+    for (let i = 0; i < 9; i++) {
+      const sm = mesh(i % 3 ? SLIME : SLIME_LIGHT, 0.7 + rng.next() * 1.0, 0.02, 0.5 + rng.next() * 0.8, { flat: true });
+      const reach = 0.3 + rng.next() * 2.6;
+      sm.position.set(px + tank.side * reach, 1.012 + (i % 3 ? 0 : 0.004), tank.exitZ + (rng.next() - 0.5) * (1.2 + reach * 0.6));
       sm.rotation.y = rng.next() * Math.PI;
-      spill.add(sm);
+      sm.userData.full = sm.scale.clone();
+      sm.userData.delay = reach / 3.2; // farther pieces arrive later
+      sm.scale.set(0.001, 0.02, 0.001);
+      tank.spill.push(sm);
+      tank.group.add(sm);
     }
-    tank.group.add(spill);
   };
-  const release = (tank: OccupiedTank, game: Game, ex: number, ez: number): void => {
-    tank.phase = 'released';
-    tank.dummy.visible = false;
-    game.enemies.spawnFromSpecs([{ kind: 'vatborn', x: ex, z: ez, roomId: tank.roomId }], level.rooms, game);
-    const v = game.enemies.list[game.enemies.list.length - 1];
-    v.mesh.rotation.y = tank.side === -1 ? Math.PI / 2 : -Math.PI / 2; // face away from the tank
-    v.wake(game);
+  /** liquid pours out of the open front: droplets with gravity that splash and skid */
+  const gush = (tank: OccupiedTank, game: Game, dt: number, surfaceY: number): void => {
+    const k = Math.min(1, tank.t / DRAIN_S);
+    tank.gushAcc += GUSH_RATE * (1 - k) * (1 - k) * dt;
+    const fx = tank.side === -1 ? tank.x - 0.05 : tank.x + TANK_W + 0.05;
+    while (tank.gushAcc >= 1) {
+      tank.gushAcc -= 1;
+      const y = 2.05 + Math.random() * Math.max(0.1, surfaceY - 2.05);
+      const head = Math.sqrt(Math.max(0, surfaceY - y)); // more pressure lower down
+      const light = Math.random() < 0.3;
+      game.particles.droplet(
+        fx, y, tank.z + 0.1 + Math.random() * (TANK_D - 0.2),
+        tank.side * (1.2 + head * 2.2 + Math.random() * 1.2), Math.random() * 1.2, (Math.random() - 0.5) * 1.4,
+        light ? 0.66 : 0.5, light ? 0.94 : 0.83, light ? 0.29 : 0.17,
+      );
+    }
   };
   const update = (dt: number, game: Game): void => {
+    if (!occupantsSpawned) spawnOccupants(game);
     for (const tank of tanks) {
-      if (tank.phase === 'dormant') {
-        // steady amber marker, the specimen barely stirring
-        tank.dummy.position.y = tank.dummyRestY + Math.sin(performance.now() * 0.0012 + tank.x) * 0.04;
-        continue;
-      }
+      if (tank.phase === 'dormant' || tank.phase === 'empty') continue;
       tank.t += dt;
       if (tank.phase === 'agitated') {
-        // it stirs, the light blinks, the glass knocks — no damage yet
-        const k = tank.t * 22;
-        tank.dummy.position.y = tank.dummyRestY + Math.sin(k) * 0.12;
-        tank.dummy.position.x += Math.sin(k * 1.7) * 0.004;
-        tank.dummy.rotation.z = Math.sin(k * 0.8) * 0.18;
+        // it thrashes and pounds the glass, the light blinks, the glass knocks — no damage yet
+        if (tank.vat) tank.vat.agitation = Math.min(1, tank.t / 0.25);
         (tank.light.material as THREE.MeshBasicMaterial).color.copy(raw(STATUS)).multiplyScalar(Math.floor(tank.t / 0.15) % 2 ? 1.6 : 0.25);
         const knocksDue = Math.floor(tank.t / 0.3);
         if (knocksDue > tank.knocks) {
@@ -571,21 +603,35 @@ function decorate(level: LevelData): PreviewArt {
           game.audio.play('clank', { x: tank.exitX, y: 3, z: tank.exitZ });
         }
         if (tank.t >= AGITATE_S) breach(tank, game);
-      } else if (tank.phase === 'breaching') {
-        // the liquid drains out of the open front while it steps forward
-        const k = Math.min(1, tank.t / STEP_OUT_S);
-        const h = (4.72 - 2.05) * (1 - k * 0.85);
-        tank.liquid.scale.y = Math.max(0.05, h);
-        tank.liquid.position.y = 2.05 + h / 2;
-        tank.surface.position.y = 2.05 + h;
-        tank.dummy.position.x += tank.side * dt * 1.4;
-        tank.dummy.position.y = tank.dummyRestY - k * 0.9;
-        if (tank.t >= STEP_OUT_S) {
-          // wait for a clear spot rather than spawning onto someone
+        continue;
+      }
+      // breaching / released: the liquid drains out of the open front
+      const k = Math.min(1, tank.t / DRAIN_S);
+      const h = (4.72 - 2.05) * (1 - k * 0.92);
+      tank.liquid.scale.y = Math.max(0.05, h);
+      tank.liquid.position.y = 2.05 + h / 2;
+      tank.surface.position.y = 2.05 + h;
+      if (k < 1) gush(tank, game, dt, 2.05 + h);
+      for (const sm of tank.spill) {
+        const full = sm.userData.full as THREE.Vector3;
+        const g = Math.min(1, Math.max(0, (tank.t - (sm.userData.delay as number)) / 0.6));
+        const e = 1 - (1 - g) * (1 - g);
+        sm.scale.set(Math.max(0.001, full.x * e), full.y, Math.max(0.001, full.z * e));
+      }
+      if (tank.phase === 'breaching' && tank.t >= EMERGE_AT_S) {
+        const v = tank.vat;
+        if (!v || !v.alive) {
+          tank.phase = 'released'; // nothing left to come out: the tank stays empty
+        } else {
+          // wait for a clear spot rather than walking into someone
           const spot = clearSpot(tank, game);
-          if (spot) release(tank, game, spot[0], spot[1]);
+          if (spot) {
+            tank.phase = 'released';
+            v.startEmerge(spot[0], spot[1], 1);
+          }
         }
       }
+      if (tank.phase === 'released' && k >= 1) tank.phase = 'empty';
     }
   };
   const tankHit = (x: number, y: number, z: number, game: Game): void => {
