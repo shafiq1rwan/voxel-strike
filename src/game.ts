@@ -731,6 +731,16 @@ export class Game {
   /** start the sector-1 level that's already built behind the title screen */
   private startGame(adShown = false): void {
     this.audio.init();
+    if (this.isTouch && !POKI) {
+      // go immersive: fullscreen + landscape lock where the platform allows it
+      // (not on Poki — its page owns fullscreen around the game iframe).
+      // Before the preview branch: the Biofoundry start must go fullscreen too.
+      void document.documentElement.requestFullscreen?.().catch(() => {});
+      const orientation = screen.orientation as ScreenOrientation & {
+        lock?: (o: string) => Promise<void>;
+      };
+      orientation.lock?.('landscape').catch(() => {});
+    }
     if (this.preview) {
       this.player.health = 100;
       this.player.armor = 75;
@@ -744,15 +754,6 @@ export class Game {
       this.captureCheckpoint();
       this.enterSector('BIOFOUNDRY PREVIEW — find the red keycard. Campaign saves are untouched.', false);
       return;
-    }
-    if (this.isTouch && !POKI) {
-      // go immersive: fullscreen + landscape lock where the platform allows it
-      // (not on Poki — its page owns fullscreen around the game iframe)
-      void document.documentElement.requestFullscreen?.().catch(() => {});
-      const orientation = screen.orientation as ScreenOrientation & {
-        lock?: (o: string) => Promise<void>;
-      };
-      orientation.lock?.('landscape').catch(() => {});
     }
     this.captureCheckpoint();
     poki.measure('level', 1, 'start'); // title "Enter the facility": someone played
