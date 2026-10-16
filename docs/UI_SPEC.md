@@ -62,9 +62,9 @@ corners belong to the thumbs.
 │ messages                [▭ Find red keycard]          [MAP] [❚❚] │
 │                              ▲ 79m                   SCORE  KILLS│
 │                                +                                 │
-│                                               [⇄ 3 RIPPER]  ▮ 100│
-│   (joystick appears                                              │
-│    under the thumb)                          (JUMP)     ( FIRE ) │
+│                                                      [⇄ 3 RIPPER]│
+│   (joystick appears                                      (JUMP)  │
+│    under the thumb)                            ▮ 100    ( FIRE ) │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -85,7 +85,7 @@ Differences from desktop:
 | Look (right side) | Drag to aim. With aim assist on: magnetism, sticky aim and rotation assist |
 | FIRE | Hold to fire |
 | JUMP | Jump |
-| **Weapon button** `#tweapon` | Above JUMP. Shows ⇄, the slot number and the weapon name. **Tap** = next owned weapon. **Swipe left/right** = previous/next. **Hold 280 ms** = weapon wheel |
+| **Weapon button** `#tweapon` | Above JUMP, in a column against the right edge with FIRE (anything further in gets hit by look swipes). Shows ⇄, the slot number and the weapon name. **Tap** = next owned weapon. **Swipe left/right** = previous/next. **Hold 280 ms** = weapon wheel |
 | Weapon wheel `#twheel` | Owned weapons fan out in an arc above the button; the current one is outlined yellow. Slide onto one and release to pick it; release on the button to cancel |
 | Auto-switch | Firing an empty weapon switches to a loaded one (shotgun → SMG → arc → pistol → rockets last). Touch only |
 | MAP / pause | Top right |

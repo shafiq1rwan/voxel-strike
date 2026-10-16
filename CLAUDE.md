@@ -314,7 +314,9 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   BODY client dims (not window) and TouchControls.mapXY converts raw touch
   coords into the rotated game space — keep those three in sync. The
   joystick is invisible until touched (appears under the thumb, hides on
-  release) — a resting on-screen ring was tried and rejected. Weapon
+  release) — a resting on-screen ring was tried and rejected. FIRE, JUMP
+  and the weapon button stack against the RIGHT EDGE: buttons placed further
+  in sat under the aiming thumb and got hit by look swipes. Weapon
   switching on touch is the `#tweapon` button above JUMP: tap = next owned,
   swipe = prev/next, hold 280ms = a wheel of owned weapons (slide + release
   picks, release on the button cancels); wheel positions use offsetLeft/Top

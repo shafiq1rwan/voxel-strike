@@ -232,10 +232,12 @@ const CSS = `
   letter-spacing: .1em; display: flex; align-items: center; justify-content: center;
   user-select: none; -webkit-user-select: none; text-shadow: 1px 1px 0 #000;
 }
+/* FIRE, JUMP and the weapon button stack against the right edge: anything
+   further in sits where the thumb drags to aim and gets hit by look swipes */
 #tfire { right: 18px; bottom: 18px; width: 104px; height: 104px; font-size: 16px; }
-#tjump { right: 136px; bottom: 54px; }
+#tjump { right: 37px; bottom: 134px; }
 /* weapon button above JUMP: tap = next, swipe = prev/next, hold = wheel */
-#tweapon { right: 136px; bottom: 132px; flex-direction: column; gap: 2px; line-height: 1; }
+#tweapon { right: 37px; bottom: 210px; flex-direction: column; gap: 2px; line-height: 1; }
 #tweapon .ico { opacity: .75; }
 #tweapon-num { font-size: 18px; color: #ffd028; }
 #tweapon-name { font-size: 7.5px; letter-spacing: .5px; max-width: 60px; overflow: hidden; white-space: nowrap; }
@@ -259,7 +261,7 @@ const CSS = `
 #tpause { right: 10px; width: 36px; letter-spacing: 0; }
 #tmap { right: 54px; width: 58px; }
 #tammo {
-  position: absolute; right: 22px; bottom: 132px; display: flex; align-items: center; gap: 8px;
+  position: absolute; right: 134px; bottom: 30px; display: flex; align-items: center; gap: 8px;
   font: bold 22px 'Courier New', Courier, monospace; color: #f0f2f6;
   text-shadow: 2px 2px 0 #000; pointer-events: none; letter-spacing: 1px;
 }
