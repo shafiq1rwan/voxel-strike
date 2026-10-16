@@ -77,19 +77,22 @@ export class Door {
     return this.mesh.position.z;
   }
 
+  /** reused every call: callers read it immediately, never keep it */
+  private readonly boxCache: Box = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
+
   box(): Box {
     const alongX = this.spec.dir === 'x';
     const hx = alongX ? 0.25 : 1;
     const hz = alongX ? 1 : 0.25;
     const y = this.baseY + this.openT * (DOOR_H - 0.2);
-    return {
-      minX: this.mesh.position.x - hx,
-      maxX: this.mesh.position.x + hx,
-      minY: y - DOOR_H / 2,
-      maxY: y + DOOR_H / 2,
-      minZ: this.mesh.position.z - hz,
-      maxZ: this.mesh.position.z + hz,
-    };
+    const b = this.boxCache;
+    b.minX = this.mesh.position.x - hx;
+    b.maxX = this.mesh.position.x + hx;
+    b.minY = y - DOOR_H / 2;
+    b.maxY = y + DOOR_H / 2;
+    b.minZ = this.mesh.position.z - hz;
+    b.maxZ = this.mesh.position.z + hz;
+    return b;
   }
 
   /**
@@ -377,15 +380,18 @@ export class Elevator {
     this.mesh.position.set(this.spec.x + 1, this.topY - 0.45, this.spec.z + 1);
   }
 
+  /** reused every call: callers read it immediately, never keep it */
+  private readonly boxCache: Box = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
+
   box(): Box {
-    return {
-      minX: this.spec.x,
-      maxX: this.spec.x + 2,
-      minY: 0,
-      maxY: this.topY,
-      minZ: this.spec.z,
-      maxZ: this.spec.z + 2,
-    };
+    const b = this.boxCache;
+    b.minX = this.spec.x;
+    b.maxX = this.spec.x + 2;
+    b.minY = 0;
+    b.maxY = this.topY;
+    b.minZ = this.spec.z;
+    b.maxZ = this.spec.z + 2;
+    return b;
   }
 
   /** co-op client: platform height comes from host snapshots */

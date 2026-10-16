@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { EnemySpec, RoomDef } from '../types';
 import { isDestructible } from '../world/blocks';
 import { moveBody, rayBox } from '../core/physics';
+import { SEEN_HOLD, seenFrom } from '../core/occlusion';
+import type { VoxelWorld } from '../world/world';
 import type { Game, PlayerTarget } from '../game';
 
 export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'charge' | 'pain' | 'dead';
@@ -37,6 +39,11 @@ const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'ti
 function humanoid(kind: EnemySpec['kind']): boolean {
   return kind === 'husk' || kind === 'brute' || kind === 'vatborn';
 }
+
+// per-frame scratch (enemies update one at a time)
+const _toPlayer = new THREE.Vector3();
+const _light: [number, number, number] = [0, 0, 0];
+const _dyn: [number, number, number] = [0, 0, 0];
 
 function part(parent: THREE.Object3D, w: number, h: number, d: number, color: number, fullBright = false): THREE.Mesh {
   const mesh = new THREE.Mesh(
@@ -81,6 +88,8 @@ export class Enemy {
   private fins: THREE.Mesh[] = [];
   private glowParts: THREE.Mesh[] = [];
   private body: THREE.Group;
+  /** occlusion cull: seconds left to keep the rig drawn after last sighting */
+  private seenHold = 0;
   private gait = Math.random() * 10;
   private lastStride = 0;
   /** ticker arming beeps played so far this attack */
@@ -507,6 +516,7 @@ export class Enemy {
     // the body bursts apart into its own voxels: every part becomes a handful
     // of gibs in that part's color
     const worldPos = new THREE.Vector3();
+    this.attachBody(true); // a culled rig is detached: gibs need its real pose
     this.mesh.updateWorldMatrix(true, true);
     this.body.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
@@ -554,7 +564,7 @@ export class Enemy {
       return;
     }
 
-    const toPlayer = new THREE.Vector3().subVectors(pl.pos, this.pos);
+    const toPlayer = _toPlayer.subVectors(pl.pos, this.pos);
     const distSq = toPlayer.x * toPlayer.x + toPlayer.z * toPlayer.z;
     const dist = Math.sqrt(distSq);
 
@@ -787,11 +797,7 @@ export class Enemy {
 
   /** immediate white-hot flash on every landed hit (restored by the light tick) */
   private applyFlash(): void {
-    this.mesh.traverse((o) => {
-      if (!(o instanceof THREE.Mesh)) return;
-      if (o.userData.fullBright) return;
-      (o.material as THREE.MeshBasicMaterial).color.setRGB(2.2, 1.9, 1.7);
-    });
+    for (const o of this.litParts) (o.material as THREE.MeshBasicMaterial).color.setRGB(2.2, 1.9, 1.7);
   }
 
   private findFloor(game: Game): number {
@@ -1222,13 +1228,51 @@ export class Enemy {
     this.lastStride = stride;
   }
 
+  /**
+   * Occlusion cull (core/occlusion.ts): while no part of the rig is in sight
+   * of the eye, the inner body group is DETACHED from the mesh. Hiding alone
+   * still left three.js recomputing every part's world matrix each frame;
+   * detached, the subtree costs nothing. The outer mesh (and its visibility,
+   * which game logic owns) stays put; animation keeps posing the parts.
+   */
+  cullFrom(world: VoxelWorld, ex: number, ey: number, ez: number, dt: number, maxDist: number): void {
+    if (!this.mesh.visible) return;
+    // rigs reach past the physics box (arms, the vatborn fist): pad the test
+    if (seenFrom(world, ex, ey, ez, this.pos.x, this.pos.y, this.pos.z, this.half.x + 0.35, this.half.y + 0.15, maxDist)) {
+      this.seenHold = SEEN_HOLD;
+    } else {
+      this.seenHold -= dt;
+    }
+    this.attachBody(this.seenHold > 0);
+  }
+
+  /** (re)attach or detach the rig under the mesh */
+  attachBody(on: boolean): void {
+    const attached = this.body.parent === this.mesh;
+    if (on && !attached) this.mesh.add(this.body);
+    else if (!on && attached) this.mesh.remove(this.body);
+  }
+
+  /** the CPU-lit parts (not fullBright), gathered once: the rig never changes */
+  private litCache: THREE.Mesh[] | null = null;
+  private get litParts(): THREE.Mesh[] {
+    if (!this.litCache) {
+      const list: THREE.Mesh[] = [];
+      this.mesh.traverse((o) => {
+        if (o instanceof THREE.Mesh && !o.userData.fullBright) list.push(o);
+      });
+      this.litCache = list;
+    }
+    return this.litCache;
+  }
+
   /** tint body parts by baked + dynamic light; hit flash overrides */
   private updateLighting(game: Game, dt: number): void {
     this.lightTick += dt;
     if (this.lightTick < 0.08) return;
     this.lightTick = 0;
-    const l = game.world.sampleLight01(this.pos.x, this.pos.y, this.pos.z);
-    const d = game.dynLights.sampleAt(this.pos.x, this.pos.y, this.pos.z);
+    const l = game.world.sampleLight01(this.pos.x, this.pos.y, this.pos.z, _light);
+    const d = game.dynLights.sampleAt(this.pos.x, this.pos.y, this.pos.z, _dyn);
     // generous floor so enemies stay readable in dark/strongly-colored rooms
     const lum = 0.45 + (l[0] + l[1] + l[2]) * 0.35;
     const r = Math.min(1.3, lum + l[0] * 0.9 + d[0]);
@@ -1237,22 +1281,20 @@ export class Enemy {
     const flash = this.flashTime > 0;
     // inside a tank the light grid has nothing (it's solid glass): use the
     // liquid's own green glow so the occupant reads through it
+    const parts = this.litParts;
     if (this.dormant) {
-      this.mesh.traverse((o) => {
-        if (!(o instanceof THREE.Mesh) || o.userData.fullBright) return;
+      for (const o of parts) {
         const base = o.userData.baseColor as THREE.Color;
         (o.material as THREE.MeshBasicMaterial).color.setRGB(base.r * 0.55, base.g * 0.9, base.b * 0.5);
-      });
+      }
       return;
     }
-    this.mesh.traverse((o) => {
-      if (!(o instanceof THREE.Mesh)) return;
-      if (o.userData.fullBright) return;
+    for (const o of parts) {
       const m = o.material as THREE.MeshBasicMaterial;
       const base = o.userData.baseColor as THREE.Color;
       if (flash) m.color.setRGB(2.2, 1.9, 1.7);
       else m.color.setRGB(base.r * r, base.g * g, base.b * b);
-    });
+    }
   }
 }
 
@@ -1264,6 +1306,7 @@ export class EnemyManager {
   reset(): void {
     for (const e of this.list) {
       this.group.remove(e.mesh);
+      e.attachBody(true); // culled rigs are detached: dispose them too
       e.mesh.traverse((o) => {
         if (o instanceof THREE.Mesh) {
           o.geometry.dispose();

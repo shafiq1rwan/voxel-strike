@@ -137,6 +137,7 @@ export class AudioMan {
       const dy = pos.y - this.listener.y;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (dist > 42) return;
+      if (!this.voiceFree(name)) return;
       const gain = this.ctx.createGain();
       gain.gain.value = 1 / (1 + dist * 0.11);
       // pan by direction relative to facing (right vector = local +x rotated by yaw)
@@ -150,8 +151,35 @@ export class AudioMan {
       gain.connect(panner);
       panner.connect(this.master);
       out = gain;
+    } else if (!this.voiceFree(name)) {
+      return;
     }
     this.synth(name, out);
+  }
+
+  /** voice limiting: starts of each sound in the current short window */
+  private readonly voices = new Map<SoundName, { t: number; n: number }>();
+
+  /**
+   * At most two starts of the same sound per 40ms. A rocket that kills five
+   * husks would otherwise build five identical death sounds (dozens of audio
+   * nodes) in one frame — a hitch on phones, and stacked copies of the same
+   * sample at the same instant only read as one louder sound anyway.
+   */
+  private voiceFree(name: SoundName): boolean {
+    const now = performance.now();
+    let v = this.voices.get(name);
+    if (!v) {
+      v = { t: now, n: 0 };
+      this.voices.set(name, v);
+    }
+    if (now - v.t > 40) {
+      v.t = now;
+      v.n = 0;
+    }
+    if (v.n >= 2) return false;
+    v.n++;
+    return true;
   }
 
   // -------------------------------------------------------------------------

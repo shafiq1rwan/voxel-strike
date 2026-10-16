@@ -72,7 +72,8 @@ heartbeat keeps co-op hosts ticking in background tabs):
    tracers → pickups → lift + exit-beacon animation → objective tracker →
    HUD stats → automap/minimap → combo timer, low-health state, ambience.
 3. **Present:** camera from the player, audio listener, FOV punch decay,
-   dynamic lights ranked, dirty chunks re-meshed, then render.
+   dynamic lights ranked, dirty chunks re-meshed (within a ~3 ms budget,
+   at least one per frame), occlusion cull, then render.
 
 ## Building a sector
 
@@ -91,7 +92,9 @@ Every sector entry goes through `Game.enterSector()`:
    per-voxel RGB grid.
 4. **Mesh** (`mesher.ts`): one greedy-meshed chunk per 16×16 column; faces
    merge only when tile and quantized light match.
-5. **Entities**: player at the spawn, enemies, doors, lift, pickups.
+5. **Entities**: player at the spawn, enemies, doors, lift, pickups. Then
+   `Renderer.warmUp()` compiles and finalises every shader and uploads every
+   texture, so nothing compiles on first use mid-fight.
 6. **Checkpoint**: score, health, armor, ammo and loadout at sector entry,
    so *Retry sector* can restore it; from sector 2 on it's also saved to
    localStorage for *Continue*.
@@ -112,6 +115,42 @@ Every sector entry goes through `Game.enterSector()`:
   FOV setting doesn't stretch it. See [ART.md](ART.md) for how it's shaded.
 - **HUD** is plain DOM over the canvas (`ui/hud.ts`); the automap and
   minimap are 2D canvases.
+
+### Frame budget (Poki: 60 fps)
+
+On phones the bottleneck is CPU-side draw submission, not pixels (240p) or
+AI. Every rig part and gun part is its own mesh, so the counts are guarded
+by `scripts/perf.mjs`:
+
+- **Occlusion cull** (`core/occlusion.ts`, `Game.cullHidden`): each frame a
+  few voxel rays from the eye test every enemy and pickup. With no clear ray
+  (after a 0.3 s hold), an enemy's inner `body` group is *detached* from its
+  mesh and a pickup from its group, so three.js neither draws it nor updates
+  its matrices. Only air and `TankGlass` are see-through. Sector 1 with
+  every enemy awake went from ~730 draws a frame to ~60–110.
+- **Far plane = fog far + 2:** past total fog everything is background
+  coloured anyway, so frustum culling drops it.
+- **Baked guns** (`bakeModel` in `weapons.ts`): after a gun is built, its
+  static parts merge into at most four meshes (lit / lit rims / glow / glow
+  rims) with part colours in vertex colours. Only the parts with a
+  `WeaponModel` handle stay separate: slide, pump and bolt move; LED, coils,
+  core, tips and cell window animate their colour. A new animated part MUST
+  get a handle or it is baked away. A gun went from ~30 draws to 4–11.
+- **Shader warm-up** (`Renderer.warmUp`, end of the level build): shows
+  hidden objects (pooled projectiles, the guns not in hand), compiles every
+  program, finalises it (three.js otherwise blocks on the driver's link
+  result at first use, a ~100 ms freeze on the first rocket) and uploads
+  every texture.
+- **No hot-path allocation:** dynamic lights pool submissions and select
+  the top 6 without sorting; door/lift `box()` reuse one object; door
+  triggers are pooled; enemy lighting and firing use module scratch vectors.
+- **Voice limiting** (`AudioMan.play`): at most two starts of the same
+  sound per 40 ms, so a multi-kill doesn't build dozens of audio nodes in
+  one frame.
+
+Measured on the Poki build (phone viewport + touch, Chrome CPU throttling
+as a phone stand-in), sector 1 averages ~5–7 ms a frame at 4× slowdown and
+~9–12 ms at 6×, against the 16.7 ms budget.
 
 ## Combat
 

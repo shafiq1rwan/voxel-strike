@@ -120,10 +120,10 @@ export class VoxelWorld {
   }
 
   /** Sample baked light at a world position (0..1 per channel). */
-  sampleLight01(x: number, y: number, z: number): [number, number, number] {
-    const out: [number, number, number] = [0, 0, 0];
+  sampleLight01(x: number, y: number, z: number, out: [number, number, number] = [0, 0, 0]): [number, number, number] {
     this.getLight(Math.floor(x), Math.floor(y), Math.floor(z), out);
-    return [out[0] / 255, out[1] / 255, out[2] / 255];
+    out[0] /= 255; out[1] /= 255; out[2] /= 255;
+    return out;
   }
 
   /**

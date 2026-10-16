@@ -3,6 +3,7 @@ import { PickupKind, PickupSpec, WeaponId } from '../types';
 import { buildWeaponModel } from '../weapons/weapons';
 import { VoxelWorld } from '../world/world';
 import type { Game } from '../game';
+import { SEEN_HOLD, seenFrom } from '../core/occlusion';
 
 /**
  * Pickups are drawn full-bright (never tinted by room light) with a colored
@@ -270,6 +271,8 @@ class Pickup {
   taken = false;
   readonly obj: THREE.Object3D;
   readonly glow: THREE.Mesh;
+  /** occlusion cull: seconds left to keep it drawn after last sighting */
+  seenHold = 0;
   private phase = Math.random() * Math.PI * 2;
 
   constructor(readonly spec: PickupSpec, world: VoxelWorld) {
@@ -320,12 +323,17 @@ export class PickupManager {
 
   /** level teardown: free GPU resources (the shared glow texture is kept) */
   dispose(): void {
-    this.group.traverse((o) => {
+    // walk the items, not the group: culled and taken items are detached
+    const free = (o: THREE.Object3D) => {
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
         (o.material as THREE.Material).dispose();
       }
-    });
+    };
+    for (const p of this.items) {
+      p.obj.traverse(free);
+      free(p.glow);
+    }
     this.group.clear();
     this.items.length = 0;
   }
@@ -396,6 +404,24 @@ export class PickupManager {
       const glow = DYN_GLOW[p.spec.kind];
       if (glow) {
         game.dynLights.submit(p.obj.position.x, p.obj.position.y + 0.3, p.obj.position.z, glow[0], glow[1], glow[2], 0.35, 3);
+      }
+    }
+  }
+
+  /**
+   * Detach items the eye can't see (core/occlusion.ts): each is several draws,
+   * and detached they also skip three.js' per-frame world-matrix update.
+   */
+  cull(world: VoxelWorld, ex: number, ey: number, ez: number, dt: number, maxDist: number): void {
+    for (const p of this.items) {
+      if (p.taken) continue;
+      const o = p.obj.position;
+      if (seenFrom(world, ex, ey, ez, o.x, o.y, o.z, 0.55, 0.5, maxDist)) p.seenHold = SEEN_HOLD;
+      else p.seenHold -= dt;
+      const seen = p.seenHold > 0;
+      if (seen !== (p.obj.parent === this.group)) {
+        if (seen) this.group.add(p.obj, p.glow);
+        else this.group.remove(p.obj, p.glow);
       }
     }
   }

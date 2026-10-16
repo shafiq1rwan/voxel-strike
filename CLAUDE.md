@@ -47,6 +47,7 @@ node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° sta
 node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, touch map + weapon button/wheel, phone settings fit
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
+node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
 node scripts/breach.mjs     # sector 4 preview: dormant Vatborn in each occupied tank; shoot one → sealed during agitation, real collision gap, liquid gush, it walks out and hunts, releases once
 node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 start, level complete/fail), hidden co-op, boots with SDK blocked
@@ -288,7 +289,18 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
 - Everything visual is theme-locked to the palette: hazard `#ffd028`, keycard
   red `#ff3428`, exit green `#4cc26a`, steel `#566076`, void `#05060a`.
 - Object pools everywhere (particles, projectiles, tracers) — no per-shot
-  allocations in the hot path. Level transitions go through
+  allocations in the hot path.
+- **60 fps on phones is a Poki requirement**, and the limit there is draw
+  calls (every rig/gun part is a mesh). Three mechanisms keep it (details in
+  docs/ARCHITECTURE.md "Frame budget", guarded by `perf.mjs`): (1) the
+  occlusion cull DETACHES a hidden enemy's inner `body` group (and hidden
+  pickups), so game logic must keep using the OUTER `mesh.visible`, and
+  anything reading part world positions must call `attachBody(true)` first
+  (the death gib burst does); (2) `bakeModel` merges each gun's static
+  parts, so a new animated or colour-pulsing gun part needs a `WeaponModel`
+  handle or it gets baked in; (3) `Renderer.warmUp()` at level build
+  compiles every shader, which covers new pooled/hidden objects as long as
+  they're in the scene or overlay by then. Level transitions go through
   `Game.teardownLevel()`; dispose geometries/materials there when adding scene
   objects.
 - Above-world voxels read as Air, all other out-of-bounds as Rock — this is

@@ -28,7 +28,9 @@ export class Renderer {
     this.scene.background = this.fogColor;
     this.scene.fog = new THREE.Fog(this.fogColor, this.fogNear, this.fogFar);
 
-    this.camera = new THREE.PerspectiveCamera(75, 1, 0.08, 120);
+    // far plane just past total fog: anything beyond is background-coloured
+    // anyway, so frustum culling drops it instead of drawing it invisibly
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.08, this.fogFar + 2);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -51,6 +53,42 @@ export class Renderer {
     if (h === this.resH) return;
     this.resH = h;
     this.resize();
+  }
+
+  /**
+   * Compile every material's shader and upload every texture up front.
+   * three.js otherwise does both on first draw, so the first rocket (pooled
+   * projectile, launcher model, its flash) froze a phone for ~100ms. compile()
+   * alone isn't enough: the driver links in the background and three.js
+   * blocks on the result at the program's first USE (getProgramInfoLog), so
+   * every program is also finalised here, during the load. Hidden
+   * objects — pooled projectiles, the guns not in hand — are shown just for
+   * the compile. Call after a level's scene objects are in place.
+   */
+  warmUp(): void {
+    const hidden: THREE.Object3D[] = [];
+    const textures = new Set<THREE.Texture>();
+    const visit = (o: THREE.Object3D): void => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+      const mat = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      for (const m of Array.isArray(mat) ? mat : mat ? [mat] : []) {
+        const map = (m as THREE.MeshBasicMaterial).map;
+        if (map) textures.add(map);
+      }
+    };
+    this.scene.traverse(visit);
+    this.overlay.traverse(visit);
+    this.renderer.compile(this.scene, this.camera);
+    this.renderer.compile(this.overlay, this.overlayCamera);
+    for (const t of textures) this.renderer.initTexture(t);
+    // finalise each linked program now (three.js' lazy first-use step)
+    for (const p of this.renderer.info.programs ?? []) {
+      (p as unknown as { getUniforms(): unknown }).getUniforms();
+    }
+    for (const o of hidden) o.visible = false;
   }
 
   render(): void {

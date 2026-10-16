@@ -280,10 +280,35 @@ export class Game {
   }
 
   /** everyone the enemies can hunt: the local player + the co-op partner */
+  /** door triggers this frame (player, partner, awake enemies), pooled */
+  private readonly doorActors: Array<{ x: number; z: number; isPlayer: boolean }> = [];
+  private readonly doorActorPool: Array<{ x: number; z: number; isPlayer: boolean }> = [];
+
+  private setDoorActor(i: number, x: number, z: number, isPlayer: boolean): number {
+    let a = this.doorActorPool[i];
+    if (!a) {
+      a = { x: 0, z: 0, isPlayer: false };
+      this.doorActorPool.push(a);
+    }
+    a.x = x;
+    a.z = z;
+    a.isPlayer = isPlayer;
+    this.doorActors[i] = a;
+    return i + 1;
+  }
+
+  /** reused arrays: every enemy asks every frame */
+  private readonly soloTargets: PlayerTarget[] = [];
+  private readonly duoTargets: PlayerTarget[] = [];
+
   playerTargets(): PlayerTarget[] {
-    return this.net && this.net.connected
-      ? [this.player, this.net.remote]
-      : [this.player];
+    if (this.net && this.net.connected) {
+      this.duoTargets[0] = this.player;
+      this.duoTargets[1] = this.net.remote;
+      return this.duoTargets;
+    }
+    this.soloTargets[0] = this.player;
+    return this.soloTargets;
   }
 
   /** authoritative numbers for the co-op snapshot */
@@ -409,6 +434,8 @@ export class Game {
 
     this.enemies.spawnFromSpecs(this.level.enemies, this.level.rooms, this);
     scene.add(this.enemies.group);
+    // compile shaders + upload textures now, not on first use mid-fight
+    this.rendererSys.warmUp();
 
     // per-level state
     this.kills = 0;
@@ -957,7 +984,7 @@ export class Game {
   solidBoxes(): Box[] {
     if (this.solidBoxFrame === this.frameCounter) return this.solidBoxCache;
     this.solidBoxFrame = this.frameCounter;
-    this.solidBoxCache = [];
+    this.solidBoxCache.length = 0;
     for (const d of this.doors) {
       if (d.openT < 0.98) this.solidBoxCache.push(d.box());
     }
@@ -1417,6 +1444,7 @@ export class Game {
       this.player.yaw += dt * 0.1;
       this.player.applyToCamera(this.camera, this.time);
       this.dynLights.update(dt, this.camera.position);
+      this.cullHidden(dt);
       this.rendererSys.render();
       this.dynLights.clearFrame();
       return;
@@ -1452,8 +1480,22 @@ export class Game {
 
     this.dynLights.update(dt, this.camera.position);
     this.chunks?.update();
+    this.cullHidden(dt);
     this.rendererSys.render();
     this.dynLights.clearFrame();
+  }
+
+  /**
+   * Skip drawing enemy rigs and pickups the eye can't see (core/occlusion.ts).
+   * Each is many draw calls and three.js only frustum-culls: this is what
+   * keeps phones at 60 fps in rooms surrounded by populated ones.
+   */
+  private cullHidden(dt: number): void {
+    if (!this.world) return;
+    const c = this.camera.position;
+    const far = this.rendererSys.fogFar;
+    for (const e of this.enemies.list) e.cullFrom(this.world, c.x, c.y, c.z, dt, far);
+    this.pickups?.cull(this.world, c.x, c.y, c.z, dt, far);
   }
 
   private update(dt: number): void {
@@ -1473,16 +1515,18 @@ export class Game {
     // doors + elevator run on the authority only (clients get snapshots)
     if (!this.isNetClient) {
       // doors: players + alive enemies can trigger them
-      const actors: Array<{ x: number; z: number; isPlayer: boolean }> = [
-        { x: this.player.pos.x, z: this.player.pos.z, isPlayer: true },
-      ];
+      // (pooled entries: rebuilt in place every frame, no allocation)
+      const actors = this.doorActors;
+      let n = 0;
+      n = this.setDoorActor(n, this.player.pos.x, this.player.pos.z, true);
       if (this.net?.connected) {
         // keys are shared in co-op, so the partner opens locked doors too
-        actors.push({ x: this.net.remote.pos.x, z: this.net.remote.pos.z, isPlayer: true });
+        n = this.setDoorActor(n, this.net.remote.pos.x, this.net.remote.pos.z, true);
       }
       for (const e of this.enemies.list) {
-        if (e.alive && e.awake) actors.push({ x: e.pos.x, z: e.pos.z, isPlayer: false });
+        if (e.alive && e.awake) n = this.setDoorActor(n, e.pos.x, e.pos.z, false);
       }
+      actors.length = n;
       for (const d of this.doors) {
         d.update(
           dt, actors,

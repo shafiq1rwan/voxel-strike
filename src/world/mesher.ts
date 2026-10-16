@@ -111,15 +111,23 @@ export class ChunkManager {
     this.material.dispose();
   }
 
-  /** Rebuild any chunks marked dirty by runtime block changes. */
-  update(): void {
+  /**
+   * Rebuild chunks marked dirty by runtime block changes. At least one per
+   * call, then more only while under a small time budget: an explosion on a
+   * chunk corner dirties four, and remeshing them all in one frame cost
+   * ~15ms on a slow phone — a visible hitch. Spread out, the stragglers land a
+   * frame or two later (meshes are visuals only; physics reads the grid).
+   */
+  update(budgetMs = 3): void {
     if (this.world.dirtyChunks.size === 0) return;
+    const t0 = performance.now();
     for (const key of this.world.dirtyChunks) {
+      this.world.dirtyChunks.delete(key);
       const cx = key % this.world.chunksX;
       const cz = Math.floor(key / this.world.chunksX);
       this.buildChunk(cx, cz);
+      if (performance.now() - t0 > budgetMs) break;
     }
-    this.world.dirtyChunks.clear();
   }
 
   private buildChunk(cx: number, cz: number): void {

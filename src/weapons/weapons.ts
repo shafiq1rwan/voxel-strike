@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { AmmoType, WeaponId } from '../types';
 import { Input } from '../core/input';
 import { rayBox } from '../core/physics';
@@ -183,6 +184,122 @@ function blowback(t: number, snap: number, ret: number): number {
   return Math.max(0, 1 - (t - snap) / ret);
 }
 
+// per-shot scratch: firing is synchronous, nothing keeps these
+const _origin = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3();
+const _muzzle = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _UP = new THREE.Vector3(0, 1, 0);
+const _light: [number, number, number] = [0, 0, 0];
+const _dyn: [number, number, number] = [0, 0, 0];
+
+/**
+ * Merge every part under `root` (not `root` itself) into at most four meshes:
+ * lit faces, lit rims, glow faces, glow rims. Each part's colour moves into
+ * vertex colours (face shade × part colour), so one material per bucket draws
+ * them all and the light tick still tints a lit bucket through its material
+ * colour (base white). Objects in `skip` and their subtrees are left alone;
+ * objects in `pin` stay live meshes (their colour animates) but what hangs
+ * off them — their rim — still merges, since it never changes. Either kind is
+ * re-parented onto `root` (same pose) if its parent gets merged away.
+ *
+ * Why: every vmPart is two draw calls (box + rim), ~30 for one gun — on a
+ * phone that was the costliest thing on screen. Baked, a gun is ~6.
+ */
+function mergeParts(root: THREE.Object3D, skip: Set<THREE.Object3D>, pin: Set<THREE.Object3D>): void {
+  const buckets: THREE.BufferGeometry[][] = [[], [], [], []]; // lit, litRim, glow, glowRim
+  const merged: THREE.Mesh[] = [];
+  const reattach: THREE.Object3D[] = [];
+  const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const rel = new THREE.Matrix4();
+  const visit = (o: THREE.Object3D, parentMerged: boolean): void => {
+    for (const child of o.children) {
+      if (skip.has(child) || pin.has(child)) {
+        if (parentMerged) reattach.push(child);
+        if (pin.has(child)) visit(child, false);
+        continue;
+      }
+      if (!(child instanceof THREE.Mesh)) continue;
+      const mat = child.material as THREE.MeshBasicMaterial;
+      const rim = mat.side === THREE.BackSide;
+      const glow = !!child.userData.glow;
+      const color = child.userData.baseColor as THREE.Color;
+      const geo = (child.geometry as THREE.BufferGeometry).clone();
+      geo.deleteAttribute('normal');
+      geo.deleteAttribute('uv');
+      // a lit face carries its per-face shade; rims and glow parts are flat
+      const shade = !rim && !glow ? (geo.getAttribute('color') as THREE.BufferAttribute | undefined) : undefined;
+      const n = geo.attributes.position.count;
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const s = shade ? shade.getX(i) : 1;
+        col[i * 3] = color.r * s;
+        col[i * 3 + 1] = color.g * s;
+        col[i * 3 + 2] = color.b * s;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.applyMatrix4(rel.multiplyMatrices(toRoot, child.matrixWorld));
+      buckets[(glow ? 2 : 0) + (rim ? 1 : 0)].push(geo);
+      merged.push(child);
+      visit(child, true);
+    }
+  };
+  visit(root, false);
+  for (const k of reattach) root.attach(k);
+  for (const m of merged) {
+    m.removeFromParent();
+    (m.material as THREE.Material).dispose();
+  }
+  buckets.forEach((geos, i) => {
+    if (!geos.length) return;
+    const glow = i >= 2;
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, vertexColors: true, fog: false,
+      side: i % 2 ? THREE.BackSide : THREE.FrontSide,
+    });
+    const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
+    for (const g of geos) g.dispose();
+    mesh.userData.baseColor = new THREE.Color(1, 1, 1);
+    mesh.userData.glow = glow;
+    root.add(mesh);
+  });
+}
+
+/** bake a finished gun: static parts merge, moving / pulsing parts stay live */
+function bakeModel(m: WeaponModel): void {
+  const pulsing = [m.led, m.core, m.cellWindow, ...m.coils, ...m.tips].filter((o): o is THREE.Mesh => !!o);
+  const movers = [m.slide, m.pump, m.bolt].filter((o): o is THREE.Mesh => !!o);
+  m.group.updateMatrixWorld(true);
+  const pin = new Set<THREE.Object3D>(pulsing);
+  mergeParts(m.group, new Set(movers), pin);
+  // a moving part keeps its own box; what rides on it (sights, grooves, its
+  // rim) merges into its frame so it still travels with it
+  for (const mv of movers) {
+    mv.updateMatrixWorld(true);
+    mergeParts(mv, new Set(), pin);
+  }
+  // the arc's muzzle tips always glow alike: one mesh for both
+  if (m.tips.length > 1) {
+    const first = m.tips[0];
+    const geos = m.tips.map((t) => {
+      t.updateMatrix();
+      return (t.geometry as THREE.BufferGeometry).clone().applyMatrix4(t.matrix);
+    });
+    const merged = new THREE.Mesh(mergeGeometries(geos), first.material);
+    for (const gg of geos) gg.dispose();
+    merged.userData.baseColor = first.userData.baseColor;
+    merged.userData.glow = true;
+    for (const t of m.tips) {
+      t.removeFromParent();
+      if (t !== first) (t.material as THREE.Material).dispose();
+    }
+    m.group.add(merged);
+    m.tips = [merged];
+  }
+}
+
 /** a gun's box model plus handles to its moving parts */
 export interface WeaponModel {
   group: THREE.Group;
@@ -315,6 +432,7 @@ export function buildWeaponModel(id: WeaponId): WeaponModel {
       break;
     }
   }
+  bakeModel(m);
   return m;
 }
 
@@ -541,15 +659,14 @@ export class WeaponSystem {
     game.noise(pl.pos.x, pl.pos.z, 17);
 
     const cam = game.camera;
-    const origin = new THREE.Vector3(pl.pos.x, pl.eyeY(), pl.pos.z);
-    const fwd = new THREE.Vector3();
-    cam.getWorldDirection(fwd);
+    const origin = _origin.set(pl.pos.x, pl.eyeY(), pl.pos.z);
+    const fwd = cam.getWorldDirection(_fwd);
     // bullet magnetism (touch only): near-misses bend onto the target
     if (!def.projectile) this.applyAimAssist(origin, fwd, game);
-    const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
-    const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+    const right = _right.crossVectors(fwd, _UP).normalize();
+    const up = _up.crossVectors(right, fwd).normalize();
     // approximate world-space muzzle (matches the viewmodel's barrel)
-    const muzzle = origin.clone()
+    const muzzle = _muzzle.copy(origin)
       .addScaledVector(fwd, 0.55)
       .addScaledVector(right, 0.16)
       .addScaledVector(up, -0.14);
@@ -575,8 +692,7 @@ export class WeaponSystem {
     }
 
     if (def.projectile) {
-      const start = origin.clone().addScaledVector(fwd, 0.7);
-      game.projectiles.spawn('rocket', start.x, start.y, start.z, fwd.x, fwd.y, fwd.z, 17, true, dmgMult);
+      game.projectiles.spawn('rocket', origin.x + fwd.x * 0.7, origin.y + fwd.y * 0.7, origin.z + fwd.z * 0.7, fwd.x, fwd.y, fwd.z, 17, true, dmgMult);
       game.particles.smoke(muzzle.x, muzzle.y, muzzle.z, 4);
       return;
     }
@@ -589,7 +705,7 @@ export class WeaponSystem {
     game.particles.smoke(muzzle.x + fwd.x * 0.25, muzzle.y + 0.03, muzzle.z + fwd.z * 0.25, def.id === 'shotgun' ? 3 : 1);
 
     for (let i = 0; i < def.pellets; i++) {
-      const dir = fwd.clone()
+      const dir = _dir.copy(fwd)
         .addScaledVector(right, (Math.random() * 2 - 1) * def.spread)
         .addScaledVector(up, (Math.random() * 2 - 1) * def.spread)
         .normalize();
@@ -851,8 +967,8 @@ export class WeaponSystem {
     this.lightTick += dt;
     if (this.lightTick > 0.12) {
       this.lightTick = 0;
-      const l = game.world.sampleLight01(pl.pos.x, pl.pos.y, pl.pos.z);
-      const d = game.dynLights.sampleAt(pl.pos.x, pl.pos.y, pl.pos.z);
+      const l = game.world.sampleLight01(pl.pos.x, pl.pos.y, pl.pos.z, _light);
+      const d = game.dynLights.sampleAt(pl.pos.x, pl.pos.y, pl.pos.z, _dyn);
       // high floor: the gun must read as a shape even in dark corridors
       const r = Math.min(1.3, 0.62 + l[0] * 1.15 + d[0]);
       const g = Math.min(1.3, 0.62 + l[1] * 1.15 + d[1]);
