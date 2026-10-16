@@ -118,6 +118,16 @@ there and both update.
   charge). New guns should get an action too.
 - **Muzzle flash:** an uneven starburst (warm for bullets, cool blue for the
   arc caster), plus a dynamic light so the walls flash.
+- **Hands:** gloved boxes (`rightHand` / `leftHand` in weapons.ts, attached
+  by `attachHands` to the held model only — pickups stay handless). A right
+  hand closed on every grip with the trigger finger out, a left hand cupping
+  the fore-grip of the two-handed guns (it rides the scattergun's pump), a
+  hazard cuff and a short wrist stub. **No forearms**: from this camera an
+  arm can only cross the bottom of the frame as a long bar (the owner's
+  "green stick") — tried and rejected. A Doom-style angled-in gun pose that
+  shows the back of the hand was also sampled and rejected in favour of the
+  straight-on hold; the `POSES` hook stays, empty. The view model rides at
+  `VM_Y = -0.21` (was −0.34) so the grips sit inside the frame.
 
 ## HUD and menus
 

@@ -101,6 +101,8 @@ interface PartOpts {
   /** dark rim around the part (default on) */
   outline?: boolean;
   rx?: number;
+  ry?: number;
+  rz?: number;
 }
 
 /** one box of a view model; tinted by local light unless `glow` */
@@ -115,7 +117,7 @@ function vmPart(
   const m = new THREE.MeshBasicMaterial({ color: base, vertexColors: !glow, fog: false });
   const mesh = new THREE.Mesh(glow ? new THREE.BoxGeometry(w, h, d) : shadedBox(w, h, d), m);
   mesh.position.set(x, y, z);
-  if (opts.rx) mesh.rotation.x = opts.rx;
+  mesh.rotation.set(opts.rx ?? 0, opts.ry ?? 0, opts.rz ?? 0);
   mesh.userData.baseColor = base;
   mesh.userData.glow = glow;
   if (opts.outline !== false) {
@@ -316,6 +318,99 @@ export function buildWeaponModel(id: WeaponId): WeaponModel {
   return m;
 }
 
+// ---------------------------------------------------------------------------
+// Hands. Gloved, in the same shaded box style as the guns: a right hand on
+// every grip (trigger finger out), a left hand cupping the fore-grip of the
+// two-handed guns, forearms angling back toward the camera.
+// ---------------------------------------------------------------------------
+
+/** view-model rest height: low enough to feel held, high enough that the hands show */
+const VM_Y = -0.21;
+
+/**
+ * Optional per-gun pose inside the view model (position offset + rotation).
+ * A Doom-style angled-in pose was sampled on the pistol and the owner
+ * preferred the straight-on hold, so this is empty — the hook stays because
+ * the muzzle-flash placement already goes through it.
+ */
+const POSES: Partial<Record<WeaponId, { pos: [number, number, number]; rot: [number, number, number] }>> = {};
+
+const GLOVE = 0x4a505c;
+const GLOVE_DARK = 0x343946;
+const SLEEVE = 0x34383a;
+
+/** right hand closed around a vertical grip centred on the group origin */
+function rightHand(): THREE.Group {
+  const h = new THREE.Group();
+  const palm = vmPart(h, 0.09, 0.13, 0.055, GLOVE, 0.012, -0.01, 0.078);
+  vmPart(palm, 0.05, 0.045, 0.012, STEEL, 0, 0.022, 0.03, { outline: false }); // knuckle plate
+  for (const y of [0.028, -0.006, -0.04]) {
+    vmPart(h, 0.09, 0.028, 0.028, GLOVE_DARK, 0.004, y, -0.054); // fingers across the front
+    vmPart(h, 0.028, 0.028, 0.06, GLOVE_DARK, -0.055, y, -0.028); // curling round the far side
+  }
+  vmPart(h, 0.026, 0.026, 0.075, GLOVE_DARK, 0.032, 0.06, -0.07, { rx: -0.25 }); // trigger finger
+  vmPart(h, 0.028, 0.062, 0.03, GLOVE, -0.052, 0.04, 0.04, { rz: 0.35 }); // thumb
+  forearm(h, 0.03, -0.07, 0.1, 1);
+  return h;
+}
+
+/** left hand cupping a horizontal fore-grip from below, centred on the origin */
+function leftHand(): THREE.Group {
+  const h = new THREE.Group();
+  vmPart(h, 0.1, 0.05, 0.085, GLOVE, -0.008, -0.056, 0); // palm under the grip
+  // the back of the hand on the camera side, where it actually shows
+  const back = vmPart(h, 0.04, 0.1, 0.09, GLOVE, -0.062, -0.02, 0);
+  vmPart(back, 0.012, 0.05, 0.05, STEEL, -0.02, 0.012, 0, { outline: false }); // knuckle plate
+  for (const z of [0.03, -0.002, -0.034]) {
+    vmPart(h, 0.028, 0.085, 0.026, GLOVE_DARK, 0.056, -0.018, z); // fingers up the far side
+    vmPart(h, 0.06, 0.026, 0.026, GLOVE_DARK, 0.03, 0.03, z); // folding over the top
+  }
+  vmPart(h, 0.03, 0.03, 0.08, GLOVE_DARK, -0.06, 0.036, 0.0, { ry: 0.3 }); // thumb over the top edge
+  forearm(h, -0.045, -0.085, 0.07, -1);
+  return h;
+}
+
+/**
+ * Cuffed wrist stub only — no forearm. Full forearms were tried: from this
+ * camera an arm can only cross the bottom of the frame as a long bar (the
+ * owner's "green stick"), so the sleeve ends just past the cuff.
+ */
+function forearm(h: THREE.Group, x: number, y: number, z: number, side: number): void {
+  vmPart(h, 0.1, 0.032, 0.09, HAZARD, x, y, z, { outline: false }); // cuff
+  vmPart(h, 0.095, 0.085, 0.12, SLEEVE, x + side * 0.015, y - 0.035, z + 0.075, { rx: 0.6, ry: -side * 0.25 }); // wrist
+}
+
+/** places the hands on a built gun; the scattergun's left hand rides the pump */
+function attachHands(id: WeaponId, m: WeaponModel): void {
+  const right = rightHand();
+  const left = leftHand();
+  const put = (parent: THREE.Object3D, hand: THREE.Group, x: number, y: number, z: number, rx = 0): void => {
+    hand.position.set(x, y, z);
+    hand.rotation.x = rx;
+    parent.add(hand);
+  };
+  switch (id) {
+    case 'pistol':
+      put(m.group, right, 0, -0.135, 0.065, 0.25);
+      break;
+    case 'shotgun':
+      put(m.group, right, 0, -0.13, 0.11, 0.15);
+      put(m.pump!, left, 0, -0.03, 0.01); // racks with the forend
+      break;
+    case 'smg':
+      put(m.group, right, 0, -0.145, 0.105, 0.25);
+      put(m.group, left, 0, -0.1, -0.27);
+      break;
+    case 'rocket':
+      put(m.group, right, 0, -0.15, 0.005, 0.2);
+      put(m.group, left, 0, -0.1, -0.3);
+      break;
+    case 'arc':
+      put(m.group, right, 0, -0.155, 0.105, 0.25);
+      break;
+  }
+}
+
 /** Weapon inventory + firing + first-person view model. */
 export class WeaponSystem {
   readonly viewModel = new THREE.Group();
@@ -357,7 +452,7 @@ export class WeaponSystem {
   private readonly basePos = new Map<THREE.Object3D, number>(); // rest z of moving parts
 
   constructor() {
-    this.viewModel.position.set(0.3, -0.34, -0.62);
+    this.viewModel.position.set(0.3, VM_Y, -0.62);
     this.buildModels();
     this.warmFlashTex = makeFlashTexture(false);
     this.coolFlashTex = makeFlashTexture(true);
@@ -401,6 +496,12 @@ export class WeaponSystem {
     const p = this.parts;
     for (const id of ORDER) {
       const m = buildWeaponModel(id);
+      attachHands(id, m); // held guns only — floor pickups stay handless
+      const pose = POSES[id];
+      if (pose) {
+        m.group.position.add(new THREE.Vector3(...pose.pos));
+        m.group.rotation.set(...pose.rot);
+      }
       m.group.visible = false;
       this.viewModel.add(m.group);
       this.models.set(id, m.group);
@@ -520,7 +621,9 @@ export class WeaponSystem {
     (this.flash.material as THREE.MeshBasicMaterial).map =
       def.id === 'arc' ? this.coolFlashTex : this.warmFlashTex;
     const tipZ = this.muzzleTips.get(def.id)!;
-    this.flash.position.set(0, 0.02, tipZ - 0.06);
+    // the muzzle in view-model space, through the gun's own pose
+    const model = this.models.get(def.id)!;
+    this.flash.position.set(0, 0.02, tipZ - 0.06).applyEuler(model.rotation).add(model.position);
     this.flash.rotation.z = Math.random() * Math.PI * 2;
     this.flash.scale.setScalar(def.flashScale * (0.85 + Math.random() * 0.4));
 
@@ -827,7 +930,7 @@ export class WeaponSystem {
 
     this.viewModel.position.set(
       0.3 + bobX + this.swayX + jx + lower * 0.05,
-      -0.34 + bobY + this.swayY + jy - lower * 0.3 - this.landDip,
+      VM_Y + bobY + this.swayY + jy - lower * 0.3 - this.landDip,
       -0.62 + this.kickZ,
     );
     this.viewModel.rotation.set(
