@@ -137,7 +137,9 @@ export function buildFirstPersonArm(side: 1 | -1): THREE.Group {
   fpPart(g, 0.12, 0.07, 0.14, C.charcoal, 0, 0.07, 0.005); // wrist cuff
   fpPart(g, 0.19, 0.23, 0.21, C.lightSteel, 0, 0.2, 0.02); // forearm guard
   fpPart(g, 0.03, 0.07, 0.07, C.lightSteel, side * 0.04, 0.324, 0.065); // elbow tab
-  fpPart(g, 0.13, 0.2, 0.15, C.charcoal, 0, 0.41, 0.01); // upper sleeve, mostly off screen
+  // the upper arm runs on well past the screen edge: a short stub ended in
+  // mid-air on wide phone screens and the arm looked cut off from the body
+  fpPart(g, 0.14, 0.95, 0.16, C.charcoal, 0, 0.31 + 0.475, 0.01);
   return g;
 }
 
