@@ -348,7 +348,10 @@ function rightHand(): THREE.Group {
     vmPart(h, 0.09, 0.028, 0.028, GLOVE_DARK, 0.004, y, -0.054); // fingers across the front
     vmPart(h, 0.028, 0.028, 0.06, GLOVE_DARK, -0.055, y, -0.028); // curling round the far side
   }
-  vmPart(h, 0.026, 0.026, 0.075, GLOVE_DARK, 0.032, 0.06, -0.07, { rx: -0.25 }); // trigger finger
+  // trigger finger: slim, no edge rim (the rim adds half a finger-width at
+  // this size), two segments so it bends onto the trigger
+  vmPart(h, 0.017, 0.017, 0.05, GLOVE_DARK, 0.03, 0.062, -0.065, { rx: -0.15, outline: false });
+  vmPart(h, 0.016, 0.016, 0.036, GLOVE_DARK, 0.03, 0.052, -0.096, { rx: -0.75, outline: false });
   vmPart(h, 0.028, 0.062, 0.03, GLOVE, -0.052, 0.04, 0.04, { rz: 0.35 }); // thumb
   forearm(h, 0.03, -0.07, 0.1, 1);
   return h;
