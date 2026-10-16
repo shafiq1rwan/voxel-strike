@@ -319,9 +319,10 @@ export function buildWeaponModel(id: WeaponId): WeaponModel {
 }
 
 // ---------------------------------------------------------------------------
-// Hands. Gloved, in the same shaded box style as the guns: a right hand on
-// every grip (trigger finger out), a left hand cupping the fore-grip of the
-// two-handed guns, forearms angling back toward the camera.
+// Hands. Bare, in the same shaded box style as the guns: a right hand on
+// every grip, a left hand cupping the fore-grip of the two-handed guns, a
+// hazard sleeve cuff and a short wrist stub (no forearms, no trigger finger —
+// both owner calls).
 // ---------------------------------------------------------------------------
 
 /** view-model rest height: low enough to feel held, high enough that the hands show */
@@ -335,24 +336,19 @@ const VM_Y = -0.21;
  */
 const POSES: Partial<Record<WeaponId, { pos: [number, number, number]; rot: [number, number, number] }>> = {};
 
-const GLOVE = 0x4a505c;
-const GLOVE_DARK = 0x343946;
+const SKIN = 0xd49a72;
+const SKIN_DARK = 0xb57c57;
 const SLEEVE = 0x34383a;
 
 /** right hand closed around a vertical grip centred on the group origin */
 function rightHand(): THREE.Group {
   const h = new THREE.Group();
-  const palm = vmPart(h, 0.09, 0.13, 0.055, GLOVE, 0.012, -0.01, 0.078);
-  vmPart(palm, 0.05, 0.045, 0.012, STEEL, 0, 0.022, 0.03, { outline: false }); // knuckle plate
+  vmPart(h, 0.09, 0.13, 0.055, SKIN, 0.012, -0.01, 0.078); // palm behind the grip
   for (const y of [0.028, -0.006, -0.04]) {
-    vmPart(h, 0.09, 0.028, 0.028, GLOVE_DARK, 0.004, y, -0.054); // fingers across the front
-    vmPart(h, 0.028, 0.028, 0.06, GLOVE_DARK, -0.055, y, -0.028); // curling round the far side
+    vmPart(h, 0.09, 0.028, 0.028, SKIN_DARK, 0.004, y, -0.054); // fingers across the front
+    vmPart(h, 0.028, 0.028, 0.06, SKIN_DARK, -0.055, y, -0.028); // curling round the far side
   }
-  // trigger finger: slim, no edge rim (the rim adds half a finger-width at
-  // this size), two segments so it bends onto the trigger
-  vmPart(h, 0.017, 0.017, 0.05, GLOVE_DARK, 0.03, 0.062, -0.065, { rx: -0.15, outline: false });
-  vmPart(h, 0.016, 0.016, 0.036, GLOVE_DARK, 0.03, 0.052, -0.096, { rx: -0.75, outline: false });
-  vmPart(h, 0.028, 0.062, 0.03, GLOVE, -0.052, 0.04, 0.04, { rz: 0.35 }); // thumb
+  vmPart(h, 0.028, 0.062, 0.03, SKIN, -0.052, 0.04, 0.04, { rz: 0.35 }); // thumb
   forearm(h, 0.03, -0.07, 0.1, 1);
   return h;
 }
@@ -360,15 +356,14 @@ function rightHand(): THREE.Group {
 /** left hand cupping a horizontal fore-grip from below, centred on the origin */
 function leftHand(): THREE.Group {
   const h = new THREE.Group();
-  vmPart(h, 0.1, 0.05, 0.085, GLOVE, -0.008, -0.056, 0); // palm under the grip
+  vmPart(h, 0.1, 0.05, 0.085, SKIN, -0.008, -0.056, 0); // palm under the grip
   // the back of the hand on the camera side, where it actually shows
-  const back = vmPart(h, 0.04, 0.1, 0.09, GLOVE, -0.062, -0.02, 0);
-  vmPart(back, 0.012, 0.05, 0.05, STEEL, -0.02, 0.012, 0, { outline: false }); // knuckle plate
+  vmPart(h, 0.04, 0.1, 0.09, SKIN, -0.062, -0.02, 0);
   for (const z of [0.03, -0.002, -0.034]) {
-    vmPart(h, 0.028, 0.085, 0.026, GLOVE_DARK, 0.056, -0.018, z); // fingers up the far side
-    vmPart(h, 0.06, 0.026, 0.026, GLOVE_DARK, 0.03, 0.03, z); // folding over the top
+    vmPart(h, 0.028, 0.085, 0.026, SKIN_DARK, 0.056, -0.018, z); // fingers up the far side
+    vmPart(h, 0.06, 0.026, 0.026, SKIN_DARK, 0.03, 0.03, z); // folding over the top
   }
-  vmPart(h, 0.03, 0.03, 0.08, GLOVE_DARK, -0.06, 0.036, 0.0, { ry: 0.3 }); // thumb over the top edge
+  vmPart(h, 0.03, 0.03, 0.08, SKIN_DARK, -0.06, 0.036, 0.0, { ry: 0.3 }); // thumb over the top edge
   forearm(h, -0.045, -0.085, 0.07, -1);
   return h;
 }
