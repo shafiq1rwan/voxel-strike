@@ -118,23 +118,11 @@ there and both update.
   charge). New guns should get an action too.
 - **Muzzle flash:** an uneven starburst (warm for bullets, cool blue for the
   arc caster), plus a dynamic light so the walls flash.
-- **Hand:** one bare, skin-toned right hand (`SKIN` / `SKIN_DARK`;
-  `rightHand` in weapons.ts, attached by `attachHands` to the held model
-  only — pickups stay handless) closed on every grip, with a hazard sleeve
-  cuff and a bare two-segment forearm that thickens toward the elbow and
-  drops nearly straight down toward the camera. Build the hand for the
-  camera: it sits behind, left of and above the gun, so the back of the
-  hand, the fingers on the near (-x) side and across the front, and the
-  thumb along the slide are what read — a palm block behind the grip just
-  looks like a cube floating behind it. Owner calls, in order: **no sleeved forearm
-  bar** (an olive sleeve lying across the frame read as a "green stick";
-  the bare arm angled down toward the camera is fine), **no Doom-style
-  angled pose** (sampled, straight-on
-  hold preferred; the `POSES` hook stays empty), **no trigger finger** (it
-  was hidden behind the gun anyway), **skin instead of gloves**, and **no
-  left hand** — every gun, including the scattergun and thumper, is held
-  one-handed. The view model rides at
-  `VM_Y = -0.21` (was −0.34) so the grips sit inside the frame.
+- **No hands.** The gun floats alone, Doom-style. Hands were built and
+  reviewed in several forms — gloved and bare, one- and two-handed, with
+  forearms (an olive sleeve across the frame read as a "green stick"), a
+  Doom-style angled-in pose, a hand wrapping the grip — and the owner chose
+  to drop them entirely. Don't reintroduce them without asking.
 
 ## HUD and menus
 
