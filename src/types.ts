@@ -11,7 +11,8 @@ export type PickupKind =
   | 'ammoCells'
   | 'powerQuad' | 'powerShield' | 'powerHaste';
 
-export type EnemyKind = 'husk' | 'sentinel' | 'ticker' | 'brute';
+/** 'vatborn' is sector 4 preview only — levelgen never places it */
+export type EnemyKind = 'husk' | 'sentinel' | 'ticker' | 'brute' | 'vatborn';
 
 export type WeaponId = 'pistol' | 'shotgun' | 'smg' | 'rocket' | 'arc';
 

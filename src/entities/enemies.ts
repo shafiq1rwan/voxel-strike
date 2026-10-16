@@ -24,11 +24,19 @@ const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
   // arena pit boss: slow tank that telegraphs a wall-smashing charge; stunned
   // when it slams a wall, always drops a powerup on death
   brute: { hp: 170, speed: 2.3, halfX: 0.62, halfY: 1.05, painChance: 0.12, bloodColor: [0.85, 0.4, 0.1] },
+  // sector 4 preview: the escaped specimen (reference/sector4-monsters.md).
+  // Shambles, short rush, one heavy swing with a long recovery; green blood
+  vatborn: { hp: 55, speed: 3.4, halfX: 0.42, halfY: 0.9, painChance: 0.3, bloodColor: [0.55, 0.8, 0.3] },
 };
 
 const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'tickerAlert' | 'bruteRoar'> = {
-  husk: 'huskAlert', sentinel: 'sentinelAlert', ticker: 'tickerAlert', brute: 'bruteRoar',
+  husk: 'huskAlert', sentinel: 'sentinelAlert', ticker: 'tickerAlert', brute: 'bruteRoar', vatborn: 'bruteRoar',
 };
+
+/** husk-skeleton walkers: the jointed rig + husk gait/attack animation drive them */
+function humanoid(kind: EnemySpec['kind']): boolean {
+  return kind === 'husk' || kind === 'brute' || kind === 'vatborn';
+}
 
 function part(parent: THREE.Object3D, w: number, h: number, d: number, color: number, fullBright = false): THREE.Mesh {
   const mesh = new THREE.Mesh(
@@ -109,6 +117,7 @@ export class Enemy {
     if (spec.kind === 'husk') this.buildHusk();
     else if (spec.kind === 'ticker') this.buildTicker();
     else if (spec.kind === 'brute') this.buildBrute();
+    else if (spec.kind === 'vatborn') this.buildVatborn();
     else this.buildSentinel();
     this.mesh.position.copy(this.pos);
     if (startPatrolling) this.state = 'patrol';
@@ -248,6 +257,99 @@ export class Enemy {
     this.armRG = mkArm(1);
   }
 
+  private buildVatborn(): void {
+    // Pale gray-beige hunched adult with olive tank stains, a narrow amber
+    // eye, a dark chest restraint with a green mark, one oversized right
+    // forearm with broken wrist hardware and a thin left arm. Same jointed
+    // skeleton as the husk so its gait/attack animation applies.
+    const PALE = 0xc9c2ae, PALE_DARK = 0xa9a38f, STAIN = 0x7d8a52, BAND = 0x2f3338;
+    const mkLeg = (side: number): THREE.Group => {
+      const g = new THREE.Group();
+      g.position.set(0.2 * side, -0.22, 0);
+      const thigh = part(g, 0.22, 0.38, 0.24, PALE);
+      thigh.position.y = -0.17;
+      const stain = part(g, 0.23, 0.14, 0.25, STAIN);
+      stain.position.set(0, -0.3, 0);
+      const shin = part(g, 0.18, 0.32, 0.2, PALE_DARK);
+      shin.position.set(0, -0.5, -0.02);
+      const foot = part(g, 0.22, 0.12, 0.3, BAND);
+      foot.position.set(0, -0.68, -0.06);
+      this.body.add(g);
+      return g;
+    };
+    this.legLG = mkLeg(-1);
+    this.legRG = mkLeg(1);
+
+    this.torsoG = new THREE.Group();
+    this.torsoG.position.y = -0.1;
+    this.body.add(this.torsoG);
+    const torso = part(this.torsoG, 0.66, 0.6, 0.44, PALE);
+    torso.position.y = 0.36;
+    torso.rotation.x = 0.2;
+    const belly = part(this.torsoG, 0.5, 0.26, 0.36, PALE_DARK);
+    belly.position.y = 0.02;
+    // tank stains: one shoulder and the back
+    const shoulderStain = part(this.torsoG, 0.3, 0.2, 0.3, STAIN);
+    shoulderStain.position.set(-0.22, 0.6, 0.02);
+    const backStain = part(this.torsoG, 0.4, 0.3, 0.1, STAIN);
+    backStain.position.set(0.08, 0.4, 0.2);
+    // chest restraint band with the green specimen mark
+    const band = part(this.torsoG, 0.68, 0.18, 0.46, BAND);
+    band.position.set(0, 0.3, 0);
+    band.rotation.x = 0.2;
+    const mark = part(this.torsoG, 0.14, 0.12, 0.03, 0x7ee04a, true);
+    mark.position.set(0, 0.3, -0.24);
+    this.glowParts.push(mark);
+
+    // head: a blunt pale block, dark visor slit with the amber eye
+    this.headG = new THREE.Group();
+    this.headG.position.set(0, 0.7, -0.2);
+    this.torsoG.add(this.headG);
+    const skull = part(this.headG, 0.42, 0.34, 0.4, PALE);
+    skull.position.y = 0.1;
+    const visor = part(this.headG, 0.36, 0.12, 0.05, BAND);
+    visor.position.set(0, 0.1, -0.215);
+    const eye = part(this.headG, 0.2, 0.05, 0.03, 0xffa030, true);
+    eye.position.set(0.03, 0.1, -0.245);
+    this.glowParts.push(eye);
+    this.jaw = part(this.headG, 0.3, 0.08, 0.3, PALE_DARK);
+    this.jaw.position.set(0, -0.08, -0.06);
+
+    // arms: the right forearm is the weapon; the left stays thin
+    const mkArm = (side: number, heavy: boolean): THREE.Group => {
+      const g = new THREE.Group();
+      g.position.set(0.42 * side, 0.56, -0.02);
+      const upper = part(g, heavy ? 0.26 : 0.16, 0.4, heavy ? 0.26 : 0.16, PALE);
+      upper.position.y = -0.2;
+      if (heavy) {
+        const cuff = part(g, 0.3, 0.1, 0.3, BAND);
+        cuff.position.y = -0.42;
+        const fore = part(g, 0.36, 0.56, 0.36, PALE);
+        fore.position.set(0, -0.74, -0.04);
+        const foreStain = part(g, 0.37, 0.2, 0.37, STAIN);
+        foreStain.position.set(0, -0.6, -0.04);
+        // broken wrist hardware: a dark shackle with a grey bracket sticking out
+        const shackle = part(g, 0.4, 0.12, 0.4, BAND);
+        shackle.position.set(0, -0.98, -0.04);
+        const bracket = part(g, 0.14, 0.1, 0.14, 0x6a7280);
+        bracket.position.set(0.24 * side, -0.98, -0.1);
+        const fist = part(g, 0.32, 0.22, 0.3, PALE_DARK);
+        fist.position.set(0, -1.14, -0.06);
+      } else {
+        const fore = part(g, 0.14, 0.36, 0.14, PALE_DARK);
+        fore.position.set(0, -0.56, -0.05);
+        fore.rotation.x = -0.2;
+        const hand = part(g, 0.16, 0.14, 0.16, PALE_DARK);
+        hand.position.set(0, -0.78, -0.1);
+      }
+      this.torsoG!.add(g);
+      return g;
+    };
+    // the model faces -z, so its right side is -x
+    this.armRG = mkArm(-1, true);
+    this.armLG = mkArm(1, false);
+  }
+
   private buildTicker(): void {
     // squat hazard-striped shell over a glowing amber core, six skittering legs
     const shell = part(this.body, 0.44, 0.24, 0.5, 0xe2ad32);
@@ -353,7 +455,7 @@ export class Enemy {
     this.vel.z += dz * kb;
     if (Math.random() < this.tuning.painChance) {
       this.setState('pain');
-      game.audio.play(this.kind === 'husk' || this.kind === 'brute' ? 'enemyPainA' : 'enemyPainB', this.pos);
+      game.audio.play(humanoid(this.kind) ? 'enemyPainA' : 'enemyPainB', this.pos);
     }
     // the headshot flag only describes THIS hit — don't let it linger so a
     // later barrel kill counts as a headshot
@@ -362,7 +464,7 @@ export class Enemy {
 
   private die(game: Game): void {
     this.setState('dead');
-    game.audio.play(this.kind === 'husk' || this.kind === 'brute' ? 'enemyDieA' : 'enemyDieB', this.pos);
+    game.audio.play(humanoid(this.kind) ? 'enemyDieA' : 'enemyDieB', this.pos);
     // tickers are walking bombs: death always detonates them (short fuse so a
     // sniped ticker still chains into barrels and packmates).
     // Co-op clients skip the gameplay side effects — the host owns those.
@@ -717,6 +819,27 @@ export class Enemy {
         return;
       }
       this.steer(nx, nz, this.tuning.speed);
+    } else if (this.kind === 'vatborn') {
+      this.growlCd -= dt;
+      if (this.growlCd <= 0) {
+        this.growlCd = 3 + Math.random() * 3;
+        game.audio.play('huskGrowl', this.pos);
+      }
+      if (dist < 1.7 && this.attackCooldown === 0) {
+        this.setState('attack');
+        this.beepCount = 0; // reused: "restraint clank played" flag
+        return;
+      }
+      // short forward rush once it has had a look at you: movement only,
+      // no hop, no contact damage; then it slows back to a shamble
+      if (dist > 2.5 && dist < 6 && this.lungeCooldown === 0 && this.stateTime > 0.8 && Math.random() < dt * 0.9) {
+        this.vel.x = nx * this.tuning.speed * 2.4;
+        this.vel.z = nz * this.tuning.speed * 2.4;
+        this.lungeCooldown = 2.6;
+        game.audio.play('bruteStep', this.pos);
+        return;
+      }
+      this.steer(nx, nz, this.tuning.speed);
     } else if (this.kind === 'ticker') {
       // flat-out sprint with a nervous jitter; arm the charge on contact
       if (dist < 1.8) {
@@ -814,7 +937,25 @@ export class Enemy {
     const pl = this.tgt ?? game.player;
     this.vel.x *= 0.8;
     this.vel.z *= 0.8;
-    if (this.kind === 'husk' || this.kind === 'brute') {
+    if (this.kind === 'vatborn') {
+      // plant feet, restraint clank, 0.65s windup with locked facing, one
+      // heavy swing (range + LOS checked at impact), then a long recovery
+      if (this.beepCount === 0) {
+        this.beepCount = 1;
+        game.audio.play('clank', this.pos);
+      }
+      if (this.stateTime > 0.65 && this.attackCooldown === 0) {
+        this.attackCooldown = 1.9;
+        if (dist < 2.0 && !pl.dead && game.hasLOS(this.pos.x, this.pos.y + 0.2, this.pos.z, pl.pos.x, pl.pos.y, pl.pos.z)) {
+          pl.damage(16, game, { x: this.pos.x, z: this.pos.z });
+          const d = Math.max(0.3, dist);
+          pl.vel.x += (toPlayer.x / d) * 5;
+          pl.vel.z += (toPlayer.z / d) * 5;
+          game.audio.play('bruteSlam', this.pos);
+        }
+      }
+      if (this.stateTime > 0.65 + 1.1) this.setState('chase');
+    } else if (this.kind === 'husk' || this.kind === 'brute') {
       // windup then strike — must not reach through doors or walls
       const brute = this.kind === 'brute';
       if (this.stateTime > (brute ? 0.45 : 0.32) && this.attackCooldown === 0) {
@@ -878,7 +1019,7 @@ export class Enemy {
   private animate(dt: number, game: Game): void {
     const speed = Math.hypot(this.vel.x, this.vel.z);
     this.animPhase += dt * 2;
-    if (this.kind === 'husk' || this.kind === 'brute') {
+    if (humanoid(this.kind)) {
       this.animateHusk(dt, speed, game);
     } else if (this.kind === 'ticker') {
       this.animateTicker(speed, game);
@@ -934,13 +1075,16 @@ export class Enemy {
     const roll = Math.sin(g) * 0.06 * speedF;
 
     if (this.state === 'attack') {
-      // telegraph: both claws rise, then the slash lands with the damage frame
+      // telegraph: claws rise, then the strike lands with the damage frame.
+      // The vatborn winds up longer and swings only its heavy right arm.
+      const vat = this.kind === 'vatborn';
       const t = this.stateTime;
-      const windup = Math.min(1, t / 0.3);
-      const slash = t > 0.32 ? Math.min(1, (t - 0.32) / 0.12) : 0;
+      const windup = Math.min(1, t / (vat ? 0.62 : 0.3));
+      const strikeAt = vat ? 0.65 : 0.32;
+      const slash = t > strikeAt ? Math.min(1, (t - strikeAt) / 0.12) : 0;
       const armX = -0.5 - windup * 1.5 + slash * 2.1;
-      this.armLG!.rotation.x = armX;
-      this.armRG!.rotation.x = armX + 0.18;
+      this.armLG!.rotation.x = vat ? -0.3 : armX;
+      this.armRG!.rotation.x = armX + (vat ? 0.4 : 0.18);
       this.armLG!.rotation.z = 0.25 - slash * 0.35;
       this.armRG!.rotation.z = -0.25 + slash * 0.35;
       lean += slash * 0.35 - windup * 0.15;
@@ -981,8 +1125,8 @@ export class Enemy {
 
     // footfalls: chitin clicks for husks, ground-shaking thuds for brutes
     const stride = Math.sin(g);
-    if (speed > (this.kind === 'brute' ? 0.9 : 1.6) && this.lastStride <= 0 !== stride <= 0) {
-      game.audio.play(this.kind === 'brute' ? 'bruteStep' : 'huskStep', this.pos);
+    if (speed > (this.kind === 'husk' ? 1.6 : 0.9) && this.lastStride <= 0 !== stride <= 0) {
+      game.audio.play(this.kind === 'husk' ? 'huskStep' : 'bruteStep', this.pos);
     }
     this.lastStride = stride;
   }

@@ -150,7 +150,11 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   detonate on death via `queueExplosion` — even sniped at range; brutes share
   the husk rig/gait at heavier proportions, telegraph a 4.2× charge that
   smashes destructibles in its path, get stunned 1.3s on a wall slam via
-  `stunTime`, and always drop a powerup; deaths burst into per-part gibs),
+  `stunTime`, and always drop a powerup; deaths burst into per-part gibs;
+  `vatborn` is the sector 4 preview's escaped specimen — husk skeleton via
+  `humanoid()`, 0.65s heavy-swing windup + 1.1s recovery, short rush, never
+  placed by levelgen; its tank-breach sequence from
+  `reference/sector4-monsters.md` is NOT built yet),
   doors/elevator (door.ts: the lift is a `group` — hazard-striped deck with
   an UP-arrow top + an additive chevron beam up the shaft while it waits at
   the bottom; `ExitBeacon` is the same beam in green over the exit pad, lit

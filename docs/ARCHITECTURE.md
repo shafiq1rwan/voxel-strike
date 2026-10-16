@@ -172,6 +172,7 @@ build is also a PWA (`public/manifest.webmanifest` + network-first
 | Add a block | `world/blocks.ts` — the enums and tables must stay in sync, and ids are append-only |
 | Level layout rules | `world/levelgen.ts` (keep the BFS validation passing) |
 | Enemy behaviour | `entities/enemies.ts` |
+| Add an enemy kind | `EnemyKind` in `types.ts`; `TUNING`, `ALERT_SOUND`, a `buildX()` rig and `doChase`/`doAttack` branches in `enemies.ts` (reuse the husk skeleton + `humanoid()` to get the gait/attack animation for free); the headshot check in `weapons.ts`; kill points in `game.ts`. Keep preview-only kinds out of `levelgen.ts` |
 | HUD / screens | `ui/hud.ts` ([UI_SPEC.md](UI_SPEC.md)) |
 | Touch controls | `core/touch.ts` + the touch CSS in `ui/hud.ts` |
 | A Poki event | `poki.measure()` + a row in POKI.md + an assert in `scripts/poki.mjs` |

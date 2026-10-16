@@ -709,7 +709,7 @@ export class WeaponSystem {
       const e = eHit.enemy;
       const hitY = origin.y + dir.y * t;
       // headshot: creatures with heads take double damage in the top slice
-      const headshot = (e.kind === 'husk' || e.kind === 'brute') && hitY > e.pos.y + e.half.y * 0.45;
+      const headshot = (e.kind === 'husk' || e.kind === 'brute' || e.kind === 'vatborn') && hitY > e.pos.y + e.half.y * 0.45;
       game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, origin.x + dir.x * t, hitY, origin.z + dir.z * t);
       if (headshot) {
         game.audio.play('headshot', e.pos);

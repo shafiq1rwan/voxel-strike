@@ -117,6 +117,9 @@ function generate(seed: number): LevelData {
   item('armorVest', 13, 43); item('ammoRockets', 14, 43); item('powerShield', 37, 15);
   const enemies: EnemySpec[] = [];
   const enemy = (kind: EnemySpec['kind'], x: number, z: number, roomId: number): void => { enemies.push({ kind, x: x + 0.5, z: z + 0.5, roomId }); };
+  // Vatborn stand loose beside the breached tank (the dormant-in-tank breach
+  // sequence from reference/sector4-monsters.md is not built yet)
+  enemy('vatborn', 29, 48, 1); enemy('vatborn', 31, 44, 1);
   enemy('husk', 34, 37, 1); enemy('sentinel', 46, 41, 1); enemy('ticker', 41, 46, 1);
   enemy('husk', 11, 36, 2); enemy('ticker', 13, 41, 2);
   enemy('sentinel', 66, 36, 3); enemy('husk', 63, 43, 3);

@@ -90,6 +90,7 @@ one glowing tell:
 | Arc Sentinel | Hovering teal drone with rotating fins; glows brighter as it charges |
 | Ticker | Squat, hazard-striped, amber core that beeps faster before it blows |
 | Brute | Bone-plated wall of meat with tusks; the arena boss |
+| Vatborn *(sector 4 preview only)* | Pale gray-beige hunched specimen with olive tank stains, a narrow amber eye slit, a dark chest restraint with a green mark, one oversized right forearm wearing a broken shackle, a thin left arm. Reference: `reference/sector4-vatborn.png` |
 
 Hits must read on the same frame: white-hot flash, a jolt and scale pop,
 a thwack sound, knockback.
