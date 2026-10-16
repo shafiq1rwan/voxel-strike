@@ -338,35 +338,41 @@ const POSES: Partial<Record<WeaponId, { pos: [number, number, number]; rot: [num
 const SKIN = 0xd49a72;
 const SKIN_DARK = 0xb57c57;
 
-/** right hand closed around a vertical grip centred on the group origin */
+/**
+ * Right hand closed around a vertical grip centred on the group origin.
+ * The camera sits behind, left of and above the gun, so what has to read is
+ * the back of the hand (+z), the fingers wrapping the near (-x) side and
+ * curling across the front, and the thumb lying along the slide.
+ */
 function rightHand(): THREE.Group {
   const h = new THREE.Group();
-  vmPart(h, 0.09, 0.13, 0.055, SKIN, 0.012, -0.01, 0.078); // palm behind the grip
-  for (const y of [0.028, -0.006, -0.04]) {
-    vmPart(h, 0.09, 0.028, 0.028, SKIN_DARK, 0.004, y, -0.054); // fingers across the front
-    vmPart(h, 0.028, 0.028, 0.06, SKIN_DARK, -0.055, y, -0.028); // curling round the far side
+  vmPart(h, 0.1, 0.13, 0.06, SKIN, 0.01, -0.01, 0.075); // back of the hand
+  vmPart(h, 0.05, 0.13, 0.05, SKIN, 0.055, -0.01, 0.03); // heel of the palm, far side
+  for (const y of [0.035, 0.0, -0.035]) {
+    vmPart(h, 0.034, 0.03, 0.12, SKIN_DARK, -0.058, y, 0.015); // fingers down the near side
+    vmPart(h, 0.1, 0.03, 0.034, SKIN_DARK, -0.01, y, -0.055); // curling across the front
   }
-  vmPart(h, 0.028, 0.062, 0.03, SKIN, -0.052, 0.04, 0.04, { rz: 0.35 }); // thumb
-  forearm(h, 0.03, -0.07, 0.1, 1);
+  vmPart(h, 0.034, 0.034, 0.1, SKIN, -0.045, 0.062, 0.0); // thumb along the slide
+  forearm(h, 0.02, -0.085, 0.08, 1);
   return h;
 }
 
 /**
  * Bare forearm: hazard cuff at the wrist, then two skin segments that
- * thicken toward the elbow and drop away toward the camera, so the arm
- * leaves the frame at the bottom instead of lying across it as a bar.
+ * thicken toward the elbow and drop toward the camera, nearly straight down
+ * so the arm leaves the frame at the bottom instead of running off sideways.
  */
 function forearm(h: THREE.Group, x: number, y: number, z: number, side: number): void {
-  vmPart(h, 0.1, 0.032, 0.09, HAZARD, x, y, z, { outline: false }); // cuff
-  vmPart(h, 0.085, 0.08, 0.17, SKIN, x + side * 0.02, y - 0.055, z + 0.1, { rx: 0.5, ry: -side * 0.15 });
-  vmPart(h, 0.1, 0.095, 0.24, SKIN, x + side * 0.065, y - 0.17, z + 0.25, { rx: 0.62, ry: -side * 0.3 });
+  vmPart(h, 0.11, 0.034, 0.1, HAZARD, x, y, z, { outline: false }); // cuff
+  vmPart(h, 0.09, 0.085, 0.18, SKIN, x + side * 0.01, y - 0.085, z + 0.06, { rx: 0.95 });
+  vmPart(h, 0.105, 0.1, 0.24, SKIN, x + side * 0.03, y - 0.26, z + 0.12, { rx: 1.1, ry: -side * 0.1 });
 }
 
 /** places the right hand on a built gun's grip */
 function attachHands(id: WeaponId, m: WeaponModel): void {
   const hand = rightHand();
   const at: Record<WeaponId, [number, number, number, number]> = {
-    pistol: [0, -0.135, 0.065, 0.25],
+    pistol: [0, -0.125, 0.065, 0.25],
     shotgun: [0, -0.13, 0.11, 0.15],
     smg: [0, -0.145, 0.105, 0.25],
     rocket: [0, -0.15, 0.005, 0.2],

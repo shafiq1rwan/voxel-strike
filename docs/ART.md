@@ -122,7 +122,11 @@ there and both update.
   `rightHand` in weapons.ts, attached by `attachHands` to the held model
   only — pickups stay handless) closed on every grip, with a hazard sleeve
   cuff and a bare two-segment forearm that thickens toward the elbow and
-  drops toward the camera. Owner calls, in order: **no sleeved forearm
+  drops nearly straight down toward the camera. Build the hand for the
+  camera: it sits behind, left of and above the gun, so the back of the
+  hand, the fingers on the near (-x) side and across the front, and the
+  thumb along the slide are what read — a palm block behind the grip just
+  looks like a cube floating behind it. Owner calls, in order: **no sleeved forearm
   bar** (an olive sleeve lying across the frame read as a "green stick";
   the bare arm angled down toward the camera is fine), **no Doom-style
   angled pose** (sampled, straight-on
