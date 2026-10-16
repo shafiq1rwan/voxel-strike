@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { LevelPreview } from '../game';
+import type { Game, LevelPreview, PreviewArt } from '../game';
 import type { LevelData } from '../world/levelgen';
 import { Block } from '../world/blocks';
 import { VoxelWorld } from '../world/world';
@@ -13,6 +13,13 @@ import type { RoomDef, PickupSpec, EnemySpec } from '../types';
  * orange nodes, and slime on the tiles. Collision stays ordinary voxels; the
  * atlas has a dedicated Lab* block set (append-only); everything softer is
  * instanced boxes from decorate().
+ *
+ * Occupied tanks hold a dormant Vatborn (reference/sector4-monsters.md):
+ * shooting the tank or loud gunfire nearby starts a 1.2s agitation (knocks,
+ * blinking status light, the specimen stirring), then the front pane
+ * breaches — the front glass voxels become air — the liquid drains, and after
+ * 0.8s the Vatborn steps onto a verified clear tile in front. Each tank
+ * releases once; at most two tanks breach at a time.
  */
 
 const ROOMS: Array<[string, number, number, number, number, RoomDef['kind'], number]> = [
@@ -26,12 +33,12 @@ const ROOMS: Array<[string, number, number, number, number, RoomDef['kind'], num
 ];
 const CORRIDORS = [[37, 52, 2, 6], [18, 39, 6, 2], [52, 39, 6, 2], [65, 24, 2, 8], [37, 24, 2, 8], [50, 15, 6, 2], [18, 15, 6, 2]];
 
-/** specimen tanks: 3 (x) × 2 (z) footprint, glass y=2..4 on a metal base; [x, z, broken] */
-const TANKS: Array<[number, number, boolean]> = [
-  [24, 46, true], [24, 40, false], [24, 34, false], [49, 46, false], [49, 40, false], [49, 34, false],
-  [59, 35, false], [71, 42, false],
-  [57, 12, false],
-  [27, 8, false], [45, 8, false],
+/** specimen tanks: 3 (x) × 2 (z) footprint, glass y=2..4 on a metal base; [x, z, broken, occupied] */
+const TANKS: Array<[number, number, boolean, boolean]> = [
+  [24, 46, true, false], [24, 40, false, true], [24, 34, false, false], [49, 46, false, false], [49, 40, false, false], [49, 34, false, true],
+  [59, 35, false, false], [71, 42, false, true],
+  [57, 12, false, true],
+  [27, 8, false, false], [45, 8, false, false],
 ];
 const TANK_W = 3;
 const TANK_D = 2;
@@ -41,6 +48,13 @@ const PILLARS = [[30, 38], [44, 38], [30, 46], [44, 46], [30, 12], [43, 12]];
 const GROWN: Array<[number, number, number, number]> = [[30, 38, 1, 0], [44, 46, -1, 0], [30, 12, 1, 0], [43, 12, -1, 0]];
 /** purple emergency-light wash instead of the campaign's near-black ambient */
 const AMBIENT: [number, number, number] = [36, 26, 52];
+
+// breach timings from the monster notes
+const AGITATE_S = 1.2;
+const STEP_OUT_S = 0.8;
+const MAX_BREACHING = 2;
+/** gunfire this close counts as "nearby loud combat" for a dormant tank */
+const NOISE_RANGE = 9;
 
 function generate(seed: number): LevelData {
   const world = new VoxelWorld(80, 14, 80);
@@ -117,14 +131,14 @@ function generate(seed: number): LevelData {
   item('armorVest', 13, 43); item('ammoRockets', 14, 43); item('powerShield', 37, 15);
   const enemies: EnemySpec[] = [];
   const enemy = (kind: EnemySpec['kind'], x: number, z: number, roomId: number): void => { enemies.push({ kind, x: x + 0.5, z: z + 0.5, roomId }); };
-  // Vatborn stand loose beside the breached tank (the dormant-in-tank breach
-  // sequence from reference/sector4-monsters.md is not built yet)
-  enemy('vatborn', 29, 48, 1); enemy('vatborn', 31, 44, 1);
   enemy('husk', 34, 37, 1); enemy('sentinel', 46, 41, 1); enemy('ticker', 41, 46, 1);
   enemy('husk', 11, 36, 2); enemy('ticker', 13, 41, 2);
   enemy('sentinel', 66, 36, 3); enemy('husk', 63, 43, 3);
   enemy('sentinel', 66, 18, 4); enemy('husk', 60, 14, 4);
   enemy('brute', 37, 13, 5); enemy('husk', 33, 19, 5); enemy('sentinel', 46, 17, 5);
+  // the Vatborn in the occupied tanks are preallocated: they count toward the
+  // roster now and spawn from decorate()'s breach sequence later
+  const occupied = TANKS.filter((t) => t[3]).length;
 
   world.bakeLighting(AMBIENT);
   return {
@@ -132,7 +146,7 @@ function generate(seed: number): LevelData {
     doors: [{ x: 20, z: 15, dir: 'x', locked: 'red' }, { x: 37, z: 55, dir: 'z', locked: null }, { x: 65, z: 27, dir: 'z', locked: null }],
     spawn: { x: 38, y: 2.05, z: 64 },
     elevator: { x: 9, z: 10, lowY: 1, highY: 4 },
-    exitPad: { x: 10, y: 4, z: 9 }, secretRect: null, totalEnemies: enemies.length, totalSecrets: 0,
+    exitPad: { x: 10, y: 4, z: 9 }, secretRect: null, totalEnemies: enemies.length + occupied, totalSecrets: 0,
   };
 }
 
@@ -150,15 +164,20 @@ const SLIME = 0x7fd42a;
 const SLIME_LIGHT = 0xa8f04a;
 const FRAME = 0x2c3540;
 const FRAME_LIGHT = 0x4b5663;
-
 const GLASS = 0x9af07a;
 const LIQUID = 0x62cc3c;
 const LIQUID_TOP = 0xc8ff9a;
 // near-black with a hint of green: it must read as a silhouette through
 // two tinted layers of liquid and glass
 const DUMMY = [0x0a1610, 0x0e1c14, 0x07110c];
+const STATUS = 0xffa030;
 
 interface Inst { x: number; y: number; z: number; w: number; h: number; d: number; ry: number; rz: number }
+
+/** raw palette value: the renderer outputs linear, so a plain hex would be sRGB-decoded and render near-black */
+function raw(hex: number): THREE.Color {
+  return new THREE.Color().setHex(hex, THREE.LinearSRGBColorSpace);
+}
 
 function shadedBox(): THREE.BoxGeometry {
   const geo = new THREE.BoxGeometry(1, 1, 1);
@@ -169,7 +188,29 @@ function shadedBox(): THREE.BoxGeometry {
   return geo;
 }
 
-function decorate(level: LevelData): ReturnType<LevelPreview['decorate']> {
+type TankPhase = 'dormant' | 'agitated' | 'breaching' | 'released' | 'empty';
+
+/** a live occupied tank: its own meshes (so they can change) + the breach state machine */
+interface OccupiedTank {
+  x: number; z: number;
+  /** which side faces the room: +1 = the +x face, -1 = the -x face */
+  side: number;
+  /** reserved standing spot in front of the pane */
+  exitX: number; exitZ: number;
+  roomId: number;
+  phase: TankPhase;
+  t: number;
+  knocks: number;
+  group: THREE.Group;
+  dummy: THREE.Group;
+  dummyRestY: number;
+  liquid: THREE.Mesh;
+  surface: THREE.Mesh;
+  front: THREE.Mesh;
+  light: THREE.Mesh;
+}
+
+function decorate(level: LevelData): PreviewArt {
   const group = new THREE.Group();
   group.name = 'biofoundry-preview-art';
   const world = level.world;
@@ -204,18 +245,34 @@ function decorate(level: LevelData): ReturnType<LevelPreview['decorate']> {
     }
   };
 
+  // ---- per-tank meshes (occupied tanks only; the rest are instanced) ------
+  const shaded = shadedBox();
+  const flat = new THREE.BoxGeometry(1, 1, 1);
+  const materials: THREE.Material[] = [];
+  const textures: THREE.Texture[] = [];
+  const mesh = (color: number, w: number, h: number, d: number, opts: { flat?: boolean; alpha?: number } = {}): THREE.Mesh => {
+    const alpha = opts.alpha ?? 1;
+    const mat = new THREE.MeshBasicMaterial({
+      color: raw(color), vertexColors: !opts.flat, fog: true,
+      transparent: alpha < 1, opacity: alpha, depthWrite: alpha >= 1,
+    });
+    materials.push(mat);
+    const m = new THREE.Mesh(opts.flat ? flat : shaded, mat);
+    m.scale.set(w, h, d);
+    if (alpha < 1) m.renderOrder = color === GLASS ? 2 : 1;
+    return m;
+  };
+
   // ---- specimen tanks -----------------------------------------------------
   // The TankGlass voxels are never meshed, so the tank's interior is open:
   // a translucent liquid fill with one surface line, a glass shell around it,
   // and a voxel dummy floating inside (drawn opaque, so it shows through).
-  const dummy = (cx: number, cy: number, cz: number, ry: number, lean: number): void => {
+  const dummyParts = (facing: number, lean: number, add: (color: number, x: number, y: number, z: number, w: number, h: number, d: number, ry: number, rz: number) => void): void => {
     const c = (i: number): number => DUMMY[i % DUMMY.length];
     const part = (dx: number, dy: number, dz: number, w: number, h: number, d: number, i: number, rz = 0): void => {
-      // rotate the part's offset around the dummy's own axis so the whole
-      // figure turns as one, then lean it back a little
-      const rx = dx * Math.cos(ry) - dz * Math.sin(ry);
-      const rz2 = dx * Math.sin(ry) + dz * Math.cos(ry);
-      cube(c(i), cx + rx, cy + dy, cz + rz2, w, h, d, { ry, rz: rz + lean });
+      const rx = dx * Math.cos(facing) - dz * Math.sin(facing);
+      const rz2 = dx * Math.sin(facing) + dz * Math.cos(facing);
+      add(c(i), rx, dy, rz2, w, h, d, facing, rz + lean);
     };
     part(0, 1.05, 0, 0.4, 0.42, 0.4, 0); // head
     part(0, 0.35, 0, 0.62, 0.9, 0.36, 1); // torso
@@ -225,7 +282,8 @@ function decorate(level: LevelData): ReturnType<LevelPreview['decorate']> {
     part(-0.16, -0.85, 0.05, 0.24, 0.85, 0.24, 1); // legs
     part(0.18, -0.85, -0.05, 0.24, 0.85, 0.24, 2, 0.1);
   };
-  for (const [x, z, broken] of TANKS) {
+  const tanks: OccupiedTank[] = [];
+  for (const [x, z, broken, occupied] of TANKS) {
     const cx = x + TANK_W / 2, cz = z + TANK_D / 2;
     // dark base and cap slabs with a lit lip, four corner posts
     cube(FRAME, cx, 1.52, cz, TANK_W + 0.3, 1.05, TANK_D + 0.3);
@@ -235,24 +293,69 @@ function decorate(level: LevelData): ReturnType<LevelPreview['decorate']> {
     for (const px of [x, x + TANK_W]) for (const pz of [z, z + TANK_D]) cube(FRAME, px, 3.5, pz, 0.2, 5.1, 0.2);
     // the tank floor, seen through the liquid
     cube(FRAME_LIGHT, cx, 2.03, cz, TANK_W - 0.1, 0.06, TANK_D - 0.1);
-    // liquid: full to just under the cap, half-drained in the broken tank
-    const level = broken ? 3.55 : 4.72;
-    cube(LIQUID, cx, (2.05 + level) / 2, cz, TANK_W - 0.06, level - 2.05, TANK_D - 0.06, { flat: true, alpha: 0.36 });
-    cube(LIQUID_TOP, cx, level, cz, TANK_W - 0.06, 0.05, TANK_D - 0.06, { flat: true, alpha: 0.8 });
-    // the specimen, floating a little off-centre, turned to face the room
-    const facing = airAt(x - 1, 3, z) ? Math.PI / 2 : airAt(x + TANK_W, 3, z) ? -Math.PI / 2 : 0;
-    dummy(cx + (rng.next() - 0.5) * 0.4, (broken ? 2.95 : 3.5) + rng.next() * 0.2, cz, facing + (rng.next() - 0.5) * 0.5, 0.12);
-    // bubbles
-    for (let i = 0; i < 7; i++) {
-      const s = 0.06 + rng.next() * 0.08;
-      cube(LIQUID_TOP, x + 0.3 + rng.next() * (TANK_W - 0.6), 2.3 + rng.next() * (level - 2.5), z + 0.3 + rng.next() * (TANK_D - 0.6), s, s, s, { flat: true, alpha: 0.9 });
+    // which side faces the room
+    const side = airAt(x + TANK_W, 3, z) ? 1 : airAt(x - 1, 3, z) ? -1 : 0;
+    const facing = side === 1 ? -Math.PI / 2 : side === -1 ? Math.PI / 2 : 0;
+    const level0 = broken ? 3.55 : 4.72;
+
+    if (!occupied) {
+      cube(LIQUID, cx, (2.05 + level0) / 2, cz, TANK_W - 0.06, level0 - 2.05, TANK_D - 0.06, { flat: true, alpha: 0.36 });
+      cube(LIQUID_TOP, cx, level0, cz, TANK_W - 0.06, 0.05, TANK_D - 0.06, { flat: true, alpha: 0.8 });
+      const dx = (rng.next() - 0.5) * 0.4, dy = (broken ? 2.95 : 3.5) + rng.next() * 0.2, ry = facing + (rng.next() - 0.5) * 0.5;
+      dummyParts(ry, 0.12, (color, px, py, pz, w, h, d, ry2, rz) => cube(color, cx + dx + px, dy + py, cz + pz, w, h, d, { ry: ry2, rz }));
+      for (let i = 0; i < 7; i++) {
+        const s = 0.06 + rng.next() * 0.08;
+        cube(LIQUID_TOP, x + 0.3 + rng.next() * (TANK_W - 0.6), 2.3 + rng.next() * (level0 - 2.5), z + 0.3 + rng.next() * (TANK_D - 0.6), s, s, s, { flat: true, alpha: 0.9 });
+      }
+      cube(GLASS, cx, 3.5, cz, TANK_W + 0.08, 3.02, TANK_D + 0.08, { flat: true, alpha: 0.16 });
+    } else {
+      // live tank: separate meshes so the sequence can change them
+      const g = new THREE.Group();
+      group.add(g);
+      const liquid = mesh(LIQUID, TANK_W - 0.06, level0 - 2.05, TANK_D - 0.06, { flat: true, alpha: 0.36 });
+      liquid.position.set(cx, (2.05 + level0) / 2, cz);
+      const surface = mesh(LIQUID_TOP, TANK_W - 0.06, 0.05, TANK_D - 0.06, { flat: true, alpha: 0.8 });
+      surface.position.set(cx, level0, cz);
+      const dummy = new THREE.Group();
+      dummy.position.set(cx + (rng.next() - 0.5) * 0.3, 3.5, cz);
+      dummyParts(facing, 0.12, (color, px, py, pz, w, h, d, ry, rz) => {
+        const m = mesh(color, w, h, d);
+        m.position.set(px, py, pz);
+        m.rotation.set(0, ry, rz);
+        dummy.add(m);
+      });
+      // glass as five panes so the front one can go
+      const panes: THREE.Mesh[] = [];
+      const pane = (w: number, h: number, d: number, px: number, py: number, pz: number): THREE.Mesh => {
+        const m = mesh(GLASS, w, h, d, { flat: true, alpha: 0.16 });
+        m.position.set(px, py, pz);
+        panes.push(m);
+        return m;
+      };
+      const W = TANK_W + 0.08, D = TANK_D + 0.08;
+      const xFace = pane(0.03, 3.02, D, x + TANK_W + 0.04, 3.5, cz);
+      const xBack = pane(0.03, 3.02, D, x - 0.04, 3.5, cz);
+      pane(W, 3.02, 0.03, cx, 3.5, z - 0.04);
+      pane(W, 3.02, 0.03, cx, 3.5, z + TANK_D + 0.04);
+      pane(W, 0.03, D, cx, 5.01, cz);
+      const front = side === -1 ? xBack : xFace;
+      // amber status light on the cap, room side: occupied tanks are marked
+      const light = mesh(STATUS, 0.14, 0.14, 0.06, { flat: true });
+      light.position.set(side === -1 ? x - 0.18 : x + TANK_W + 0.18, 5.45, cz);
+      light.rotation.y = Math.PI / 2;
+      g.add(liquid, surface, dummy, light, ...panes);
+      // reserved standing spot: 1.5 tiles out from the pane
+      const exitX = side === -1 ? x - 1.5 : x + TANK_W + 1.5;
+      const room = level.rooms.find((r) => exitX >= r.x && exitX < r.x + r.w && cz >= r.z && cz < r.z + r.d);
+      tanks.push({
+        x, z, side, exitX, exitZ: cz, roomId: room?.id ?? 1, phase: 'dormant', t: 0, knocks: 0,
+        group: g, dummy, dummyRestY: dummy.position.y, liquid, surface, front, light,
+      });
     }
-    // smooth glass shell, drawn last-ish (transparent), slightly outside the voxels
-    cube(GLASS, cx, 3.5, cz, TANK_W + 0.08, 3.02, TANK_D + 0.08, { flat: true, alpha: 0.16 });
     if (broken) {
       // cracked front pane, slime pouring down it and pooling on the tiles
-      const fx = x + TANK_W, fz = cz - 0.3;
       // (both sit just outside the glass shell at fx + 0.04)
+      const fx = x + TANK_W, fz = cz - 0.3;
       let cz2 = fz;
       for (let y = 4.7; y > 2.2; y -= 0.22) {
         cz2 += (rng.next() - 0.5) * 0.3;
@@ -342,32 +445,25 @@ function decorate(level: LevelData): ReturnType<LevelPreview['decorate']> {
   }
 
   // ---- build the instanced meshes ----------------------------------------
-  const shaded = shadedBox();
-  const flat = new THREE.BoxGeometry(1, 1, 1);
-  const materials: THREE.Material[] = [];
-  const textures: THREE.Texture[] = [];
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3();
   for (const b of batches.values()) {
-    // raw palette values: the renderer outputs linear, so a plain hex would be
-    // sRGB-decoded on the way in and every box would render near-black
-    const color = new THREE.Color().setHex(b.color, THREE.LinearSRGBColorSpace);
     const material = new THREE.MeshBasicMaterial({
-      color, vertexColors: !b.flat, fog: true,
+      color: raw(b.color), vertexColors: !b.flat, fog: true,
       transparent: b.alpha < 1, opacity: b.alpha, depthWrite: b.alpha >= 1,
     });
     materials.push(material);
-    const mesh = new THREE.InstancedMesh(b.flat ? flat : shaded, material, b.items.length);
+    const inst = new THREE.InstancedMesh(b.flat ? flat : shaded, material, b.items.length);
     // glass after liquid, liquid after everything opaque
-    if (b.alpha < 1) mesh.renderOrder = b.color === GLASS ? 2 : 1;
+    if (b.alpha < 1) inst.renderOrder = b.color === GLASS ? 2 : 1;
     b.items.forEach((it, i) => {
       e.set(0, it.ry, it.rz);
       q.setFromEuler(e);
       p.set(it.x, it.y, it.z);
       s.set(it.w, it.h, it.d);
       m.compose(p, q, s);
-      mesh.setMatrixAt(i, m);
+      inst.setMatrixAt(i, m);
     });
-    group.add(mesh);
+    group.add(inst);
   }
 
   // ---- signs: BIOFOUNDRY over the lab door, room names elsewhere ---------
@@ -391,9 +487,9 @@ function decorate(level: LevelData): ReturnType<LevelPreview['decorate']> {
     textures.push(texture);
     const material = new THREE.MeshBasicMaterial({ map: texture, fog: true });
     materials.push(material);
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, w * canvas.height / canvas.width), material);
-    mesh.position.set(x, y, z);
-    group.add(mesh);
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, w * canvas.height / canvas.width), material);
+    plane.position.set(x, y, z);
+    group.add(plane);
   };
   sign('BIOFOUNDRY', 38, 5.15, 32.03, 7.4, true);
   for (const [id, r] of level.rooms.entries()) {
@@ -401,12 +497,116 @@ function decorate(level: LevelData): ReturnType<LevelPreview['decorate']> {
     sign(ROOMS[id][0], r.cx, 4.5, r.z + 0.03, 4.4, false);
   }
 
-  return { group, dispose() {
+  // ---- the breach sequence ------------------------------------------------
+  const breachingCount = (): number => tanks.filter((t) => t.phase === 'agitated' || t.phase === 'breaching').length;
+  const trigger = (tank: OccupiedTank, game: Game): void => {
+    if (tank.phase !== 'dormant' || breachingCount() >= MAX_BREACHING) return;
+    tank.phase = 'agitated';
+    tank.t = 0;
+    tank.knocks = 0;
+    game.audio.play('clank', { x: tank.exitX, y: 3, z: tank.exitZ });
+  };
+  /** the standing spot (or one tile either side) is air and nobody is on it */
+  const clearSpot = (tank: OccupiedTank, game: Game): [number, number] | null => {
+    for (const dz of [0, 1, -1]) {
+      const ex = tank.exitX, ez = tank.exitZ + dz;
+      const bx = Math.floor(ex), bz = Math.floor(ez);
+      if (!airAt(bx, 1, bz) || !airAt(bx, 2, bz)) continue;
+      const near = (px: number, pz: number, r: number): boolean => (px - ex) ** 2 + (pz - ez) ** 2 < r * r;
+      if (game.playerTargets().some((t) => !t.dead && near(t.pos.x, t.pos.z, 1.3))) continue;
+      if (game.enemies.list.some((en) => en.alive && near(en.pos.x, en.pos.z, 1.1))) continue;
+      return [ex, ez];
+    }
+    return null;
+  };
+  const breach = (tank: OccupiedTank, game: Game): void => {
+    tank.phase = 'breaching';
+    tank.t = 0;
+    // a real collision gap: the front column of glass voxels becomes air
+    const fx = tank.side === -1 ? tank.x : tank.x + TANK_W - 1;
+    for (let zz = tank.z; zz < tank.z + TANK_D; zz++) for (let y = 2; y <= 4; y++) world.setAndDirty(fx, y, zz, Block.Air);
+    tank.front.visible = false;
+    tank.light.visible = false;
+    const px = tank.side === -1 ? tank.x - 0.1 : tank.x + TANK_W + 0.1;
+    game.audio.play('wallBreak', { x: px, y: 3, z: tank.exitZ });
+    game.particles.debris(px, 3.2, tank.exitZ, 0.6, 0.95, 0.55, 22);
+    game.dynLights.flash(px, 3, tank.exitZ, 0.45, 1, 0.5, 1.6, 7, 0.4);
+    game.player.shake = Math.min(0.5, game.player.shake + 0.15);
+    // the spill in front
+    const spill = new THREE.Group();
+    for (let i = 0; i < 7; i++) {
+      const sm = mesh(i % 2 ? SLIME : SLIME_LIGHT, 0.6 + rng.next() * 0.9, 0.02, 0.5 + rng.next() * 0.7, { flat: true });
+      sm.position.set(tank.exitX - tank.side * 0.5 + (rng.next() - 0.5) * 1.4, 1.012 + (i % 2) * 0.004, tank.exitZ + (rng.next() - 0.5) * 1.6);
+      sm.rotation.y = rng.next() * Math.PI;
+      spill.add(sm);
+    }
+    tank.group.add(spill);
+  };
+  const release = (tank: OccupiedTank, game: Game, ex: number, ez: number): void => {
+    tank.phase = 'released';
+    tank.dummy.visible = false;
+    game.enemies.spawnFromSpecs([{ kind: 'vatborn', x: ex, z: ez, roomId: tank.roomId }], level.rooms, game);
+    const v = game.enemies.list[game.enemies.list.length - 1];
+    v.mesh.rotation.y = tank.side === -1 ? Math.PI / 2 : -Math.PI / 2; // face away from the tank
+    v.wake(game);
+  };
+  const update = (dt: number, game: Game): void => {
+    for (const tank of tanks) {
+      if (tank.phase === 'dormant') {
+        // steady amber marker, the specimen barely stirring
+        tank.dummy.position.y = tank.dummyRestY + Math.sin(performance.now() * 0.0012 + tank.x) * 0.04;
+        continue;
+      }
+      tank.t += dt;
+      if (tank.phase === 'agitated') {
+        // it stirs, the light blinks, the glass knocks — no damage yet
+        const k = tank.t * 22;
+        tank.dummy.position.y = tank.dummyRestY + Math.sin(k) * 0.12;
+        tank.dummy.position.x += Math.sin(k * 1.7) * 0.004;
+        tank.dummy.rotation.z = Math.sin(k * 0.8) * 0.18;
+        (tank.light.material as THREE.MeshBasicMaterial).color.copy(raw(STATUS)).multiplyScalar(Math.floor(tank.t / 0.15) % 2 ? 1.6 : 0.25);
+        const knocksDue = Math.floor(tank.t / 0.3);
+        if (knocksDue > tank.knocks) {
+          tank.knocks = knocksDue;
+          game.audio.play('clank', { x: tank.exitX, y: 3, z: tank.exitZ });
+        }
+        if (tank.t >= AGITATE_S) breach(tank, game);
+      } else if (tank.phase === 'breaching') {
+        // the liquid drains out of the open front while it steps forward
+        const k = Math.min(1, tank.t / STEP_OUT_S);
+        const h = (4.72 - 2.05) * (1 - k * 0.85);
+        tank.liquid.scale.y = Math.max(0.05, h);
+        tank.liquid.position.y = 2.05 + h / 2;
+        tank.surface.position.y = 2.05 + h;
+        tank.dummy.position.x += tank.side * dt * 1.4;
+        tank.dummy.position.y = tank.dummyRestY - k * 0.9;
+        if (tank.t >= STEP_OUT_S) {
+          // wait for a clear spot rather than spawning onto someone
+          const spot = clearSpot(tank, game);
+          if (spot) release(tank, game, spot[0], spot[1]);
+        }
+      }
+    }
+  };
+  const tankHit = (x: number, y: number, z: number, game: Game): void => {
+    if (y < 2 || y > 4) return;
+    const tank = tanks.find((t) => x >= t.x && x < t.x + TANK_W && z >= t.z && z < t.z + TANK_D);
+    if (tank) trigger(tank, game);
+  };
+  const noise = (x: number, z: number, radius: number, game: Game): void => {
+    const r = Math.min(radius, NOISE_RANGE);
+    for (const tank of tanks) {
+      if (tank.phase !== 'dormant') continue;
+      if ((tank.exitX - x) ** 2 + (tank.exitZ - z) ** 2 < r * r) trigger(tank, game);
+    }
+  };
+
+  return { group, update, tankHit, noise, dispose() {
     shaded.dispose();
     flat.dispose();
     group.traverse((o) => {
       if (o instanceof THREE.InstancedMesh) o.dispose();
-      else if (o instanceof THREE.Mesh) o.geometry.dispose();
+      else if (o instanceof THREE.Mesh && o.geometry instanceof THREE.PlaneGeometry) o.geometry.dispose();
     });
     for (const mat of materials) mat.dispose();
     for (const t of textures) t.dispose();

@@ -28,9 +28,21 @@ import { POKI, poki } from './platform/poki';
 type GameState = 'title' | 'playing' | 'paused' | 'dead' | 'intermission' | 'won';
 
 /** Injected by main.ts for `?sector4` (web builds only; lazy-loaded, never on Poki). */
+/** what a preview's decorate() hands back: scenery plus optional live hooks */
+export interface PreviewArt {
+  group: THREE.Group;
+  dispose(): void;
+  /** per frame while the sim runs (authority only) */
+  update?(dt: number, game: Game): void;
+  /** a shot or blast hit a TankGlass voxel */
+  tankHit?(x: number, y: number, z: number, game: Game): void;
+  /** loud combat at (x, z) — gunfire */
+  noise?(x: number, z: number, radius: number, game: Game): void;
+}
+
 export interface LevelPreview {
   generate(seed: number): LevelData;
-  decorate(level: LevelData): { group: THREE.Group; dispose(): void };
+  decorate(level: LevelData): PreviewArt;
   showScreen(onStart: () => void, onLeave: () => void, cleared?: boolean): () => void;
 }
 
@@ -170,7 +182,7 @@ export class Game {
   /** stays in combat music for a few seconds after the last contact */
   private combatLinger = 0;
 
-  private previewArt: ReturnType<LevelPreview['decorate']> | null = null;
+  private previewArt: PreviewArt | null = null;
   private previewMenuStop: (() => void) | null = null;
 
   constructor(parent: HTMLElement, private readonly preview?: LevelPreview) {
@@ -1005,8 +1017,19 @@ export class Game {
       this.net?.sendVoxelDamage(x, y, z, dmg);
       return;
     }
+    // a specimen tank isn't destructible, but shooting it wakes what's inside
+    if (this.previewArt?.tankHit && this.world.get(x, y, z) === Block.TankGlass) {
+      this.previewArt.tankHit(x, y, z, this);
+      return;
+    }
     const broke = this.world.damageVoxel(x, y, z, dmg);
     if (broke !== null) this.onVoxelBroken(x, y, z, broke);
+  }
+
+  /** loud noise at (x, z): wakes enemies in range, and anything the preview listens with */
+  noise(x: number, z: number, radius: number): void {
+    this.enemies.alertAt(x, z, radius, this);
+    this.previewArt?.noise?.(x, z, radius, this);
   }
 
   explode(x: number, y: number, z: number, damage: number, radius: number, fxEcho = true): void {
@@ -1493,6 +1516,7 @@ export class Game {
     this.guardPlayerInWorld(dt);
     this.weapons.update(dt, this.input, this);
     this.enemies.update(dt, this);
+    if (!this.isNetClient) this.previewArt?.update?.(dt, this);
     this.projectiles.update(dt, this);
     this.particles.update(dt, this.world);
     this.tracers.update(dt);

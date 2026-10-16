@@ -538,7 +538,7 @@ export class WeaponSystem {
     // dynamic light burst at the player
     game.dynLights.flash(pl.pos.x, pl.eyeY(), pl.pos.z, 1, 0.75, 0.35, 1.4, 9, 0.07);
     // gunfire wakes nearby enemies
-    game.enemies.alertAt(pl.pos.x, pl.pos.z, 17, game);
+    game.noise(pl.pos.x, pl.pos.z, 17);
 
     const cam = game.camera;
     const origin = new THREE.Vector3(pl.pos.x, pl.eyeY(), pl.pos.z);

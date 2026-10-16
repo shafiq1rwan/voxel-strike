@@ -159,7 +159,11 @@ How it gets its look:
   green lamp but is **never meshed** — a voxel tank showed its block grid,
   so the visible tank is decoration: a smooth translucent glass shell, a
   liquid fill with one surface line, bubbles, and a near-black voxel dummy
-  floating inside (drawn opaque so it reads through the tint).
+  floating inside (drawn opaque so it reads through the tint). Occupied
+  tanks (an amber status light on the cap) are built from separate meshes
+  so the breach can play: the dummy stirs and the light blinks for 1.2 s,
+  then the room-facing pane vanishes in a burst of pale-green shards, the
+  liquid drains and spills on the tiles, and the Vatborn steps out.
 - **Purple ambient:** `bakeLighting([36, 26, 52])` instead of the campaign's
   near-black default — the wash on the tiles comes from that, not from more
   lamps. Magenta ceiling pairs, cyan over doorways, warm bands on the 2×2
