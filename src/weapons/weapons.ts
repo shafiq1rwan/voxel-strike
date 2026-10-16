@@ -319,10 +319,9 @@ export function buildWeaponModel(id: WeaponId): WeaponModel {
 }
 
 // ---------------------------------------------------------------------------
-// Hands. Bare, in the same shaded box style as the guns: a right hand on
-// every grip, a left hand cupping the fore-grip of the two-handed guns, a
-// hazard sleeve cuff and a short wrist stub (no forearms, no trigger finger —
-// both owner calls).
+// Hand. Bare, in the same shaded box style as the guns: one right hand on
+// every grip, a hazard sleeve cuff and a short wrist stub. Owner calls: no
+// forearms, no trigger finger, no left hand (every gun is held one-handed).
 // ---------------------------------------------------------------------------
 
 /** view-model rest height: low enough to feel held, high enough that the hands show */
@@ -353,21 +352,6 @@ function rightHand(): THREE.Group {
   return h;
 }
 
-/** left hand cupping a horizontal fore-grip from below, centred on the origin */
-function leftHand(): THREE.Group {
-  const h = new THREE.Group();
-  vmPart(h, 0.1, 0.05, 0.085, SKIN, -0.008, -0.056, 0); // palm under the grip
-  // the back of the hand on the camera side, where it actually shows
-  vmPart(h, 0.04, 0.1, 0.09, SKIN, -0.062, -0.02, 0);
-  for (const z of [0.03, -0.002, -0.034]) {
-    vmPart(h, 0.028, 0.085, 0.026, SKIN_DARK, 0.056, -0.018, z); // fingers up the far side
-    vmPart(h, 0.06, 0.026, 0.026, SKIN_DARK, 0.03, 0.03, z); // folding over the top
-  }
-  vmPart(h, 0.03, 0.03, 0.08, SKIN_DARK, -0.06, 0.036, 0.0, { ry: 0.3 }); // thumb over the top edge
-  forearm(h, -0.045, -0.085, 0.07, -1);
-  return h;
-}
-
 /**
  * Cuffed wrist stub only — no forearm. Full forearms were tried: from this
  * camera an arm can only cross the bottom of the frame as a long bar (the
@@ -378,35 +362,20 @@ function forearm(h: THREE.Group, x: number, y: number, z: number, side: number):
   vmPart(h, 0.095, 0.085, 0.12, SLEEVE, x + side * 0.015, y - 0.035, z + 0.075, { rx: 0.6, ry: -side * 0.25 }); // wrist
 }
 
-/** places the hands on a built gun; the scattergun's left hand rides the pump */
+/** places the right hand on a built gun's grip */
 function attachHands(id: WeaponId, m: WeaponModel): void {
-  const right = rightHand();
-  const left = leftHand();
-  const put = (parent: THREE.Object3D, hand: THREE.Group, x: number, y: number, z: number, rx = 0): void => {
-    hand.position.set(x, y, z);
-    hand.rotation.x = rx;
-    parent.add(hand);
+  const hand = rightHand();
+  const at: Record<WeaponId, [number, number, number, number]> = {
+    pistol: [0, -0.135, 0.065, 0.25],
+    shotgun: [0, -0.13, 0.11, 0.15],
+    smg: [0, -0.145, 0.105, 0.25],
+    rocket: [0, -0.15, 0.005, 0.2],
+    arc: [0, -0.155, 0.105, 0.25],
   };
-  switch (id) {
-    case 'pistol':
-      put(m.group, right, 0, -0.135, 0.065, 0.25);
-      break;
-    case 'shotgun':
-      put(m.group, right, 0, -0.13, 0.11, 0.15);
-      put(m.pump!, left, 0, -0.03, 0.01); // racks with the forend
-      break;
-    case 'smg':
-      put(m.group, right, 0, -0.145, 0.105, 0.25);
-      put(m.group, left, 0, -0.1, -0.27);
-      break;
-    case 'rocket':
-      put(m.group, right, 0, -0.15, 0.005, 0.2);
-      put(m.group, left, 0, -0.1, -0.3);
-      break;
-    case 'arc':
-      put(m.group, right, 0, -0.155, 0.105, 0.25);
-      break;
-  }
+  const [x, y, z, rx] = at[id];
+  hand.position.set(x, y, z);
+  hand.rotation.x = rx;
+  m.group.add(hand);
 }
 
 /** Weapon inventory + firing + first-person view model. */

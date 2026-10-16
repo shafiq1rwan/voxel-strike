@@ -118,16 +118,16 @@ there and both update.
   charge). New guns should get an action too.
 - **Muzzle flash:** an uneven starburst (warm for bullets, cool blue for the
   arc caster), plus a dynamic light so the walls flash.
-- **Hands:** bare, skin-toned boxes (`SKIN` / `SKIN_DARK`; `rightHand` /
-  `leftHand` in weapons.ts, attached by `attachHands` to the held model
-  only — pickups stay handless). A right hand closed on every grip, a left
-  hand cupping the fore-grip of the two-handed guns (it rides the
-  scattergun's pump), a hazard sleeve cuff and a short wrist stub. Owner
-  calls, in order: **no forearms** (from this camera an arm can only cross
-  the bottom of the frame as a long bar — the "green stick"), **no
-  Doom-style angled pose** (sampled, straight-on hold preferred; the
-  `POSES` hook stays empty), **no trigger finger** (it was hidden behind
-  the gun anyway), and **skin instead of gloves**. The view model rides at
+- **Hand:** one bare, skin-toned right hand (`SKIN` / `SKIN_DARK`;
+  `rightHand` in weapons.ts, attached by `attachHands` to the held model
+  only — pickups stay handless) closed on every grip, with a hazard sleeve
+  cuff and a short wrist stub. Owner calls, in order: **no forearms** (from
+  this camera an arm can only cross the bottom of the frame as a long bar —
+  the "green stick"), **no Doom-style angled pose** (sampled, straight-on
+  hold preferred; the `POSES` hook stays empty), **no trigger finger** (it
+  was hidden behind the gun anyway), **skin instead of gloves**, and **no
+  left hand** — every gun, including the scattergun and thumper, is held
+  one-handed. The view model rides at
   `VM_Y = -0.21` (was −0.34) so the grips sit inside the frame.
 
 ## HUD and menus
