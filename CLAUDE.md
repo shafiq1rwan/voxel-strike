@@ -50,7 +50,7 @@ node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport
 node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
 node scripts/breach.mjs     # sector 4 preview: dormant Vatborn in each occupied tank; shoot one → sealed during agitation, real collision gap, liquid gush, it walks out and hunts, releases once
-node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 start, level complete/fail), hidden co-op, boots with SDK blocked
+node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 fresh-start, level complete/fail), hidden co-op, boots with SDK blocked
 ```
 
 `?seed=N` on the URL reproduces a layout deterministically. `window.__voxelstrike`

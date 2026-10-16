@@ -35,7 +35,7 @@ changed (when in doubt, all of them).
 | `coop.mjs` | Two tabs over BroadcastChannel: link + seed handshake, avatar/puppet sync, authority routing, shared keys/score, level transition, respawn, mouse recapture |
 | `breach.mjs` | Sector 4 preview (`?sector4`): a real dormant Vatborn floats in each occupied tank; shooting one keeps it sealed through the 1.2 s agitation, opens a real collision gap at the breach, gushes liquid droplets, and the occupant walks out onto the floor and hunts; no damage during the warning, the other tanks stay sealed, and a tank never releases twice |
 | `perf.mjs` | Render-cost guard for 60 fps on phones: each gun is ≤ 12 draws (baked), every-enemy-awake stays < 250 world draws (occlusion cull), an enemy in plain sight is still drawn, and no shader compiles after the level starts (warm-up) |
-| `poki.mjs` | **Poki mode only:** stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, `measure()` events (level 1 start, level complete / fail), hidden co-op, boots with the SDK blocked ([POKI.md](../POKI.md)) |
+| `poki.mjs` | **Poki mode only:** stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, `measure()` events (level 1 fresh-start, level complete / fail), hidden co-op, boots with the SDK blocked ([POKI.md](../POKI.md)) |
 
 Tool scripts (not tests): `gen-icons.mjs` regenerates PWA icons,
 `shot-pickups.mjs` renders the pickups for a look check,

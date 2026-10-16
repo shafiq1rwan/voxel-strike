@@ -81,17 +81,17 @@ ads, playtime) Poki already tracks on its own. None of the values may contain
 
 | category | what | action | Fired when |
 |---|---|---|---|
-| `level` | `1` | `start` | A new run begins: title *Enter the facility*, *New run* (title or death screen), or *Play a new layout*. Not sent on *Retry sector* or *Continue* |
+| `level` | `1` | `fresh-start` | A new run begins: title *Enter the facility*, *New run* (title or death screen), or *Play a new layout*. Not sent on *Retry sector* or *Continue* |
 | `level` | `1` / `2` / `3` | `complete` | That sector's exit pad is reached |
 | `level` | `1` / `2` / `3` | `fail` | The player dies in that sector (solo) |
 
 In the Game Events tab they group as `level` → `1` / `2` / `3` →
-`start` / `complete` / `fail`, which reads as a funnel:
+`fresh-start` / `complete` / `fail`, which reads as a funnel:
 
-**level 1 start** (played) → **level 1 complete** → **level 2 complete** →
+**level 1 fresh-start** (played) → **level 1 complete** → **level 2 complete** →
 **level 3 complete** (finished the game)
 
-- **Played** = `level 1 start` — players who pressed *Enter the facility*
+- **Played** = `level 1 fresh-start` — players who pressed *Enter the facility*
   (or started another run). Poki's own load count includes people who left
   on the title screen.
 - **Passed level N** = `level N complete`.
@@ -136,7 +136,7 @@ plays a fake 400 ms ad. The test checks:
   desktop asks for one click (READY) before play resumes
 - `gameplayStart`/`Stop` across start, pause, resume, intermission, and death,
   with no duplicate sends per frame
-- exactly one `level 1 start` when a run begins, `level N complete` /
+- exactly one `level 1 fresh-start` when a run begins, `level N complete` /
   `level N fail` after that, and nothing else (no event on keycard pickup,
   sector entry or retry); no `/` or `^` in any value
 - one ad per break even on a double click, advancing exactly one sector

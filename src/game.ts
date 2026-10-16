@@ -818,7 +818,7 @@ export class Game {
     this.resetRun();
     this.buildLevel();
     this.captureCheckpoint();
-    poki.measure('level', 1, 'start'); // a new run = someone played (not sent on retry)
+    poki.measure('level', 1, 'fresh-start'); // a new run = someone played (not sent on retry)
     this.enterSector(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard.`, adShown);
     this.startTips();
   }
@@ -881,7 +881,7 @@ export class Game {
       return;
     }
     this.captureCheckpoint();
-    poki.measure('level', 1, 'start'); // title "Enter the facility": someone played
+    poki.measure('level', 1, 'fresh-start'); // title "Enter the facility": someone played
     this.enterSector(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard. Reach the exit.`, adShown);
     this.startTips();
     // if the browser blocked audio despite the gesture, tell the player how to fix it
@@ -1383,7 +1383,7 @@ export class Game {
 
   onPlayerDeath(): void {
     if (!this.net) {
-      // Poki events are deliberately few: level 1 start, level N complete / fail (POKI.md)
+      // Poki events are deliberately few: level 1 fresh-start, level N complete / fail (POKI.md)
       poki.measure('level', this.levelIndex, 'fail');
     }
     this.state = 'dead';

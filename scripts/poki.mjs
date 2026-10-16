@@ -3,7 +3,7 @@
  * dist-poki). The CDN SDK is swapped for a recording stub so the run is
  * deterministic (no real ads, no network): checks init/loading order, the
  * hidden co-op button, ad breaks muting audio, gameplayStart/Stop following
- * pause/death/intermission, the measure() events (level 1 start on a new
+ * pause/death/intermission, the measure() events (level 1 fresh-start on a new
  * run, level N complete / fail, nothing else), page-scroll blocking — and
  * that the game still boots when an ad blocker drops the SDK.
  * Usage: node scripts/poki.mjs [url]
@@ -117,7 +117,7 @@ try {
   c = await calls(page);
   check(c.includes('commercialBreak'), 'commercialBreak before the run');
   check(c.indexOf('commercialBreak') < c.indexOf('gameplayStart'), 'ad comes before gameplayStart');
-  check(c.filter((x) => x.startsWith('measure')).join() === 'measure level 1 start', 'starting a run sends exactly one level 1 start');
+  check(c.filter((x) => x.startsWith('measure')).join() === 'measure level 1 fresh-start', 'starting a run sends exactly one level 1 fresh-start');
 
   // pause / resume
   await page.evaluate(() => window.__voxelstrike.requestPause());
@@ -181,8 +181,8 @@ try {
   c = await calls(page);
   check(c.filter((x) => x === 'commercialBreak').length === breaksBefore + 1, 'retry is an ad break');
   const sent = c.filter((x) => x.startsWith('measure'));
-  check(sent.join() === 'measure level 1 start,measure level 1 complete,measure level 2 fail',
-    `only level 1 start + level complete / fail were sent, retry adds nothing (${sent.join(', ')})`);
+  check(sent.join() === 'measure level 1 fresh-start,measure level 1 complete,measure level 2 fail',
+    `only level 1 fresh-start + level complete / fail were sent, retry adds nothing (${sent.join(', ')})`);
   check(c[c.length - 1] === 'gameplayStart' && (await state(page)) === 'playing', 'retry → gameplay resumed');
   check(!c.slice(2).includes('init'), 'retry did not reload the page (no second SDK init)');
   check(await page.evaluate(() => window.__bootMarker === 'same-page'), 'same page after retry');
