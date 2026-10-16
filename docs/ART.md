@@ -121,9 +121,11 @@ there and both update.
 - **Hand:** one bare, skin-toned right hand (`SKIN` / `SKIN_DARK`;
   `rightHand` in weapons.ts, attached by `attachHands` to the held model
   only — pickups stay handless) closed on every grip, with a hazard sleeve
-  cuff and a short wrist stub. Owner calls, in order: **no forearms** (from
-  this camera an arm can only cross the bottom of the frame as a long bar —
-  the "green stick"), **no Doom-style angled pose** (sampled, straight-on
+  cuff and a bare two-segment forearm that thickens toward the elbow and
+  drops toward the camera. Owner calls, in order: **no sleeved forearm
+  bar** (an olive sleeve lying across the frame read as a "green stick";
+  the bare arm angled down toward the camera is fine), **no Doom-style
+  angled pose** (sampled, straight-on
   hold preferred; the `POSES` hook stays empty), **no trigger finger** (it
   was hidden behind the gun anyway), **skin instead of gloves**, and **no
   left hand** — every gun, including the scattergun and thumper, is held

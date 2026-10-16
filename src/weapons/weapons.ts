@@ -320,8 +320,8 @@ export function buildWeaponModel(id: WeaponId): WeaponModel {
 
 // ---------------------------------------------------------------------------
 // Hand. Bare, in the same shaded box style as the guns: one right hand on
-// every grip, a hazard sleeve cuff and a short wrist stub. Owner calls: no
-// forearms, no trigger finger, no left hand (every gun is held one-handed).
+// every grip, a hazard sleeve cuff and a bare forearm dropping toward the
+// camera. Owner calls: no trigger finger, no left hand (one-handed hold).
 // ---------------------------------------------------------------------------
 
 /** view-model rest height: low enough to feel held, high enough that the hands show */
@@ -337,7 +337,6 @@ const POSES: Partial<Record<WeaponId, { pos: [number, number, number]; rot: [num
 
 const SKIN = 0xd49a72;
 const SKIN_DARK = 0xb57c57;
-const SLEEVE = 0x34383a;
 
 /** right hand closed around a vertical grip centred on the group origin */
 function rightHand(): THREE.Group {
@@ -353,13 +352,14 @@ function rightHand(): THREE.Group {
 }
 
 /**
- * Cuffed wrist stub only — no forearm. Full forearms were tried: from this
- * camera an arm can only cross the bottom of the frame as a long bar (the
- * owner's "green stick"), so the sleeve ends just past the cuff.
+ * Bare forearm: hazard cuff at the wrist, then two skin segments that
+ * thicken toward the elbow and drop away toward the camera, so the arm
+ * leaves the frame at the bottom instead of lying across it as a bar.
  */
 function forearm(h: THREE.Group, x: number, y: number, z: number, side: number): void {
   vmPart(h, 0.1, 0.032, 0.09, HAZARD, x, y, z, { outline: false }); // cuff
-  vmPart(h, 0.095, 0.085, 0.12, SLEEVE, x + side * 0.015, y - 0.035, z + 0.075, { rx: 0.6, ry: -side * 0.25 }); // wrist
+  vmPart(h, 0.085, 0.08, 0.17, SKIN, x + side * 0.02, y - 0.055, z + 0.1, { rx: 0.5, ry: -side * 0.15 });
+  vmPart(h, 0.1, 0.095, 0.24, SKIN, x + side * 0.065, y - 0.17, z + 0.25, { rx: 0.62, ry: -side * 0.3 });
 }
 
 /** places the right hand on a built gun's grip */
