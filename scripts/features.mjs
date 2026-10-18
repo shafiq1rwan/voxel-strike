@@ -1137,6 +1137,128 @@ try {
     await tp.close();
   }
 
+  // --- 20. weapon skins: a goal on the title, earned by playing, the Armory ------
+  {
+    const sk = await browser.newPage();
+    sk.on('pageerror', (err) => errors.push(`[skins pageerror] ${err.message}`));
+    await sk.setViewport({ width: 1280, height: 720 });
+    await sk.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await sk.evaluate(() => localStorage.removeItem('voxelstrike-skins'));
+    await sk.reload({ waitUntil: 'networkidle0' });
+    await sk.waitForSelector('#start-btn');
+    const strip = await sk.evaluate(() => {
+      const el = document.querySelector('#next-unlock');
+      return { text: el?.textContent.replace(/\s+/g, ' ').trim() ?? '', tag: el?.tagName ?? '' };
+    });
+    check(/CERAMIC MINT SIDEARM/.test(strip.text) && /10 KILLS/.test(strip.text) && /0\/10/.test(strip.text) && strip.tag === 'DIV',
+      `the title names the first skin to earn ("${strip.text}")`);
+    await sk.screenshot({ path: 'scripts/shots/features-skins-title.png' });
+    await sk.click('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    // ten real kills (the game's own kill path)
+    const earned = await sk.evaluate(async () => {
+      const g = window.__voxelstrike;
+      g.input.locked = true;
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const victims = g.enemies.list.filter((e) => e.alive && e.kind !== 'ticker').slice(0, 10);
+      for (const e of victims) { e.damage(9999, 0, 0, g); await sleep(30); }
+      await sleep(700);
+      return {
+        kills: g.skins.stats.kills,
+        skin: g.weapons.skinOf('pistol'),
+        stamp: document.querySelector('.skin-unlocked')?.textContent ?? '',
+        saved: JSON.parse(localStorage.getItem('voxelstrike-skins') || '{}').unlocked ?? [],
+        toast: document.querySelector('#unlock')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+      };
+    });
+    check(earned.kills >= 10 && earned.skin === 'pistol.ceramicMint' && /SKIN UNLOCKED/.test(earned.stamp) && /CERAMIC MINT/.test(earned.stamp),
+      `10 kills earn CERAMIC MINT: stamped and painted onto the sidearm in hand (${earned.skin})`);
+    check(earned.saved.includes('pistol.ceramicMint'), 'the unlock is saved on the device');
+    check(/HAZARD/.test(earned.toast) && /CLEAR SECTOR 1/.test(earned.toast), `the HUD moves on to the next goal ("${earned.toast}")`);
+    await sk.screenshot({ path: 'scripts/shots/features-skins-unlocked.png' });
+    // pause → Armory: opens on the gun in hand, one tab per gun, a live preview
+    await sk.evaluate(() => { const g = window.__voxelstrike; g.state = 'playing'; g.requestPause(); });
+    await new Promise((r) => setTimeout(r, 300));
+    await sk.evaluate(() => document.querySelector('#pause-armory-btn').click());
+    await sk.waitForSelector('#armory-screen');
+    await new Promise((r) => setTimeout(r, 400));
+    const arm = await sk.evaluate(() => ({
+      tabs: [...document.querySelectorAll('.arm-tab')].map((t) => t.textContent.replace(/\s+/g, ' ').trim()),
+      on: document.querySelector('.arm-tab.on')?.dataset.w,
+      chips: document.querySelectorAll('.arm-skin').length,
+      model: document.querySelector('#arm-canvas')?.dataset.model,
+      status: document.querySelector('#arm-status')?.textContent ?? '',
+    }));
+    check(arm.tabs.length === 5 && arm.on === 'pistol' && arm.chips === 5 && /SIDEARM1\/4/.test(arm.tabs[0].replace(/ /g, '')),
+      `the Armory has a tab per gun and opens on the one in hand (${arm.tabs.join(' | ')}; ${arm.chips} paints)`);
+    check(arm.model === 'pistol.ceramicMint' && /EQUIPPED/.test(arm.status), `the turntable shows the equipped paint (${arm.model}, "${arm.status}")`);
+    await sk.screenshot({ path: 'scripts/shots/features-skins-armory.png' });
+    // another tab: a locked skin still previews, with its goal
+    await sk.evaluate(() => document.querySelector('.arm-tab[data-w="shotgun"]').click());
+    await sk.evaluate(() => document.querySelector('.arm-skin[data-id="shotgun.hazard"]').click());
+    await new Promise((r) => setTimeout(r, 300));
+    const locked = await sk.evaluate(() => ({
+      chips: document.querySelectorAll('.arm-skin').length,
+      model: document.querySelector('#arm-canvas').dataset.model,
+      status: document.querySelector('#arm-status').textContent,
+      equipBtn: !!document.querySelector('#armory-equip'),
+    }));
+    check(locked.chips === 7 && locked.model === 'shotgun.hazard' && /LOCKED/.test(locked.status) && /CLEAR SECTOR 1/.test(locked.status) && !locked.equipBtn,
+      `a locked skin previews on the turntable with its goal, no Equip ("${locked.status}")`);
+    await sk.screenshot({ path: 'scripts/shots/features-skins-armory-locked.png' });
+    // pick STANDARD on the sidearm tab, Equip; then Ceramic Mint again
+    await sk.evaluate(() => document.querySelector('.arm-tab[data-w="pistol"]').click());
+    await sk.evaluate(() => document.querySelector('.arm-skin[data-id=""]').click());
+    await sk.evaluate(() => document.querySelector('#armory-equip').click());
+    const toStd = await sk.evaluate(() => window.__voxelstrike.weapons.skinOf('pistol'));
+    await sk.evaluate(() => document.querySelector('.arm-skin[data-id="pistol.ceramicMint"]').click());
+    await sk.evaluate(() => document.querySelector('#armory-equip').click());
+    const back = await sk.evaluate(() => ({ skin: window.__voxelstrike.weapons.skinOf('pistol'), status: document.querySelector('#arm-status').textContent }));
+    check(toStd === '' && back.skin === 'pistol.ceramicMint' && /EQUIPPED/.test(back.status), 'Equip repaints the gun (standard, then Ceramic Mint)');
+    // back on the title: the top-left Armory button shows the count and opens it
+    await sk.evaluate(() => document.querySelector('#armory-back').click());
+    await sk.evaluate(() => document.querySelector('#pause-newrun-btn').click());
+    await sk.waitForSelector('#title-armory-btn');
+    const t2 = await sk.evaluate(() => {
+      const b = document.querySelector('#title-armory-btn');
+      const r = b.getBoundingClientRect();
+      return { text: b.textContent.replace(/\s+/g, ' ').trim(), left: r.left, top: r.top, next: document.querySelector('#next-unlock').tagName };
+    });
+    check(/ARMORY/i.test(t2.text) && /1\/22/.test(t2.text) && t2.left < 40 && t2.top < 40 && t2.next === 'DIV',
+      `the title's top-left ARMORY button shows the count ("${t2.text}" at ${Math.round(t2.left)},${Math.round(t2.top)})`);
+    await sk.screenshot({ path: 'scripts/shots/features-skins-title-armory.png' });
+    await sk.evaluate(() => document.querySelector('#title-armory-btn').click());
+    await sk.waitForSelector('#armory-screen');
+    await sk.evaluate(() => document.querySelector('#armory-back').click());
+    check(await sk.evaluate(() => !!document.querySelector('#title-screen')), 'it opens the Armory, and Back returns to the title');
+    await sk.close();
+    // phone: the Armory fits the width and scrolls, Back is reachable
+    const sp = await browser.newPage();
+    await sp.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
+    await sp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await sp.waitForSelector('#title-armory-btn');
+    const corner = await sp.evaluate(() => {
+      const a = document.querySelector('#title-armory-btn').getBoundingClientRect();
+      const logo = document.querySelector('#title-logo').getBoundingClientRect();
+      return { onScreen: a.left >= 0 && a.top >= 0, clearOfLogo: a.bottom <= logo.top || a.right <= logo.left };
+    });
+    check(corner.onScreen && corner.clearOfLogo, 'phone: the Armory corner button sits clear of the logo');
+    await sp.screenshot({ path: 'scripts/shots/features-skins-title-phone.png' });
+    await sp.evaluate(() => document.querySelector('#title-armory-btn').click());
+    await sp.waitForSelector('#armory-screen');
+    const fit = await sp.evaluate(() => {
+      const scr = document.querySelector('#armory-screen');
+      const backBtn = document.querySelector('#armory-back');
+      backBtn.scrollIntoView();
+      const r = backBtn.getBoundingClientRect();
+      return { noH: document.documentElement.scrollWidth <= innerWidth && scr.scrollWidth <= scr.clientWidth + 1, back: r.bottom <= innerHeight && r.top >= 0 };
+    });
+    await sp.screenshot({ path: 'scripts/shots/features-skins-armory-phone.png' });
+    check(fit.noH && fit.back, 'phone: the Armory fits the width and Back is reachable');
+    await sp.evaluate(() => localStorage.removeItem('voxelstrike-skins'));
+    await sp.close();
+  }
+
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
   // Desktop defaults to 480 lines, touch to 320 (above), still cycled in
@@ -1149,7 +1271,7 @@ try {
     await pc.evaluateOnNewDocument(() => {
       if (sessionStorage.getItem('seeded')) return;
       sessionStorage.setItem('seeded', '1');
-      for (const k of ['voxelstrike-settings', 'voxelstrike-tutorial-done', 'voxelstrike-biofoundry-seen', 'voxelstrike-run']) localStorage.removeItem(k);
+      for (const k of ['voxelstrike-settings', 'voxelstrike-tutorial-done', 'voxelstrike-biofoundry-seen', 'voxelstrike-run', 'voxelstrike-skins']) localStorage.removeItem(k);
     });
     await pc.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
     await pc.waitForSelector('#start-btn');
@@ -1172,8 +1294,8 @@ try {
     });
     check(first.play === 'Play' && first.playOnScreen && first.goal === 'Escape the facility' && first.steps.length === 3 && /keycard/i.test(first.steps[0]),
       `first visit: the goal, three steps and one PLAY button ("${first.goal}": ${first.steps.join(' > ')})`);
-    check(first.buttons.join() === 'title-settings-btn,start-btn' && !first.banner,
-      `first visit: nothing else to click but the settings gear, no NEW SECTOR banner (${first.buttons.join(', ')})`);
+    check(first.buttons.join() === 'title-settings-btn,title-armory-btn,start-btn' && !first.banner,
+      `first visit: PLAY plus the two corner buttons (settings, armory), no NEW SECTOR banner (${first.buttons.join(', ')})`);
     await pc.screenshot({ path: 'scripts/shots/features-title-first.png' });
     // a returning player who hasn't reached the Biofoundry yet gets the banner
     await pc.evaluate(() => localStorage.setItem('voxelstrike-tutorial-done', '1'));

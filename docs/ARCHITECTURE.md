@@ -33,6 +33,7 @@ off the core. The per-file rules and known gotchas live in
 | Physics | `core/physics.ts` | Axis-by-axis AABB vs voxels + dynamic boxes (doors, lift), ray/box tests |
 | Audio | `core/audio.ts`, `core/music.ts` | Every sound synthesized with WebAudio; optional crossfading music loops |
 | Settings | `core/settings.ts` | Persisted options (sensitivity, volumes, FOV, resolution, shake, aim assist) |
+| Skins | `core/skins.ts` | The 22 weapon skins as data (paint roles + flat marks + unlock goal) and `SkinBook` (lifetime stats, unlocks, equipped; localStorage). `buildWeaponModel(id, skin)` paints them; `WeaponSystem.setSkin` swaps a view model in place |
 | RNG | `core/rng.ts` | Seeded mulberry32 — the same seed always builds the same dungeon |
 | World | `world/blocks.ts`, `world.ts`, `mesher.ts`, `levelgen.ts` | Block types + procedural texture atlas, the voxel grid + light bake, greedy chunk mesher + shader, the dungeon generator + validator |
 | Entities | `entities/*.ts` | Player, enemies (AI + voxel rigs), doors + lift + exit beacon, pickups, pooled projectiles, co-op avatars, touch aim assist targeting, the Facility Operative rig (`operative.ts`) |
@@ -250,6 +251,7 @@ codes (lazy-loaded), or BroadcastChannel for same-browser tabs
 | `voxelstrike-best-<seedHex>` | Best score for that layout seed |
 | `voxelstrike-tutorial-done` | First-run control hints shown |
 | `voxelstrike-best-depth` | Deepest endless depth reached (title footer) |
+| `voxelstrike-skins` | Weapon skins: lifetime goal stats (kills, headshots, bash kills, secrets, cleared, reached, bosses, S ranks), unlocked ids, equipped skin per gun |
 | `voxelstrike-biofoundry-seen` | The Biofoundry was reached once (hides the title's NEW SECTOR banner, which returning players see) |
 
 The run and tutorial keys match the earlier Poki build — don't rename them.

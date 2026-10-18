@@ -288,6 +288,49 @@ try {
   const deep = (await calls(page)).filter((x) => x.startsWith('measure')).slice(-2);
   check(deep.join() === 'measure endless 7 complete,measure endless 20 fail',
     `endless depths send endless N complete / fail, capped at 20 (${deep.join(', ')})`);
+  // Armory: a locked skin can be unlocked early with a rewarded video — the
+  // button says Watch ad with the clapperboard, isn't the primary look, and
+  // only a watched video pays out
+  await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.hud.hideScreen();
+    g.state = 'title';
+    g.openArmory('title');
+    document.querySelector('.arm-tab[data-w="arc"]').click();
+    document.querySelector('.arm-skin[data-id="arc.voidSignal"]').click();
+  });
+  const adBtn = await page.evaluate(() => {
+    const b = document.querySelector('#armory-ad');
+    return b ? { text: b.textContent, icon: !!b.querySelector('svg'), primary: b.classList.contains('tbtn-primary') } : null;
+  });
+  check(!!adBtn && /watch ad/i.test(adBtn.text) && adBtn.icon && !adBtn.primary, `a locked skin offers "Unlock now · Watch ad" with the ad icon (${adBtn?.text})`);
+  const rwBefore = (await calls(page)).filter((x) => x === 'rewardedBreak').length;
+  await page.evaluate(() => { window.__rewardOk = false; document.querySelector('#armory-ad').click(); });
+  await sleep(700);
+  const noVid = await page.evaluate(() => ({
+    owned: window.__voxelstrike.skins.unlocked.has('arc.voidSignal'),
+    text: document.querySelector('#armory-ad')?.textContent ?? '',
+    disabled: !!document.querySelector('#armory-ad')?.disabled,
+  }));
+  check(!noVid.owned && noVid.disabled && /no video/i.test(noVid.text), `no video watched → not unlocked, the button says so ("${noVid.text}")`);
+  await page.evaluate(() => {
+    window.__rewardOk = true;
+    document.querySelector('.arm-skin[data-id="arc.voidSignal"]').click();
+    document.querySelector('#armory-ad').click();
+  });
+  await sleep(150);
+  const muted = await page.evaluate(() => window.__voxelstrike.audio.masterBus?.gain.value);
+  await sleep(600);
+  const won = await page.evaluate(() => ({
+    owned: window.__voxelstrike.skins.unlocked.has('arc.voidSignal'),
+    worn: window.__voxelstrike.weapons.skinOf('arc'),
+    status: document.querySelector('#arm-status')?.textContent ?? '',
+    gain: window.__voxelstrike.audio.masterBus?.gain.value,
+  }));
+  check((await calls(page)).filter((x) => x === 'rewardedBreak').length === rwBefore + 2, 'each Watch ad press is one rewardedBreak');
+  check(muted === 0 && won.gain !== 0, `audio is muted during the video and back after (${muted} → ${won.gain})`);
+  check(won.owned && won.worn === 'arc.voidSignal' && /EQUIPPED/.test(won.status), `a watched video unlocks and equips the skin (${won.worn})`);
+  await page.evaluate(() => localStorage.removeItem('voxelstrike-skins'));
   console.log('  calls:', (await calls(page)).join(' | '));
   await page.close();
 
@@ -307,6 +350,15 @@ try {
   await sleep(2200);
   check(await blocked.evaluate(() => !!document.querySelector('#retry-btn') && !document.querySelector('#revive-btn')),
     'without the SDK the rewarded revive is not offered (it could never pay out)');
+  await blocked.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.hud.hideScreen();
+    g.openArmory('title');
+    document.querySelector('.arm-tab[data-w="arc"]').click();
+    document.querySelector('.arm-skin[data-id="arc.voidSignal"]').click();
+  });
+  check(await blocked.evaluate(() => !!document.querySelector('.arm-goal') && !document.querySelector('#armory-ad')),
+    'SDK blocked: a locked skin shows its goal but no Watch ad button');
   await blocked.close();
 } finally {
   await browser.close();

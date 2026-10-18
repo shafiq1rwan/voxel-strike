@@ -50,7 +50,7 @@ node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consi
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener, Broodkeeper (wake on entry, cycle, acid + summons, armor/core damage, boss bar, key drop, every weapon hurts it + killed by real Ripper fire), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener, Broodkeeper (wake on entry, cycle, acid + summons, armor/core damage, boss bar, key drop, every weapon hurts it + killed by real Ripper fire), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit)
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start; the same budget in the Biofoundry at its heaviest (sector 5)
@@ -68,6 +68,7 @@ Tool scripts (not tests):
 ```bash
 node scripts/gen-icons.mjs                        # regenerate PWA icons
 node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io project via the real browser flow
+node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on the view model → one contact sheet per gun (dev server)
 ```
 
 ## Architecture
@@ -358,6 +359,19 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   (cells ammo): `fireArc` raycasts the first target then chains to up to 3
   more within 7u (LOS-checked, ×0.7 damage per hop), drawn as jagged teal
   tracer segments (`Tracers.fire` takes color + life; pool sized for it).
+  WEAPON SKINS (`src/core/skins.ts`): 22 skins as data — `colors` per
+  paint role (main/second/dark/accent/trim/metal/stock/mag; which boxes a
+  role covers is per gun in `buildWeaponModel(id, skin)`, defaults = the
+  standard paint) + `marks` (flat paint panels, side AND top faces — first
+  person mostly sees the top; `on: 'slide'|'pump'` rides the mover). Marks
+  bake with the gun, so skins cost no draw calls. Never recolour signal
+  parts (sights, red dot, coils, LED, shells, bead). `SkinBook` keeps
+  lifetime stats + unlocks + equipped in `voxelstrike-skins`; unlock order =
+  `SKINS` order (first at 10 kills). Game feeds it via `skinStat()` (kills,
+  headshots, bash kills via `WeaponSystem.bashing`, secrets, cleared,
+  reached, bosses, S ranks); a new skin auto-equips (`setSkin` rebuilds the
+  view model in place) and its stamp queues until state is 'playing'.
+  Floor pickups stay standard.
   Quick melee is NOT a slot: `MELEE` + `meleeStrike()` in weapons.ts (V,
   right mouse, touch `#tmelee` → `Input.consumeMelee`). 0.15s windup, 0.6s
   cooldown, centre reach 1.8 (+ big bodies' extra half-width), same floor,
@@ -418,8 +432,12 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   Kept bare on purpose (playtime fell to under 2 minutes): wordmark,
   ESCAPE THE FACILITY, three step tiles (keycard → door → lift, the HUD's
   objective icons/colours), one PLAY (`#start-btn`; Continue + New run
-  with a save), one controls line, a Settings gear (`#title-settings-btn`)
-  in the corner — don't add menu items back. A NEW SECTOR banner (THE
+  with a save), one controls line, the NEXT SKIN goal line, a Settings gear
+  (`#title-settings-btn`) top-right and an Armory button
+  (`#title-armory-btn`) top-left (owner's call) — don't add menu items
+  back. The Armory (`HUD.showArmory`) is tabbed per gun with a turntable
+  preview (`ui/armory-preview.ts`: its own WebGL canvas, freed by
+  `hideScreen` via `logoStop`). A NEW SECTOR banner (THE
   BIOFOUNDRY · SECTORS 4–5) shows above the menu for RETURNING players
   only (`voxelstrike-tutorial-done` set) until they first enter a
   Biofoundry sector (`buildLevel` sets
@@ -435,7 +453,9 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   New ad points go through `Game.afterBreak(then(adShown))` (mutes audio,
   releases held keys, eats double clicks); when an ad really played, desktop
   needs a READY "click to continue" before pointer lock (the gesture is
-  spent) — `enterSector`/`resumeGame` handle that. Rewarded videos go
+  spent) — `enterSector`/`resumeGame` handle that. Rewarded videos (the
+  death-screen revive, and the Armory's "Unlock now · Watch ad" on a locked
+  skin via `Game.adUnlockSkin`) go
   through `poki.rewardedBreak()` (resolves true ONLY when the video played —
   never reward otherwise) behind a button that says "Watch ad" with the
   clapperboard icon, is never the green/primary one, and sits beside an

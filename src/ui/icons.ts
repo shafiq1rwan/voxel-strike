@@ -20,6 +20,7 @@ import { faBatteryFull } from '@fortawesome/free-solid-svg-icons/faBatteryFull';
 import { faRightLeft } from '@fortawesome/free-solid-svg-icons/faRightLeft';
 import { faClapperboard } from '@fortawesome/free-solid-svg-icons/faClapperboard';
 import { faGear } from '@fortawesome/free-solid-svg-icons/faGear';
+import { faGun } from '@fortawesome/free-solid-svg-icons/faGun';
 import { faBurst } from '@fortawesome/free-solid-svg-icons/faBurst';
 import { faBolt } from '@fortawesome/free-solid-svg-icons/faBolt';
 import { faCrosshairs } from '@fortawesome/free-solid-svg-icons/faCrosshairs';
@@ -89,6 +90,8 @@ export const ICONS = {
   ad: (size = 16) => fa(faClapperboard, C, size),
   /** title screen: the Settings corner button */
   gear: (size = 18) => fa(faGear, C, size),
+  /** title screen: the Armory corner button (weapon skins) */
+  armory: (size = 18) => fa(faGun, C, size),
 };
 
 /**

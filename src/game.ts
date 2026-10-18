@@ -18,7 +18,8 @@ import { Overload, type OverloadReward } from './entities/overload';
 import { Particles } from './fx/particles';
 import { Tracers } from './fx/tracers';
 import { DynLights } from './fx/dynlights';
-import { WeaponSystem } from './weapons/weapons';
+import { WeaponSystem, ORDER as WEAPON_ORDER } from './weapons/weapons';
+import { SkinBook, type SkinDef, type SkinStat } from './core/skins';
 import { buildOperative, type OperativeRig } from './entities/operative';
 import { HUD } from './ui/hud';
 import { Automap } from './ui/automap';
@@ -167,6 +168,11 @@ export class Game {
   readonly enemies = new EnemyManager();
   readonly player = new Player();
   readonly weapons = new WeaponSystem();
+  /** weapon skins: lifetime unlock goals + what each gun wears (on this device) */
+  readonly skins = new SkinBook();
+  /** skins earned while a menu was up: stamped once play resumes */
+  private pendingUnlocks: SkinDef[] = [];
+  private unlockTimer = 0;
   overload: Overload | null = null;
   readonly isTouch = isTouchDevice();
   /** defaults depend on the device (pixelation: 480 lines desktop, 320 touch) */
@@ -247,6 +253,7 @@ export class Game {
     scene.add(this.projectiles.group);
     // the gun renders in its own depth-cleared pass (see Renderer.overlay)
     this.rendererSys.overlay.add(this.weapons.viewModel);
+    for (const w of WEAPON_ORDER) this.weapons.setSkin(w, this.skins.skinFor(w));
     scene.add(this.camera);
     // menu shows the bare facility; the gun raises when the run starts
     this.weapons.viewModel.visible = false;
@@ -603,6 +610,7 @@ export class Game {
     this.player.dead = false;
     // reached the Biofoundry (campaign, not the ?sector4 preview): it's no longer "new"
     if (this.level.theme === 'biofoundry' && !this.preview) storageSet(BIOFOUNDRY_SEEN_KEY, '1');
+    if (!this.preview) this.skinStat('reached', this.levelIndex);
     // a fresh attempt at a sector: no keycard checkpoint yet, revive available
     this.keyCheckpoint = null;
     this.revivesUsed = 0;
@@ -952,6 +960,90 @@ export class Game {
     }
     this.state = 'playing';
     if (!this.isTouch) this.input.requestLock();
+    this.showNextSkin(true);
+  }
+
+  /** the next skin to earn, under the score (`force` = at a sector start) */
+  private showNextSkin(force = false): void {
+    const next = this.skins.next();
+    this.hud.unlockProgress(next, next ? this.skins.progress(next) : 0, force);
+  }
+
+  /**
+   * Count toward the skin goals. A new skin goes straight onto its gun; its
+   * SKIN UNLOCKED stamp waits until play is on (a sector clear unlocks while
+   * the clear screen is up).
+   */
+  private skinStat(stat: SkinStat, amount = 1): void {
+    if (this.preview) return;
+    const fresh = this.skins.add(stat, amount);
+    for (const s of fresh) this.weapons.setSkin(s.weapon, s);
+    if (fresh.length) {
+      this.pendingUnlocks.push(...fresh);
+      this.unlockTimer = Math.min(this.unlockTimer, 0.35);
+    }
+    if (this.state === 'playing') this.showNextSkin();
+  }
+
+  /** stamp earned skins one at a time while playing */
+  private updateUnlocks(dt: number): void {
+    if (!this.pendingUnlocks.length || this.state !== 'playing') return;
+    this.unlockTimer -= dt;
+    if (this.unlockTimer > 0) return;
+    const s = this.pendingUnlocks.shift()!;
+    this.hud.skinUnlocked(s);
+    this.audio.play('pickupWeapon');
+    this.unlockTimer = 3;
+  }
+
+  /**
+   * Unlock a skin early with a rewarded video (Armory, Poki). The game is on a
+   * menu, so gameplay is already stopped; audio is muted while it plays, and
+   * the skin is granted ONLY when the video really played (Poki rule).
+   */
+  private adUnlockSkin(id: string): Promise<boolean> {
+    if (this.breakPending) return Promise.resolve(false);
+    this.breakPending = true;
+    this.audio.init();
+    return poki
+      .rewardedBreak(() => {
+        this.audio.setMuted(true);
+        this.input.releaseAll();
+      })
+      .then((watched) => {
+        this.audio.setMuted(false);
+        this.input.releaseAll();
+        this.breakPending = false;
+        if (!watched) return false;
+        const s = this.skins.grant(id);
+        if (!s) return false;
+        this.weapons.setSkin(s.weapon, s);
+        this.audio.play('pickupWeapon');
+        return true;
+      });
+  }
+
+  /** Armory: equip earned skins (title or pause) */
+  private openArmory(from: 'title' | 'pause'): void {
+    this.hud.showArmory({
+      equipped: this.skins.equipped,
+      unlocked: this.skins.unlocked,
+      progress: (s) => this.skins.progress(s),
+      onEquip: (w, id) => {
+        this.skins.equip(w, id);
+        this.weapons.setSkin(w, this.skins.skinFor(w));
+        this.audio.play('weaponRaise');
+      },
+      // paused: the gun in hand; on the title: the gun of the next skin to earn
+      start: from === 'pause' ? this.weapons.current : this.skins.next()?.weapon ?? 'pistol',
+      // Poki only, and only when the SDK can show one (ad blockers): a rewarded
+      // video unlocks the picked skin right away
+      onAdUnlock: POKI && poki.adsAvailable() ? (id) => this.adUnlockSkin(id) : undefined,
+      onBack: () => {
+        if (from === 'title') this.showTitleScreen();
+        else this.showPauseScreen();
+      },
+    });
   }
 
   /** died: replay this sector with the gear you entered it with */
@@ -1357,6 +1449,9 @@ export class Game {
       // keep it behind ?coop for development (URL auto-join still works)
       onCoop: !POKI && new URLSearchParams(location.search).has('coop') ? () => this.openCoop() : undefined,
       onSettings: () => this.openSettings('title'),
+      next: (() => { const n = this.skins.next(); return n ? { skin: n, have: this.skins.progress(n) } : null; })(),
+      skinsOwned: this.skins.unlocked.size,
+      onArmory: () => this.openArmory('title'),
       // returning players only: a first visit sees just the goal and PLAY
       newSector: storageGet(TUTORIAL_KEY) !== null && storageGet(BIOFOUNDRY_SEEN_KEY) === null,
     });
@@ -1435,7 +1530,8 @@ export class Game {
       () => this.goToTitle(),
       () => this.openSettings('pause'),
       this.net ? 'Leave co-op' : this.levelIndex >= 2 ? 'Save &amp; quit to menu' : 'Main menu',
-      this.isTouch
+      this.isTouch,
+      () => this.openArmory('pause'),
     );
   }
 
@@ -1701,6 +1797,9 @@ export class Game {
     }
     this.kills++;
     this.hud.killMarker(e.lastHitHead);
+    this.skinStat('kills');
+    if (e.lastHitHead) this.skinStat('headshots');
+    if (this.weapons.bashing) this.skinStat('bashKills');
     this.punchFOV(0.8);
     // score: kill value scaled by the combo chain (kills within 2.5s of each other)
     let points = e.kind === 'broodkeeper' ? 2500 : e.kind === 'brute' ? 300 : e.kind === 'sentinel' ? 150 : e.kind === 'ticker' ? 75 : 100;
@@ -1736,6 +1835,7 @@ export class Game {
     this.hud.setBoss(null);
     this.hud.message('The BROODKEEPER is dead — take the RED keycard.');
     this.hud.streak('BOSS DOWN');
+    this.skinStat('bosses');
     this.punchFOV(3);
     void e;
   }
@@ -2068,6 +2168,10 @@ export class Game {
     const speedBonus = Math.max(0, 900 - Math.floor(levelTime) * 3);
     const graded = this.rankSector(levelTime);
     const rankBonus = this.net ? 0 : RANK_BONUS[graded.rank];
+    if (!this.preview) {
+      this.skinStat('cleared', this.levelIndex);
+      if (!this.net && graded.rank === 'S') this.skinStat('sRanks');
+    }
     this.score += 1000 + speedBonus + rankBonus;
     this.hud.updateScore(this.score, 1);
     this.audio.play('win');
@@ -2315,6 +2419,7 @@ export class Game {
     this.elevator?.animate(dt, this.time);
     this.updateObjective();
     this.updateBossBar();
+    this.updateUnlocks(dt);
     this.exitBeacon?.animate(dt, this.objStage === 'pad');
     this.hud.updateAmmo(this.player, this.weapons);
     this.hud.updateBuffs(this.player);
@@ -2362,6 +2467,7 @@ export class Game {
         this.hud.secretFound(500, this.weapons.has('rocket') ? '' : 'THE THUMPER IS IN HERE');
         this.dynLights.flash(p.x, this.player.eyeY(), p.z, 1, 0.82, 0.3, 2.2, 9, 0.6);
         this.punchFOV(2.5);
+        this.skinStat('secrets');
         this.score += 500;
         this.hud.updateScore(this.score, Math.min(5, this.comboChain) || 1);
       } else if (this.state === 'playing') {

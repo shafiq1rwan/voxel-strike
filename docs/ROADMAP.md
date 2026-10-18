@@ -41,6 +41,16 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-18 — Weapon skins (owner's call, as a reason to keep playing):
+  all 22 concepts from `reference/weapon-skins/` as paint data (roles +
+  flat marks on the side AND top, which is what first person sees), baked
+  with the gun so they cost no draw calls; signal colours untouched. Each is
+  a lifetime goal, first at 10 kills (~1–2 min); the title shows the next
+  one with progress, the HUD flashes progress, SKIN UNLOCKED stamps it and
+  auto-equips; Armory from pause / the title strip. Floor pickups stay
+  standard. Palettes are first-pass reads of the sheets — review with
+  `node scripts/skin-sheets.mjs`.
+
 - 2026-10-18 — Quick melee: V / right click / touch BASH (up and in from
   FIRE). 0.15 s windup, 0.6 s cooldown, 1.8 u centre reach (+ big bodies'
   extra half-width), same floor, 50° cone, LOS, one target: 35 damage + a

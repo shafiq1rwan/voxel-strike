@@ -6,6 +6,8 @@ import { ICONS, AmmoIcon, perkColor, perkIcon } from './icons';
 import type { OverloadReward } from '../entities/overload';
 import { typeLines, type TerminalLine, type TerminalRun } from './terminal';
 import type { OfferId } from '../core/perks';
+import { SKINS, WEAPON_LABEL, needText, swatchHtml, STANDARD_SWATCH, type SkinDef } from '../core/skins';
+import { startArmoryPreview } from './armory-preview';
 
 const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
 
@@ -421,6 +423,146 @@ body.touch-mode #boss-head { font-size: 10px; }
 #kills { font-size: 12px; font-weight: bold; letter-spacing: 2px; color: #cfd6e4; margin-top: -4px; }
 #kills.all { color: #4cc26a; }
 #buffs { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+/* weapon skins: a three-band paint chip */
+.sw { display: inline-flex; width: 20px; height: 11px; border: 1px solid #000; box-shadow: 0 0 0 1px rgba(255,255,255,.12); flex: none; }
+.sw i { flex: 1; }
+/* next-skin progress: pops in under the score when it moves, fades after a few seconds */
+#unlock {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding: 5px 8px;
+  background: rgba(8,10,16,.7); border: 1px solid #262c38; border-right: 3px solid #55e0ff;
+  opacity: 0; transition: opacity .6s; pointer-events: none;
+}
+#unlock.show { opacity: 1; transition: opacity .15s; }
+#unlock .u-row { display: flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: .14em; color: #8a94a8; }
+#unlock .u-row b { color: #f0f2f6; }
+#unlock .u-label { color: #55e0ff; font-weight: bold; }
+#unlock .u-bar { width: 170px; height: 4px; background: rgba(0,0,0,.6); border: 1px solid #39404f; }
+#u-fill { height: 100%; width: 0; background: #55e0ff; box-shadow: 0 0 6px rgba(85,224,255,.6); transition: width .25s; }
+body.touch-mode #unlock { padding: 3px 6px; }
+body.touch-mode #unlock .u-row { font-size: 9px; }
+body.touch-mode #unlock .u-bar { width: 130px; }
+/* SKIN UNLOCKED: a cyan stamp, the new paint's name + chip */
+.skin-unlocked {
+  /* below the crosshair: kill streaks pop above it, and the 10th kill is usually mid-combo */
+  position: absolute; left: 50%; top: 63%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  pointer-events: none; animation: secretin 2.8s forwards; white-space: nowrap;
+}
+.skin-unlocked b {
+  font-size: 30px; letter-spacing: 7px; text-indent: 7px; color: #55e0ff;
+  padding: 6px 20px; border: 2px solid #55e0ff; background: rgba(4,26,36,.6);
+  text-shadow: 2px 2px 0 #000, 0 0 20px rgba(85,224,255,.7);
+  box-shadow: 0 0 24px rgba(85,224,255,.3), inset 0 0 12px rgba(85,224,255,.18);
+}
+.skin-unlocked span { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: bold; letter-spacing: 3px; color: #f0f2f6; text-shadow: 2px 2px 0 #000; }
+.skin-unlocked .sw { width: 30px; height: 15px; }
+.skin-unlocked em { font-style: normal; font-size: 11px; letter-spacing: 4px; color: #55e0ff; }
+body.touch-mode .skin-unlocked b { font-size: 21px; letter-spacing: 4px; }
+body.touch-mode .skin-unlocked span { font-size: 12px; }
+/* title: the next skin to earn, so the first run has a goal from the first shot */
+.next-unlock {
+  margin-top: 16px; display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  font: bold 12px 'Courier New', Courier, monospace; letter-spacing: .14em; text-transform: uppercase;
+  color: #8a94a8; background: rgba(8,10,16,.72); border: 1px solid #2c3240; border-left: 3px solid #55e0ff;
+}
+.next-unlock .nu-label { color: #55e0ff; }
+.next-unlock b { color: #f0f2f6; font-size: 13px; }
+.next-unlock .nu-bar { width: 90px; height: 5px; background: rgba(0,0,0,.6); border: 1px solid #39404f; display: block; }
+.next-unlock .nu-bar i { display: block; height: 100%; background: #55e0ff; }
+/* armory: a tab per gun, the gun itself on a turntable, its paints beside it */
+#armory-screen { justify-content: flex-start; background: rgba(5,6,10,.93); }
+.arm-wrap {
+  margin: auto; width: min(980px, 96vw); box-sizing: border-box; padding: 0 8px;
+  display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
+}
+.arm-head { display: flex; align-items: center; gap: 14px; }
+.arm-back { font-size: 13px; padding: 9px 16px; }
+/* out-ranks .tbtn-quiet (defined later): Back must be easy to find */
+#armory-screen .arm-back { color: #f0f2f6; border-color: #cfd6e4; background: rgba(20,24,34,.95); }
+#armory-screen .arm-back:hover { color: #0a0c12; background: #55e0ff; border-color: #55e0ff; }
+.arm-title { flex: 1; font-size: 18px; font-weight: bold; letter-spacing: .4em; color: #f0f2f6; text-shadow: 2px 2px 0 #000; }
+.arm-count { font-size: 11px; letter-spacing: .16em; color: #55e0ff; }
+.arm-tabs { display: flex; gap: 4px; border-bottom: 1px solid #2c3240; }
+.arm-tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 4px 8px;
+  font: bold 14px 'Courier New', Courier, monospace; letter-spacing: .12em; color: #e0e6f0;
+  background: rgba(16,20,30,.95); border: 1px solid #39404f; border-bottom: none; cursor: pointer;
+  text-shadow: 1px 1px 0 #000;
+}
+.arm-tab small { font-size: 11px; letter-spacing: .08em; color: #aab3c4; }
+.arm-tab:hover { color: #fff; border-color: #6a7488; }
+.arm-tab.on { color: #0a0c12; background: #55e0ff; border-color: #55e0ff; text-shadow: none; }
+.arm-tab.on small { color: #0a3a48; }
+.arm-body { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 12px; }
+.arm-stage {
+  /* above the menus' scanline overlay (.tscreen::after): the gun reads clean */
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: radial-gradient(ellipse at 50% 55%, rgba(85,224,255,.08), rgba(8,10,16,.85) 70%);
+  border: 1px solid #2c3240;
+}
+#arm-canvas { width: 100%; aspect-ratio: 16 / 8; display: block; image-rendering: pixelated; cursor: grab; touch-action: none; }
+#arm-canvas:active { cursor: grabbing; }
+.arm-info { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 40px; }
+#arm-name { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: bold; letter-spacing: .14em; color: #f0f2f6; text-shadow: 1px 1px 0 #000; }
+#arm-name .sw { width: 28px; height: 14px; }
+#arm-name small { font-size: 12px; color: #aab3c4; letter-spacing: .12em; }
+#arm-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 11px; letter-spacing: .12em; color: #8a94a8; }
+#arm-status .arm-goal { display: flex; align-items: center; gap: 8px; }
+/* compact action buttons: Equip (cyan) and the rewarded unlock (steel, never the primary look) */
+.arm-btn {
+  display: inline-flex; align-items: center; gap: 7px; padding: 6px 14px; cursor: pointer;
+  font: bold 11px 'Courier New', Courier, monospace; letter-spacing: .16em; text-transform: uppercase;
+  background: rgba(10,13,20,.8); border: 1px solid; white-space: nowrap;
+}
+.arm-equip { color: #55e0ff; border-color: #55e0ff; }
+.arm-equip:hover { background: #55e0ff; color: #0a0c12; }
+.arm-ad { color: #cfd6e4; border-color: #6a7488; }
+.arm-ad:hover:not(:disabled) { border-color: #cfd6e4; }
+.arm-ad:disabled { cursor: default; color: #6f7a90; border-color: #39404f; }
+#arm-status .arm-eq { color: #55e0ff; font-weight: bold; }
+#arm-status .arm-lock { color: #ff8a3c; font-weight: bold; }
+#arm-status .nu-bar { width: 80px; height: 5px; background: rgba(0,0,0,.6); border: 1px solid #39404f; display: block; }
+#arm-status .nu-bar i { display: block; height: 100%; background: #55e0ff; }
+.arm-list { display: flex; flex-direction: column; gap: 5px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
+.arm-skin {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; text-align: left;
+  font: bold 14px 'Courier New', Courier, monospace; letter-spacing: .08em;
+  color: #cfd6e4; background: rgba(8,10,16,.74); border: 1px solid #2c3240; cursor: pointer;
+}
+.arm-skin .arm-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.arm-skin small { font-size: 11px; color: #8a94a8; letter-spacing: .06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arm-skin .sw { width: 24px; height: 13px; }
+.arm-skin:hover { border-color: #6a7488; }
+.arm-skin.sel { border-color: #55e0ff; box-shadow: inset 0 0 0 1px #55e0ff; }
+.arm-skin.on small { color: #55e0ff; }
+/* locked: dimmed but in its real colours, so the goal is something you can see */
+.arm-skin.locked { color: #9aa3b4; }
+.arm-skin.locked .sw { opacity: .6; }
+@media (max-height: 560px) {
+  .arm-wrap { gap: 6px; }
+  .arm-title { font-size: 14px; }
+  .arm-back { padding: 6px 12px; font-size: 12px; }
+  .arm-tab { padding: 6px 2px 5px; font-size: 11px; letter-spacing: .04em; }
+  .arm-tab small { font-size: 10px; }
+  .arm-stage { padding: 6px; gap: 4px; }
+  #arm-canvas { aspect-ratio: 16 / 7; }
+  #arm-name { font-size: 13px; }
+  #arm-name small { font-size: 10px; }
+  .arm-info { min-height: 30px; }
+  .arm-btn { font-size: 9.5px; padding: 4px 9px; gap: 5px; letter-spacing: .1em; }
+  #arm-status { gap: 4px; font-size: 9px; }
+  #arm-status .nu-bar { width: 50px; }
+  .arm-list { max-height: 216px; gap: 4px; }
+  .arm-skin { padding: 5px 8px; font-size: 11.5px; gap: 8px; }
+  .arm-skin small { font-size: 9.5px; }
+  .next-unlock { margin-top: 8px; padding: 5px 9px; font-size: 9.5px; gap: 7px; letter-spacing: .08em; }
+  /* short screens: the strip gets its own centred row over score | version */
+  .title-foot.has-mid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 4px; }
+  .title-foot.has-mid .next-unlock { grid-column: 1 / -1; grid-row: 1; justify-self: center; }
+  .next-unlock b { font-size: 10.5px; }
+  .next-unlock .nu-bar { width: 44px; }
+}
 .buff {
   font-size: 12px; font-weight: bold; letter-spacing: 2px; padding: 3px 9px;
   border: 1px solid; background: rgba(8,10,16,.65);
@@ -808,6 +950,17 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   background: rgba(10,13,20,.72); color: #8a94a8; border: 1px solid #39404f;
 }
 .title-gear:hover { color: #ffd028; border-color: #ffd028; }
+/* top-left, mirroring the gear: the Armory (weapon skins), with the owned count */
+.title-armory {
+  position: fixed; top: 14px; left: 16px; z-index: 11; height: 42px; padding: 0 14px 0 12px;
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+  font: bold 12px 'Courier New', Courier, monospace; letter-spacing: .2em; text-transform: uppercase;
+  background: rgba(10,13,20,.72); color: #cfd6e4; border: 1px solid #39404f; border-left: 3px solid #55e0ff;
+}
+.title-armory .ico { color: #55e0ff; }
+.title-armory small { font-size: 10px; letter-spacing: .08em; color: #55e0ff; }
+.title-armory:hover { border-color: #55e0ff; }
+.title-armory:focus-visible { outline: 2px solid #55e0ff; outline-offset: 3px; }
 .title-gear:focus-visible { outline: 2px solid #ffd028; outline-offset: 3px; }
 /* in the flow (last flex item), so a tall menu scrolls past it instead of under it */
 .title-foot {
@@ -815,6 +968,11 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   display: flex; justify-content: space-between; gap: 12px;
   font-size: 11px; letter-spacing: .12em; color: #566076;
 }
+/* title: best score | NEXT SKIN (bottom centre) | version */
+.title-foot.has-mid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; }
+.title-foot.has-mid > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.title-foot.has-mid > span:last-child { text-align: right; }
+.title-foot .next-unlock { margin-top: 0; }
 @media (max-height: 560px) {
   .new-sector { margin-top: 9px; }
   .ns-tag { font-size: 10px; padding: 4px 9px; letter-spacing: .16em; }
@@ -827,6 +985,9 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   .tbtn-play { font-size: 18px; padding: 12px 60px; }
   .title-controls { margin-top: 10px; font-size: 10px; }
   .title-gear { top: 8px; right: 10px; width: 36px; height: 36px; }
+  .title-armory { top: 8px; left: 10px; height: 36px; padding: 0 10px 0 9px; font-size: 10px; gap: 7px; }
+  /* phones: icon + count only, so it stays clear of the wordmark */
+  .title-armory span { display: none; }
   .title-menu { margin-top: 18px; }
   .tscreen { padding: 4px 0 7px; }
   .title-foot { margin-top: 4px; }
@@ -940,6 +1101,7 @@ export class HUD {
         <div id="score"><span class="label">SCORE</span><span id="score-num">000000</span><span id="score-mult"></span></div>
         <div id="kills"><span class="label">KILLS</span><span id="kills-num">0 / 0</span></div>
         <div id="buffs"></div>
+        <div id="unlock"><div class="u-row"><span class="u-label">NEXT SKIN</span><span id="u-sw"></span><b id="u-name"></b></div><div class="u-bar"><div id="u-fill"></div></div><div class="u-row"><span id="u-need"></span><b id="u-n"></b></div></div>
       </div>
       <div id="objective">
         <div id="obj-main" class="hpanel"><i id="obj-icon"></i><span id="obj-text"></span><span id="obj-steps"><i></i><i></i><i></i></span></div>
@@ -1249,6 +1411,173 @@ export class HUD {
     glow.style.opacity = '0';
   }
 
+  private unlockKey = '';
+  private unlockHide = 0;
+  /**
+   * Next-skin progress under the score: shown when the count moves (or
+   * `force`, at a sector start), faded out a few seconds later.
+   */
+  unlockProgress(next: SkinDef | null, have: number, force = false): void {
+    const el = this.root.querySelector('#unlock') as HTMLElement;
+    if (!next) {
+      el.classList.remove('show');
+      return;
+    }
+    const key = `${next.id}:${have}`;
+    if (key === this.unlockKey && !force) return;
+    this.unlockKey = key;
+    (el.querySelector('#u-sw') as HTMLElement).innerHTML = swatchHtml(next.swatch);
+    (el.querySelector('#u-name') as HTMLElement).textContent = `${next.name} ${WEAPON_LABEL[next.weapon]}`;
+    (el.querySelector('#u-need') as HTMLElement).textContent = needText(next);
+    (el.querySelector('#u-n') as HTMLElement).textContent = `${Math.min(have, next.need.n)} / ${next.need.n}`;
+    (el.querySelector('#u-fill') as HTMLElement).style.width = `${Math.min(100, (have / next.need.n) * 100)}%`;
+    el.classList.add('show');
+    clearTimeout(this.unlockHide);
+    this.unlockHide = window.setTimeout(() => el.classList.remove('show'), force ? 5000 : 3200);
+  }
+
+  /** a skin was earned: a cyan SKIN UNLOCKED stamp, its name + chip, EQUIPPED */
+  skinUnlocked(s: SkinDef): void {
+    this.root.querySelectorAll('.skin-unlocked').forEach((el) => el.remove());
+    const el = document.createElement('div');
+    el.className = 'skin-unlocked';
+    el.innerHTML = `<b>SKIN UNLOCKED</b><span>${swatchHtml(s.swatch)}${s.name} &middot; ${WEAPON_LABEL[s.weapon]}</span><em>EQUIPPED</em>`;
+    this.root.appendChild(el);
+    setTimeout(() => el.remove(), 2850);
+  }
+
+  /**
+   * Armory: a tab per gun; the gun turns on a turntable in the picked paint
+   * (locked ones preview too: you see what you're playing for), its paints
+   * listed beside it. EQUIP for an owned one, the goal + progress for a
+   * locked one. ←/→ (or Q/E) switch tabs, ↑/↓ pick, Enter equips, Esc back.
+   */
+  showArmory(opts: {
+    equipped: Partial<Record<WeaponId, string>>;
+    unlocked: Set<string>;
+    progress: (s: SkinDef) => number;
+    onEquip: (weapon: WeaponId, id: string) => void;
+    onBack: () => void;
+    /** the tab to open on */
+    start?: WeaponId;
+    /** Poki with ads: unlock a locked skin now with a rewarded video (true = watched and granted) */
+    onAdUnlock?: (id: string) => Promise<boolean>;
+  }): void {
+    this.hideScreen();
+    const el = document.createElement('div');
+    el.id = 'armory-screen';
+    el.className = 'tscreen';
+    const weapons: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
+    const skinsOf = (w: WeaponId): SkinDef[] => SKINS.filter((s) => s.weapon === w);
+    el.innerHTML = `
+      <div class="arm-wrap">
+        <div class="arm-head">
+          <button id="armory-back" class="tbtn tbtn-quiet arm-back">&#9664; Back</button>
+          <div class="arm-title">ARMORY</div>
+          <div class="arm-count" id="arm-count">SKINS ${opts.unlocked.size} / ${SKINS.length}</div>
+        </div>
+        <div class="arm-tabs">${weapons.map((w) => `<button class="arm-tab" data-w="${w}">${WEAPON_LABEL[w]}<small></small></button>`).join('')}</div>
+        <div class="arm-body">
+          <div class="arm-stage">
+            <canvas id="arm-canvas" title="Drag to turn"></canvas>
+            <div class="arm-info"><div id="arm-name"></div><div id="arm-status"></div></div>
+          </div>
+          <div class="arm-list" id="arm-list"></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(el);
+    this.screenEl = el;
+    this.root.style.visibility = 'hidden';
+    const preview = startArmoryPreview(el.querySelector('#arm-canvas') as HTMLCanvasElement);
+    this.logoStop = () => preview.stop();
+
+    let tab: WeaponId = opts.start && weapons.includes(opts.start) ? opts.start : 'pistol';
+    let sel = opts.equipped[tab] ?? '';
+    const listEl = el.querySelector('#arm-list') as HTMLElement;
+    const nameEl = el.querySelector('#arm-name') as HTMLElement;
+    const statusEl = el.querySelector('#arm-status') as HTMLElement;
+
+    const render = (): void => {
+      (el.querySelector('#arm-count') as HTMLElement).textContent = `SKINS ${opts.unlocked.size} / ${SKINS.length}`;
+      el.querySelectorAll<HTMLElement>('.arm-tab').forEach((t) => {
+        const w = t.dataset.w as WeaponId;
+        t.classList.toggle('on', w === tab);
+        const all = skinsOf(w);
+        (t.querySelector('small') as HTMLElement).textContent = `${all.filter((s) => opts.unlocked.has(s.id)).length}/${all.length}`;
+      });
+      const cur = opts.equipped[tab] ?? '';
+      const items = [{ id: '', name: 'STANDARD', swatch: STANDARD_SWATCH[tab], skin: null as SkinDef | null },
+        ...skinsOf(tab).map((s) => ({ id: s.id, name: s.name, swatch: s.swatch, skin: s }))];
+      listEl.innerHTML = items.map((it) => {
+        const open = !it.skin || opts.unlocked.has(it.id);
+        const sub = !open ? `${needText(it.skin!)} &middot; ${opts.progress(it.skin!)}/${it.skin!.need.n}`
+          : cur === it.id ? 'EQUIPPED' : it.skin ? 'UNLOCKED' : 'FACTORY PAINT';
+        return `<button class="arm-skin${it.id === sel ? ' sel' : ''}${cur === it.id ? ' on' : ''}${open ? '' : ' locked'}" data-id="${it.id}">${swatchHtml(it.swatch)}<span class="arm-txt">${it.name}<small>${sub}</small></span></button>`;
+      }).join('');
+      listEl.querySelectorAll<HTMLButtonElement>('.arm-skin').forEach((b) => {
+        b.addEventListener('click', () => {
+          sel = b.dataset.id ?? '';
+          render();
+        });
+      });
+      const skin = sel ? SKINS.find((s) => s.id === sel) ?? null : null;
+      preview.show(tab, skin);
+      nameEl.innerHTML = `${swatchHtml(skin ? skin.swatch : STANDARD_SWATCH[tab])}<span>${skin ? skin.name : 'STANDARD'}<br><small>${WEAPON_LABEL[tab]}</small></span>`;
+      const open = !skin || opts.unlocked.has(skin.id);
+      if (!open) {
+        const have = opts.progress(skin!);
+        statusEl.innerHTML = `<div class="arm-goal"><span class="arm-lock">LOCKED</span><span>${needText(skin!)}</span><span class="nu-bar"><i style="width:${Math.min(100, (have / skin!.need.n) * 100)}%"></i></span><span>${have}/${skin!.need.n}</span></div>` +
+          (opts.onAdUnlock ? `<button id="armory-ad" class="arm-btn arm-ad">${ICONS.ad(13)}Unlock now &middot; Watch ad</button>` : '');
+        const ad = statusEl.querySelector('#armory-ad') as HTMLButtonElement | null;
+        ad?.addEventListener('click', () => {
+          const id = skin!.id;
+          ad.disabled = true;
+          ad.lastChild!.textContent = 'Loading video…';
+          void opts.onAdUnlock!(id).then((ok) => {
+            if (ok) {
+              if (tab === skin!.weapon) sel = id;
+              render();
+            } else if (ad.isConnected) {
+              ad.lastChild!.textContent = 'No video available';
+            }
+          });
+        });
+      } else if (cur === sel) {
+        statusEl.innerHTML = '<span class="arm-eq">&#10003; EQUIPPED</span>';
+      } else {
+        statusEl.innerHTML = '<button id="armory-equip" class="arm-btn arm-equip">Equip</button>';
+        statusEl.querySelector('#armory-equip')!.addEventListener('click', () => equip());
+      }
+    };
+    const equip = (): void => {
+      if (sel && !opts.unlocked.has(sel)) return;
+      opts.onEquip(tab, sel);
+      render();
+    };
+    const setTab = (w: WeaponId): void => {
+      tab = w;
+      sel = opts.equipped[w] ?? '';
+      render();
+    };
+    el.querySelectorAll<HTMLElement>('.arm-tab').forEach((t) => t.addEventListener('click', () => setTab(t.dataset.w as WeaponId)));
+    el.querySelector('#armory-back')!.addEventListener('click', () => opts.onBack());
+    render();
+    this.titleKey = (ev: KeyboardEvent) => {
+      const i = weapons.indexOf(tab);
+      if (ev.code === 'Escape') opts.onBack();
+      else if (ev.code === 'ArrowRight' || ev.code === 'KeyE') setTab(weapons[(i + 1) % weapons.length]);
+      else if (ev.code === 'ArrowLeft' || ev.code === 'KeyQ') setTab(weapons[(i + weapons.length - 1) % weapons.length]);
+      else if (ev.code === 'ArrowDown' || ev.code === 'ArrowUp') {
+        const ids = ['', ...skinsOf(tab).map((s) => s.id)];
+        const j = ids.indexOf(sel);
+        sel = ids[(j + (ev.code === 'ArrowDown' ? 1 : ids.length - 1)) % ids.length];
+        render();
+      } else if (ev.code === 'Enter' || ev.code === 'NumpadEnter') equip();
+    };
+    window.addEventListener('keydown', this.titleKey);
+  }
+
   /** big center popup for kill streaks (DOUBLE KILL etc.) */
   streak(text: string): void {
     // a fast chain escalates: the newest streak replaces the previous popup
@@ -1326,6 +1655,11 @@ export class HUD {
     onContinue?: () => void;
     /** omitted on platforms without co-op (Poki build) */
     onCoop?: () => void;
+    /** the next weapon skin to earn (null = all owned) and how far along it is */
+    next?: { skin: SkinDef; have: number } | null;
+    /** skins owned so far; with any, the strip opens the Armory */
+    skinsOwned?: number;
+    onArmory?: () => void;
     /** "NEW SECTOR" banner for the Biofoundry: returning players only, until they reach it */
     newSector?: boolean;
     onSettings: () => void;
@@ -1346,8 +1680,19 @@ export class HUD {
       opts.best ? `BEST SCORE ${opts.best.toLocaleString()}` : '',
       opts.bestDepth ? `DEEPEST: DEPTH ${opts.bestDepth}` : '',
     ].filter(Boolean).join(' &middot; ');
+    // the next skin to earn: a goal for the very first run; the Armory
+    // itself is the top-left corner button
+    const nx = opts.next;
+    const owned = opts.skinsOwned ?? 0;
+    const nextUnlock = nx
+      ? `<div id="next-unlock" class="next-unlock"><span class="nu-label">Next skin</span>${swatchHtml(nx.skin.swatch)}<b>${nx.skin.name} ${WEAPON_LABEL[nx.skin.weapon]}</b><span>${needText(nx.skin)}</span><span class="nu-bar"><i style="width:${Math.min(100, (nx.have / nx.skin.need.n) * 100)}%"></i></span><span>${Math.min(nx.have, nx.skin.need.n)}/${nx.skin.need.n}</span></div>`
+      : `<div id="next-unlock" class="next-unlock"><span class="nu-label">All ${SKINS.length} skins unlocked</span></div>`;
+    const armoryBtn = opts.onArmory
+      ? `<button id="title-armory-btn" class="title-armory" aria-label="Armory" title="Armory: weapon skins">${ICONS.armory(18)}<span>Armory</span><small>${owned}/${SKINS.length}</small></button>`
+      : '';
     el.innerHTML = `
       <button id="title-settings-btn" class="title-gear" aria-label="Settings" title="Settings">${ICONS.gear(20)}</button>
+      ${armoryBtn}
       <div class="title-center">
         <canvas id="title-logo"></canvas>
         <div class="title-goal">Escape the facility</div>
@@ -1373,8 +1718,9 @@ export class HUD {
         </div>
         <div class="title-controls">${controls}</div>
       </div>
-      <div class="title-foot">
+      <div class="title-foot has-mid">
         <span>${foot}</span>
+        ${nextUnlock}
         <span>VOXELSTRIKE ${__APP_VERSION__}</span>
       </div>
     `;
@@ -1389,6 +1735,7 @@ export class HUD {
     el.querySelector('#continue-btn')?.addEventListener('click', () => opts.onContinue?.());
     el.querySelector('#title-settings-btn')!.addEventListener('click', () => opts.onSettings());
     el.querySelector('#coop-btn')?.addEventListener('click', () => opts.onCoop?.());
+    el.querySelector('#title-armory-btn')?.addEventListener('click', () => opts.onArmory?.());
     this.titleKey = (ev: KeyboardEvent) => {
       if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') {
         if (cont) opts.onContinue?.();
@@ -1761,7 +2108,8 @@ export class HUD {
     onQuit: () => void,
     onSettings: () => void,
     quitLabel = 'Main menu',
-    touch = false
+    touch = false,
+    onArmory?: () => void,
   ): void {
     this.hideScreen();
     const el = document.createElement('div');
@@ -1783,6 +2131,7 @@ export class HUD {
           <button id="resume-btn" class="tbtn tbtn-primary">Resume</button>
           <div class="title-menu-row">
             <button id="pause-settings-btn" class="tbtn tbtn-quiet">Settings</button>
+            ${onArmory ? '<button id="pause-armory-btn" class="tbtn tbtn-quiet">Armory</button>' : ''}
             <button id="pause-newrun-btn" class="tbtn tbtn-quiet">${quitLabel}</button>
           </div>
         </div>
@@ -1799,6 +2148,7 @@ export class HUD {
     el.querySelector('#resume-btn')!.addEventListener('click', () => onResume());
     el.querySelector('#pause-newrun-btn')!.addEventListener('click', () => onQuit());
     el.querySelector('#pause-settings-btn')!.addEventListener('click', () => onSettings());
+    el.querySelector('#pause-armory-btn')?.addEventListener('click', () => onArmory?.());
     this.titleKey = (ev: KeyboardEvent) => {
       if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') onResume();
     };

@@ -230,6 +230,31 @@ Tips:
 - Intermission screens track kills, secrets, and time per sector; the final
   screen totals the campaign.
 
+## Weapon skins
+
+Every gun has paint jobs to earn: **22 skins** across the five weapons, from
+the concepts in `reference/weapon-skins/`. Each one is a goal you work toward
+by playing, and progress counts across runs on this device:
+
+| First goals | Skin |
+|---|---|
+| 10 kills | Ceramic Mint Sidearm |
+| Clear sector 1 | Hazard Scattergun |
+| 5 headshots | Copperhead Sidearm |
+| Find a secret | Tiger Byte Ripper |
+| 75 kills | Crimson Scattergun |
+| 5 bash kills | Blue Steel Sidearm |
+
+…then sector clears, the Biofoundry, the Broodkeeper, S ranks and deeper
+endless depths. The title shows the **next skin** and how close you are; the
+HUD flashes your progress when it moves; a new skin lands with a **SKIN
+UNLOCKED** stamp and goes straight onto the gun. Change paints any time in
+the **Armory** (top-left on the title, or from the pause menu): a tab per
+gun, the gun turning on a turntable in the paint you pick, locked ones
+included so you can see what you're playing for. On Poki, a locked skin
+can also be unlocked right away by watching a short video. Skins are
+cosmetic only.
+
 ## Arsenal
 
 | Slot | Weapon | Type | Notes |

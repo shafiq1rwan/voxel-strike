@@ -8,7 +8,7 @@ Icons used: heart, shield-halved, id-card, door-closed, elevator,
 flag-checkered, rocket, battery-full, right-left, clapperboard, burst,
 bolt, crosshairs, person-running, heart-pulse, boxes-stacked,
 screwdriver-wrench, box-open, heart-circle-plus, skull, kit-medical,
-boxes-packing, shield, gear.
+boxes-packing, shield, gear, gun.
 Icons licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
 Font Awesome Free license: https://fontawesome.com/license/free
 Copyright Fonticons, Inc.

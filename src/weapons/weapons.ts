@@ -8,6 +8,7 @@ import { AimCone, findAimTarget } from '../entities/aimassist';
 import type { Game } from '../game';
 import { buildFirstPersonArm, buildFirstPersonHand } from '../entities/operative';
 import { isDestructible } from '../world/blocks';
+import type { SkinDef, SkinRole } from '../core/skins';
 
 /**
  * Quick melee (V / right mouse / touch BASH): the gun in hand jabs forward.
@@ -336,90 +337,98 @@ export interface WeaponModel {
  * weapon looks like: the first-person view model AND the floor pickup
  * (pickups.ts) both come from here, so they can never drift apart.
  */
-export function buildWeaponModel(id: WeaponId): WeaponModel {
+export function buildWeaponModel(id: WeaponId, skin: SkinDef | null = null): WeaponModel {
   const g = new THREE.Group();
   const m: WeaponModel = { group: g, tip: -0.5, coils: [], tips: [] };
+  // paint: the gun's own colours, overridden by the skin's (signal colours —
+  // sights, dot, coils, LED, shells, bead — are never part of a skin)
+  const paint = (defaults: Partial<Record<SkinRole, number>>): Record<SkinRole, number> =>
+    ({ ...defaults, ...(skin?.colors ?? {}) }) as Record<SkinRole, number>;
   switch (id) {
     // SIDEARM — compact pistol: blowback slide, glowing three-dot sights
     case 'pistol': {
-      const slide = vmPart(g, 0.09, 0.085, 0.34, STEEL, 0, 0.025, -0.1);
+      const P = paint({ main: STEEL, second: GUNMETAL, dark: GRIP, accent: HAZARD, trim: GUNMETAL, metal: STEEL });
+      const slide = vmPart(g, 0.09, 0.085, 0.34, P.main, 0, 0.025, -0.1);
       for (let i = 0; i < 2; i++) {
-        vmPart(slide, 0.096, 0.05, 0.016, GUNMETAL, 0, -0.005, 0.1 + i * 0.035, { outline: false });
+        vmPart(slide, 0.096, 0.05, 0.016, P.trim, 0, -0.005, 0.1 + i * 0.035, { outline: false });
       }
       vmPart(slide, 0.03, 0.008, 0.08, VOID, 0.018, 0.043, -0.03, { outline: false }); // ejection port
-      const front = vmPart(slide, 0.022, 0.028, 0.02, GRIP, 0, 0.055, -0.15);
+      const front = vmPart(slide, 0.022, 0.028, 0.02, P.dark, 0, 0.055, -0.15);
       vmPart(front, 0.012, 0.012, 0.006, EXIT_GREEN, 0, 0.004, 0.012, { glow: true, outline: false });
       for (const sx of [-0.026, 0.026]) {
-        const post = vmPart(slide, 0.02, 0.026, 0.02, GRIP, sx, 0.054, 0.15);
+        const post = vmPart(slide, 0.02, 0.026, 0.02, P.dark, sx, 0.054, 0.15);
         vmPart(post, 0.01, 0.01, 0.006, EXIT_GREEN, 0, 0.004, 0.012, { glow: true, outline: false });
       }
-      vmPart(g, 0.08, 0.06, 0.26, GUNMETAL, 0, -0.045, -0.06); // frame
-      vmPart(g, 0.022, 0.018, 0.09, GRIP, 0, -0.1, -0.05); // trigger guard
-      vmPart(g, 0.014, 0.04, 0.014, STEEL, 0, -0.08, -0.025, { outline: false }); // trigger
-      const grip = vmPart(g, 0.076, 0.17, 0.1, GRIP, 0, -0.14, 0.06, { rx: 0.25 });
-      vmPart(grip, 0.082, 0.026, 0.08, HAZARD, 0, -0.035, 0, { outline: false });
-      vmPart(g, 0.032, 0.03, 0.022, GRIP, 0, 0.05, 0.085); // hammer
+      vmPart(g, 0.08, 0.06, 0.26, P.second, 0, -0.045, -0.06); // frame
+      vmPart(g, 0.022, 0.018, 0.09, P.dark, 0, -0.1, -0.05); // trigger guard
+      vmPart(g, 0.014, 0.04, 0.014, P.metal, 0, -0.08, -0.025, { outline: false }); // trigger
+      const grip = vmPart(g, 0.076, 0.17, 0.1, P.dark, 0, -0.14, 0.06, { rx: 0.25 });
+      vmPart(grip, 0.082, 0.026, 0.08, P.accent, 0, -0.035, 0, { outline: false });
+      vmPart(g, 0.032, 0.03, 0.022, P.dark, 0, 0.05, 0.085); // hammer
       m.tip = -0.32;
       m.slide = slide;
       break;
     }
     // SCATTERGUN — pump shotgun: racks the forend after every shot
     case 'shotgun': {
-      vmPart(g, 0.11, 0.12, 0.22, GUNMETAL, 0, 0, 0.03); // receiver
+      const P = paint({ main: GUNMETAL, metal: STEEL, second: 0x8a5a32, trim: 0x5a3a1e, stock: 0x6e4626, dark: GRIP });
+      vmPart(g, 0.11, 0.12, 0.22, P.main, 0, 0, 0.03); // receiver
       for (let i = 0; i < 3; i++) {
         // side saddle: spare shells, red hulls + brass heads
         const shell = vmPart(g, 0.02, 0.028, 0.05, KEY_RED, -0.064, -0.034 + i * 0.034, 0.03);
         vmPart(shell, 0.022, 0.03, 0.014, 0xc8a030, 0, 0, 0.026, { outline: false });
       }
-      vmPart(g, 0.075, 0.075, 0.58, STEEL, 0, 0.035, -0.36); // barrel
+      vmPart(g, 0.075, 0.075, 0.58, P.metal, 0, 0.035, -0.36); // barrel
       vmPart(g, 0.022, 0.014, 0.52, STEEL_LIGHT, 0, 0.079, -0.36); // vent rib
       vmPart(g, 0.016, 0.016, 0.016, HAZARD, 0, 0.093, -0.61, { glow: true }); // bead sight
-      vmPart(g, 0.09, 0.09, 0.035, GRIP, 0, 0.035, -0.645); // muzzle ring
-      vmPart(g, 0.065, 0.065, 0.46, GUNMETAL, 0, -0.045, -0.32); // magazine tube
-      vmPart(g, 0.075, 0.075, 0.03, GRIP, 0, -0.045, -0.56); // tube cap
-      const pump = vmPart(g, 0.125, 0.095, 0.2, 0x8a5a32, 0, -0.05, -0.3);
-      for (const gz of [-0.06, 0, 0.06]) vmPart(pump, 0.129, 0.099, 0.014, 0x5a3a1e, 0, 0, gz, { outline: false });
-      vmPart(g, 0.022, 0.02, 0.08, GRIP, 0, -0.072, 0.05); // trigger guard
-      const stock = vmPart(g, 0.09, 0.12, 0.28, 0x6e4626, 0, -0.075, 0.27);
-      vmPart(stock, 0.095, 0.128, 0.025, GRIP, 0, 0, 0.145, { outline: false }); // butt pad
+      vmPart(g, 0.09, 0.09, 0.035, P.dark, 0, 0.035, -0.645); // muzzle ring
+      vmPart(g, 0.065, 0.065, 0.46, skin?.colors.metal ?? GUNMETAL, 0, -0.045, -0.32); // magazine tube
+      vmPart(g, 0.075, 0.075, 0.03, P.dark, 0, -0.045, -0.56); // tube cap
+      const pump = vmPart(g, 0.125, 0.095, 0.2, P.second, 0, -0.05, -0.3);
+      for (const gz of [-0.06, 0, 0.06]) vmPart(pump, 0.129, 0.099, 0.014, P.trim, 0, 0, gz, { outline: false });
+      vmPart(g, 0.022, 0.02, 0.08, P.dark, 0, -0.072, 0.05); // trigger guard
+      const stock = vmPart(g, 0.09, 0.12, 0.28, P.stock, 0, -0.075, 0.27);
+      vmPart(stock, 0.095, 0.128, 0.025, P.dark, 0, 0, 0.145, { outline: false }); // butt pad
       m.tip = -0.67;
       m.pump = pump;
       break;
     }
     // RIPPER — boxy SMG: red-dot optic, reciprocating charging handle
     case 'smg': {
-      vmPart(g, 0.11, 0.13, 0.4, 0x4a5162, 0, -0.01, -0.06); // body
-      const rail = vmPart(g, 0.05, 0.016, 0.34, GRIP, 0, 0.063, -0.08);
+      const P = paint({ main: 0x4a5162, second: 0x353a47, dark: GRIP, mag: GRIP, accent: HAZARD, stock: GUNMETAL, metal: STEEL_LIGHT });
+      vmPart(g, 0.11, 0.13, 0.4, P.main, 0, -0.01, -0.06); // body
+      const rail = vmPart(g, 0.05, 0.016, 0.34, P.dark, 0, 0.063, -0.08);
       for (let i = 0; i < 5; i++) vmPart(rail, 0.056, 0.008, 0.016, GUNMETAL, 0, 0.008, -0.13 + i * 0.065, { outline: false });
-      const optic = vmPart(g, 0.06, 0.055, 0.08, GRIP, 0, 0.1, -0.02);
+      const optic = vmPart(g, 0.06, 0.055, 0.08, P.dark, 0, 0.1, -0.02);
       vmPart(optic, 0.046, 0.04, 0.004, 0x1a2a2a, 0, 0.002, 0.041, { outline: false }); // lens
       vmPart(optic, 0.012, 0.012, 0.004, KEY_RED, 0, 0.003, 0.044, { glow: true, outline: false }); // dot
-      const shroud = vmPart(g, 0.1, 0.1, 0.2, 0x353a47, 0, 0, -0.36);
+      const shroud = vmPart(g, 0.1, 0.1, 0.2, P.second, 0, 0, -0.36);
       for (let i = 0; i < 3; i++) vmPart(shroud, 0.006, 0.032, 0.03, VOID, -0.05, 0, -0.06 + i * 0.06, { outline: false });
-      vmPart(g, 0.045, 0.045, 0.1, STEEL_LIGHT, 0, 0, -0.5); // barrel
-      const mag = vmPart(g, 0.065, 0.22, 0.09, GRIP, 0, -0.19, -0.02, { rx: -0.15 });
-      vmPart(mag, 0.072, 0.026, 0.096, HAZARD, 0, -0.105, 0, { outline: false }); // base plate
-      vmPart(g, 0.05, 0.12, 0.06, GRIP, 0, -0.13, -0.27); // front grip
-      vmPart(g, 0.07, 0.14, 0.08, GRIP, 0, -0.12, 0.1, { rx: 0.25 }); // pistol grip
-      vmPart(g, 0.07, 0.07, 0.16, GUNMETAL, 0, -0.02, 0.2); // stock stub
-      m.bolt = vmPart(g, 0.03, 0.022, 0.035, STEEL_LIGHT, -0.066, 0.02, -0.02);
+      vmPart(g, 0.045, 0.045, 0.1, P.metal, 0, 0, -0.5); // barrel
+      const mag = vmPart(g, 0.065, 0.22, 0.09, P.mag, 0, -0.19, -0.02, { rx: -0.15 });
+      vmPart(mag, 0.072, 0.026, 0.096, P.accent, 0, -0.105, 0, { outline: false }); // base plate
+      vmPart(g, 0.05, 0.12, 0.06, P.dark, 0, -0.13, -0.27); // front grip
+      vmPart(g, 0.07, 0.14, 0.08, P.dark, 0, -0.12, 0.1, { rx: 0.25 }); // pistol grip
+      vmPart(g, 0.07, 0.07, 0.16, P.stock, 0, -0.02, 0.2); // stock stub
+      m.bolt = vmPart(g, 0.03, 0.022, 0.035, P.metal, -0.066, 0.02, -0.02);
       m.tip = -0.56;
       break;
     }
     // THUMPER — rocket launcher: hazard bands, ready LED on the back cap
     case 'rocket': {
-      vmPart(g, 0.17, 0.17, 0.7, 0x56784e, 0, 0.02, -0.15); // tube
+      const P = paint({ main: 0x56784e, accent: HAZARD, trim: GRIP, second: 0x2e3e2e, dark: GRIP });
+      vmPart(g, 0.17, 0.17, 0.7, P.main, 0, 0.02, -0.15); // tube
       for (let i = 0; i < 4; i++) {
-        vmPart(g, 0.178, 0.178, 0.03, i % 2 ? GRIP : HAZARD, 0, 0.02, -0.43 + i * 0.03, { outline: false });
+        vmPart(g, 0.178, 0.178, 0.03, i % 2 ? P.trim : P.accent, 0, 0.02, -0.43 + i * 0.03, { outline: false });
       }
-      vmPart(g, 0.21, 0.21, 0.12, 0x2e3e2e, 0, 0.02, -0.52); // muzzle
-      const cap = vmPart(g, 0.2, 0.2, 0.09, 0x2e3e2e, 0, 0.02, 0.22);
+      vmPart(g, 0.21, 0.21, 0.12, P.second, 0, 0.02, -0.52); // muzzle
+      const cap = vmPart(g, 0.2, 0.2, 0.09, P.second, 0, 0.02, 0.22);
       vmPart(cap, 0.12, 0.12, 0.006, VOID, 0, 0, 0.046, { outline: false }); // exhaust
       m.led = vmPart(cap, 0.035, 0.035, 0.008, EXIT_GREEN, 0.065, 0.065, 0.048, { glow: true, outline: false });
-      const optic = vmPart(g, 0.055, 0.065, 0.14, GRIP, -0.05, 0.14, -0.02);
+      const optic = vmPart(g, 0.055, 0.065, 0.14, P.dark, -0.05, 0.14, -0.02);
       vmPart(optic, 0.03, 0.03, 0.006, EXIT_GREEN, 0, 0.005, 0.071, { glow: true, outline: false });
-      vmPart(g, 0.06, 0.15, 0.08, GRIP, 0, -0.13, 0, { rx: 0.2 }); // grip
-      vmPart(g, 0.05, 0.12, 0.06, GRIP, 0, -0.12, -0.3); // front grip
+      vmPart(g, 0.06, 0.15, 0.08, P.dark, 0, -0.13, 0, { rx: 0.2 }); // grip
+      vmPart(g, 0.05, 0.12, 0.06, P.dark, 0, -0.12, -0.3); // front grip
       // the tube is big at arm's length: the view model shrinks + nudges it
       g.scale.setScalar(0.72);
       g.position.set(0.04, -0.03, 0);
@@ -428,25 +437,33 @@ export function buildWeaponModel(id: WeaponId): WeaponModel {
     }
     // ARC CASTER — coil gun: coils pulse, charge with the cooldown, flare on fire
     case 'arc': {
-      vmPart(g, 0.12, 0.13, 0.36, 0x3e4858, 0, -0.02, 0); // body
-      vmPart(g, 0.03, 0.04, 0.22, STEEL, 0, 0.065, 0); // top fin
+      const P = paint({ main: 0x3e4858, second: STEEL, trim: 0x2a3240, metal: 0x8a94a8, dark: GRIP, accent: HAZARD });
+      vmPart(g, 0.12, 0.13, 0.36, P.main, 0, -0.02, 0); // body
+      vmPart(g, 0.03, 0.04, 0.22, P.second, 0, 0.065, 0); // top fin
       for (let i = 0; i < 4; i++) {
         m.coils.push(vmPart(g, 0.15, 0.15, 0.045, 0x34d0ff, 0, 0, -0.2 - i * 0.075, { glow: true }));
-        if (i < 3) vmPart(g, 0.12, 0.12, 0.03, 0x2a3240, 0, 0, -0.2375 - i * 0.075, { outline: false });
+        if (i < 3) vmPart(g, 0.12, 0.12, 0.03, P.trim, 0, 0, -0.2375 - i * 0.075, { outline: false });
       }
       m.core = vmPart(g, 0.045, 0.045, 0.42, 0xd8f8ff, 0, 0, -0.3, { glow: true, outline: false });
       for (const sx of [-0.055, 0.055]) {
-        vmPart(g, 0.025, 0.04, 0.15, 0x8a94a8, sx, 0, -0.52); // prong
+        vmPart(g, 0.025, 0.04, 0.15, P.metal, sx, 0, -0.52); // prong
         m.tips.push(vmPart(g, 0.03, 0.045, 0.03, 0x9aeaff, sx, 0, -0.6, { glow: true }));
       }
-      const cell = vmPart(g, 0.05, 0.09, 0.12, GRIP, -0.085, -0.02, 0.02);
+      const cell = vmPart(g, 0.05, 0.09, 0.12, P.dark, -0.085, -0.02, 0.02);
       m.cellWindow = vmPart(cell, 0.006, 0.05, 0.08, 0x34d0ff, -0.026, 0, 0, { glow: true, outline: false });
-      vmPart(g, 0.07, 0.15, 0.09, GRIP, 0, -0.14, 0.1, { rx: 0.25 }); // grip
-      const rear = vmPart(g, 0.11, 0.12, 0.03, GRIP, 0, -0.02, 0.195);
-      vmPart(rear, 0.114, 0.024, 0.034, HAZARD, 0, 0.03, 0, { outline: false });
+      vmPart(g, 0.07, 0.15, 0.09, P.dark, 0, -0.14, 0.1, { rx: 0.25 }); // grip
+      const rear = vmPart(g, 0.11, 0.12, 0.03, P.dark, 0, -0.02, 0.195);
+      vmPart(rear, 0.114, 0.024, 0.034, P.accent, 0, 0.03, 0, { outline: false });
       m.tip = -0.55;
       break;
     }
+  }
+  // the skin's paint panels (stripes, bands, patches): flat, no rim, baked
+  // with the static parts — or with the slide / pump they ride on
+  for (const mk of skin?.marks ?? []) {
+    const parent = mk.on === 'slide' ? m.slide : mk.on === 'pump' ? m.pump : g;
+    if (!parent) continue;
+    vmPart(parent, mk.size[0], mk.size[1], mk.size[2], mk.color, mk.at[0], mk.at[1], mk.at[2], { outline: false, rx: mk.rx ?? 0, ry: mk.ry ?? 0 });
   }
   bakeModel(m);
   return m;
@@ -496,6 +513,12 @@ export class WeaponSystem {
   private meleePending = false;
   /** what the last swing hit (tests read it): 'enemy' | 'crit' | 'voxel' | 'wall' | 'miss' */
   lastMelee: string = '';
+  /** true while the bash's hit is being applied (a kill in that moment is a bash kill) */
+  bashing = false;
+  /** skin id on each gun's view model ('' = standard) */
+  private skinIds = new Map<WeaponId, string>();
+  /** the operative's arms ride the models: skins can't rebuild them then */
+  private operativeArms = false;
   private kickRoll = 0;
   private swayX = 0;
   private swayY = 0;
@@ -583,6 +606,7 @@ export class WeaponSystem {
    * owner-approved gun-only one.
    */
   useOperativeArms(): void {
+    this.operativeArms = true;
     // gun-local hand points (grip / support) and where each elbow lies
     // each forearm runs from its hand back towards its own bottom corner of
     // the screen, the way arms enter an FPS view: steeply down it hung below
@@ -642,6 +666,48 @@ export class WeaponSystem {
       mount(-1, pump ?? g, h.l, L_ELBOW, s);
     }
     this.lightTick = 1; // tint the new arms on the next frame
+  }
+
+  /**
+   * Repaint one gun's view model with a skin (null = standard): the model is
+   * rebuilt and swapped in place, with its moving-part handles. Floor pickups
+   * keep the standard paint.
+   */
+  setSkin(id: WeaponId, skin: SkinDef | null): void {
+    const sid = skin?.id ?? '';
+    if ((this.skinIds.get(id) ?? '') === sid || this.operativeArms) return;
+    this.skinIds.set(id, sid);
+    const old = this.models.get(id);
+    if (old) {
+      this.viewModel.remove(old);
+      old.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+    }
+    const m = buildWeaponModel(id, skin);
+    m.group.visible = id === this.current;
+    this.viewModel.add(m.group);
+    this.models.set(id, m.group);
+    this.muzzleTips.set(id, m.tip);
+    const p = this.parts;
+    if (m.slide) { p.slide = m.slide; this.basePos.set(m.slide, m.slide.position.z); }
+    if (m.pump) { p.pump = m.pump; this.basePos.set(m.pump, m.pump.position.z); }
+    if (m.bolt) { p.bolt = m.bolt; this.basePos.set(m.bolt, m.bolt.position.z); }
+    if (m.led) { p.led = m.led; this.rocketReady = null; }
+    if (id === 'arc') {
+      p.core = m.core;
+      p.cellWindow = m.cellWindow;
+      p.coils = m.coils;
+      p.tips = m.tips;
+    }
+    this.lightTick = 1;
+  }
+
+  skinOf(id: WeaponId): string {
+    return this.skinIds.get(id) ?? '';
   }
 
   private showModel(id: WeaponId): void {
@@ -958,7 +1024,9 @@ export class WeaponSystem {
       const dmg = MELEE.damage * (crit ? 2 : 1) * (pl.buffs.quad > 0 ? 4 : 1);
       const n = Math.max(0.3, bestD);
       const dx = (e.pos.x - pl.pos.x) / n, dz = (e.pos.z - pl.pos.z) / n;
+      this.bashing = true;
       game.applyEnemyHit(e, dmg, dx, dz, false);
+      this.bashing = false;
       // a real shove: out of a husk's claw range (brutes barely budge, the boss not at all)
       if (!game.isNetClient && e.alive && e.kind !== 'broodkeeper') {
         const mass = e.kind === 'brute' ? 0.25 : 1;

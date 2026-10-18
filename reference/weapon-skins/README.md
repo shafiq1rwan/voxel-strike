@@ -2,6 +2,11 @@
 
 Generated with the built-in image_gen tool on 2026-10-18.
 
+**Status (2026-10-18): all 22 concepts are in the game** as paint data in
+`src/core/skins.ts`, earned by playing (see README "Weapon skins"). They
+are first-pass reads of these sheets in the box model's own colours; render
+them with `node scripts/skin-sheets.mjs` to compare.
+
 [Comparison sheet](scattergun-skins-v1.png)
 
 Additional sets: [Sidearm, Ripper, Thumper and Arc Caster skin concepts](other-weapon-skins.md)
