@@ -2,7 +2,7 @@ import { Player } from '../entities/player';
 import { WeaponSystem, WEAPONS } from '../weapons/weapons';
 import { WeaponId } from '../types';
 import { GameSettings, RESOLUTIONS } from '../core/settings';
-import { ICONS, AmmoIcon } from './icons';
+import { ICONS, AmmoIcon, perkColor, perkIcon } from './icons';
 import type { OverloadReward } from '../entities/overload';
 import { typeLines, type TerminalLine, type TerminalRun } from './terminal';
 import type { PerkId } from '../core/perks';
@@ -153,21 +153,50 @@ const CSS = `
 .sc-after.show { opacity: 1; pointer-events: auto; }
 .sc-pick-title { font-size: 12px; letter-spacing: .3em; color: #cfd6e4; margin-bottom: 10px; }
 .sc-pick-title i { font-style: normal; color: #566076; margin-left: 12px; letter-spacing: .12em; }
-.sc-perks { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.sc-perks { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+/* a perk card is a big button: icon tile, name, a few words, and a PICK bar */
 .sc-perk {
-  position: relative; flex: 1 1 0; min-width: 170px; max-width: 232px;
-  display: flex; flex-direction: column; gap: 6px; align-items: flex-start; text-align: left;
-  padding: 12px 14px; font-family: 'Courier New', Courier, monospace; cursor: pointer;
-  background: rgba(10,13,20,.85); color: #cfd6e4; border: 1px solid #39404f;
-  transition: border-color .12s, transform .12s, background .12s, opacity .2s;
+  --pc: #ffd028;
+  position: relative; flex: 0 1 196px; min-width: 150px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
+  padding: 16px 12px 0; overflow: hidden; cursor: pointer;
+  font-family: 'Courier New', Courier, monospace; color: #cfd6e4;
+  background: linear-gradient(180deg, rgba(30,36,50,.95), rgba(12,15,22,.95));
+  border: 2px solid #4b5568; border-radius: 3px;
+  box-shadow: 0 4px 0 #05060a, 0 0 0 1px rgba(0,0,0,.4);
+  transition: border-color .12s, transform .12s, box-shadow .12s, opacity .2s;
 }
-.sc-perk b { color: #ffd028; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; padding-right: 14px; }
-.sc-perk span:last-child { font-size: 12px; line-height: 1.35; color: #a9b3c6; }
-.sc-key { position: absolute; top: 6px; right: 8px; font-size: 10px; color: #566076; }
-.sc-perk:not([disabled]):hover, .sc-perk:not([disabled]):focus-visible { border-color: #ffd028; transform: translateY(-2px); background: rgba(255,208,40,.07); }
-.sc-perk[disabled] { cursor: default; }
-.sc-perk.chosen { border-color: #ffd028; background: rgba(255,208,40,.14); opacity: 1; }
-.sc-perks.picked .sc-perk:not(.chosen) { opacity: .3; }
+.sc-perk-ico {
+  width: 58px; height: 58px; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--pc); border-radius: 50%; background: rgba(5,6,10,.6);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--pc) 45%, transparent), inset 0 0 12px color-mix(in srgb, var(--pc) 25%, transparent);
+}
+.sc-perk-ico .ico { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--pc) 70%, transparent)); }
+.sc-perk-text { display: flex; flex-direction: column; gap: 3px; }
+.sc-perk b { color: #f0f2f6; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; }
+.sc-perk-short { color: var(--pc); font-size: 13px; letter-spacing: .04em; }
+.sc-perk-pick {
+  align-self: stretch; margin: 4px -12px 0; padding: 7px 0; font-size: 11px; font-weight: bold; letter-spacing: .24em;
+  color: #ffd028; background: rgba(255,208,40,.08); border-top: 1px solid rgba(255,208,40,.35);
+  transition: background .12s, color .12s;
+}
+.sc-perk-pick kbd {
+  display: inline-block; min-width: 14px; margin-left: 6px; padding: 0 4px; font: inherit; letter-spacing: 0;
+  color: #0a0c12; background: #ffd028; border-radius: 2px;
+}
+.sc-perk:not([disabled]):hover, .sc-perk:not([disabled]):focus-visible {
+  border-color: #ffd028; transform: translateY(-3px);
+  box-shadow: 0 7px 0 #05060a, 0 0 22px rgba(255,208,40,.28);
+}
+.sc-perk:not([disabled]):hover .sc-perk-pick, .sc-perk:not([disabled]):focus-visible .sc-perk-pick { background: #ffd028; color: #0a0c12; }
+.sc-perk:not([disabled]):hover .sc-perk-pick kbd { background: #0a0c12; color: #ffd028; }
+.sc-perk:not([disabled]):active { transform: translateY(1px); box-shadow: 0 2px 0 #05060a; }
+.sc-perk[disabled] { cursor: default; opacity: .55; }
+.sc-perks.armed .sc-perk:not(.chosen) { animation: scarm .5s ease-out 1; }
+@keyframes scarm { 0% { box-shadow: 0 4px 0 #05060a, 0 0 0 rgba(255,208,40,0); } 45% { box-shadow: 0 4px 0 #05060a, 0 0 26px rgba(255,208,40,.55); } 100% { box-shadow: 0 4px 0 #05060a, 0 0 0 rgba(255,208,40,0); } }
+.sc-perk.chosen { border-color: #ffd028; opacity: 1; box-shadow: 0 0 26px rgba(255,208,40,.45); }
+.sc-perk.chosen .sc-perk-pick { background: #ffd028; color: #0a0c12; }
+.sc-perks.picked .sc-perk:not(.chosen) { opacity: .25; }
 .sc-note { margin-top: 10px; font-size: 11px; letter-spacing: .1em; color: #566076; }
 .sc-skip { margin-top: 12px; font-size: 11px; letter-spacing: .24em; color: #566076; }
 .sc-totals { margin: 4px 0; font-size: 13px; color: #8a94a8; }
@@ -188,9 +217,11 @@ const CSS = `
   .sc-best { font-size: 10px; min-height: 14px; }
   .sc-after { margin-top: 6px; }
   .sc-pick-title { font-size: 10px; margin-bottom: 6px; }
-  .sc-perk { padding: 7px 10px; min-width: 140px; gap: 3px; }
-  .sc-perk b { font-size: 11.5px; }
-  .sc-perk span:last-child { font-size: 10.5px; }
+  .sc-perk { padding: 8px 8px 0; min-width: 120px; gap: 5px; }
+  .sc-perk-ico { width: 40px; height: 40px; }
+  .sc-perk b { font-size: 11px; }
+  .sc-perk-short { font-size: 10.5px; }
+  .sc-perk-pick { margin: 3px -8px 0; padding: 4px 0; font-size: 9.5px; }
   .sc-note, .sc-skip { font-size: 9.5px; margin-top: 6px; }
 }
 /* landscape phone: tally on the left, the perks on the right */
@@ -199,11 +230,22 @@ const CSS = `
   .sc-tally { width: 100%; }
   .sc-after { margin-top: 0; }
   .sc-perks { flex-direction: column; gap: 6px; }
-  .sc-perk { max-width: none; min-width: 0; flex: none; }
+  .sc-perk {
+    flex: none; min-width: 0; flex-direction: row; align-items: center; gap: 10px;
+    padding: 5px 0 5px 8px; text-align: left;
+  }
+  .sc-perk-ico { width: 34px; height: 34px; flex: none; }
+  .sc-perk-ico .ico { width: 18px; height: 18px; }
+  .sc-perk-text { flex: 1; }
+  .sc-perk-pick {
+    align-self: stretch; margin: -5px 0 -5px auto; padding: 0 10px; display: flex; align-items: center;
+    border-top: none; border-left: 1px solid rgba(255,208,40,.35); letter-spacing: .14em;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .sc-rank.stamp { animation: none; opacity: 1; transform: rotate(-6deg); }
   .sc-best.new.show { animation: none; }
+  .sc-perks.armed .sc-perk { animation: none; }
 }
 @keyframes termflicker { 0% { opacity: .9; } 50% { opacity: 1; } 97% { opacity: .7; } }
 @keyframes termglitch {
@@ -1712,7 +1754,7 @@ export class HUD {
     prevBest: string | null;
     saved: boolean;
     touch: boolean;
-    perks: Array<{ id: PerkId; name: string; desc: string }> | null;
+    perks: Array<{ id: PerkId; name: string; short: string; desc: string }> | null;
     final?: { totals: string; record: string };
     onTick: () => void;
     onStamp: () => void;
@@ -1742,9 +1784,13 @@ export class HUD {
         </div>`;
     } else if (perks.length) {
       after = `
-        <div class="sc-pick-title">CHOOSE A PERK<i>${o.touch ? 'tap a card' : 'click or press 1&ndash;3'}</i></div>
+        <div class="sc-pick-title">CHOOSE A PERK</div>
         <div class="sc-perks">${perks.map((p, i) => `
-          <button class="sc-perk" data-id="${p.id}" disabled><span class="sc-key">${i + 1}</span><b>${p.name}</b><span>${p.desc}</span></button>`).join('')}
+          <button class="sc-perk" data-id="${p.id}" style="--pc:${perkColor(p.id)}" title="${p.desc}" disabled>
+            <span class="sc-perk-ico">${perkIcon(p.id, 30)}</span>
+            <span class="sc-perk-text"><b>${p.name}</b><span class="sc-perk-short">${p.short}</span></span>
+            <span class="sc-perk-pick">${o.touch ? 'PICK' : `PICK <kbd>${i + 1}</kbd>`}</span>
+          </button>`).join('')}
         </div>
         ${o.saved ? `<div class="sc-note">Progress saved &mdash; you can continue from sector ${o.nextSector} later. The perk carries over.</div>` : ''}`;
     } else {
@@ -1787,6 +1833,7 @@ export class HUD {
     const arm = (): void => {
       armed = true;
       for (const c of cards) c.disabled = false;
+      el.querySelector('.sc-perks')?.classList.add('armed');
       for (const b of el.querySelectorAll<HTMLButtonElement>('#again-btn, #menu-btn')) b.disabled = false;
     };
     const finish = (): void => {

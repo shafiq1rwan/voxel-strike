@@ -11,20 +11,22 @@ export type PerkId =
 export interface PerkDef {
   id: PerkId;
   name: string;
-  /** one short line: what it does, in numbers */
+  /** the card's line: a few words */
+  short: string;
+  /** the full rule, in numbers (tooltip / docs) */
   desc: string;
 }
 
 export const PERKS: Record<PerkId, PerkDef> = {
-  volatile: { id: 'volatile', name: 'Volatile', desc: 'Barrels and your rockets blast 35% wider' },
-  overcharge: { id: 'overcharge', name: 'Overcharge', desc: 'Arc caster chains to 2 more enemies and hits harder down the chain' },
-  headhunter: { id: 'headhunter', name: 'Headhunter', desc: 'Headshot kills heal 8 health' },
-  momentum: { id: 'momentum', name: 'Momentum', desc: 'A triple kill gives 3 s of haste' },
-  secondWind: { id: 'secondWind', name: 'Second Wind', desc: 'One extra revive in every sector' },
-  deepPockets: { id: 'deepPockets', name: 'Deep Pockets', desc: 'Carry 50% more of every ammo type' },
-  plating: { id: 'plating', name: 'Self-Repair', desc: 'Armor rebuilds to 50 when you avoid damage for 4 s' },
-  scavenger: { id: 'scavenger', name: 'Scavenger', desc: '1 in 3 kills drops ammo for the gun in your hand' },
-  vitality: { id: 'vitality', name: 'Vitality', desc: '+25 max health, and heal 25 now' },
+  volatile: { id: 'volatile', name: 'Volatile', short: 'Bigger blasts', desc: 'Barrels and your rockets blast 35% wider' },
+  overcharge: { id: 'overcharge', name: 'Overcharge', short: '+2 arc chains', desc: 'Arc caster chains to 2 more enemies and hits harder down the chain' },
+  headhunter: { id: 'headhunter', name: 'Headhunter', short: 'Headshot kills heal', desc: 'Headshot kills heal 8 health' },
+  momentum: { id: 'momentum', name: 'Momentum', short: 'Triple kill = haste', desc: 'A triple kill gives 3 s of haste' },
+  secondWind: { id: 'secondWind', name: 'Second Wind', short: '+1 revive / sector', desc: 'One extra revive in every sector' },
+  deepPockets: { id: 'deepPockets', name: 'Deep Pockets', short: '+50% ammo', desc: 'Carry 50% more of every ammo type' },
+  plating: { id: 'plating', name: 'Self-Repair', short: 'Armor regenerates', desc: 'Armor rebuilds to 50 when you avoid damage for 4 s' },
+  scavenger: { id: 'scavenger', name: 'Scavenger', short: 'Kills drop ammo', desc: '1 in 3 kills drops ammo for the gun in your hand' },
+  vitality: { id: 'vitality', name: 'Vitality', short: '+25 max health', desc: '+25 max health, and heal 25 now' },
 };
 
 export const PERK_IDS = Object.keys(PERKS) as PerkId[];

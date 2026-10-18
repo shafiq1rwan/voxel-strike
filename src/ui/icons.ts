@@ -19,6 +19,16 @@ import { faRocket } from '@fortawesome/free-solid-svg-icons/faRocket';
 import { faBatteryFull } from '@fortawesome/free-solid-svg-icons/faBatteryFull';
 import { faRightLeft } from '@fortawesome/free-solid-svg-icons/faRightLeft';
 import { faClapperboard } from '@fortawesome/free-solid-svg-icons/faClapperboard';
+import { faBurst } from '@fortawesome/free-solid-svg-icons/faBurst';
+import { faBolt } from '@fortawesome/free-solid-svg-icons/faBolt';
+import { faCrosshairs } from '@fortawesome/free-solid-svg-icons/faCrosshairs';
+import { faPersonRunning } from '@fortawesome/free-solid-svg-icons/faPersonRunning';
+import { faHeartPulse } from '@fortawesome/free-solid-svg-icons/faHeartPulse';
+import { faBoxesStacked } from '@fortawesome/free-solid-svg-icons/faBoxesStacked';
+import { faScrewdriverWrench } from '@fortawesome/free-solid-svg-icons/faScrewdriverWrench';
+import { faBoxOpen } from '@fortawesome/free-solid-svg-icons/faBoxOpen';
+import { faHeartCirclePlus } from '@fortawesome/free-solid-svg-icons/faHeartCirclePlus';
+import type { PerkId } from '../core/perks';
 
 const C = 'currentColor';
 
@@ -71,5 +81,31 @@ export const ICONS = {
   /** marks a button that plays a video ad (Poki rewarded revive) */
   ad: (size = 16) => fa(faClapperboard, C, size),
 };
+
+/**
+ * Perk cards: one icon + accent colour each, so the three on offer read at a
+ * glance. Colours reuse the palette's meanings where one fits (arc teal,
+ * armor blue, health red, headshot gold, brass for ammo).
+ */
+const PERK_ICON: Record<PerkId, { icon: IconDefinition; color: string }> = {
+  volatile: { icon: faBurst, color: '#ff8a3c' },
+  overcharge: { icon: faBolt, color: '#55e0ff' },
+  headhunter: { icon: faCrosshairs, color: '#ffd028' },
+  momentum: { icon: faPersonRunning, color: '#c58cff' },
+  secondWind: { icon: faHeartPulse, color: '#ff8fa8' },
+  deepPockets: { icon: faBoxesStacked, color: '#d8b04a' },
+  plating: { icon: faScrewdriverWrench, color: '#3a9cff' },
+  scavenger: { icon: faBoxOpen, color: '#9fe8b0' },
+  vitality: { icon: faHeartCirclePlus, color: '#e8524a' },
+};
+
+export function perkColor(id: PerkId): string {
+  return PERK_ICON[id].color;
+}
+
+/** a perk's icon in its accent colour, `size` px tall */
+export function perkIcon(id: PerkId, size = 34): string {
+  return fa(PERK_ICON[id].icon, PERK_ICON[id].color, size);
+}
 
 export type AmmoIcon = 'bullets' | 'shells' | 'rockets' | 'cells';
