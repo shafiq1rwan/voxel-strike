@@ -55,7 +55,7 @@ Follows the owner's mockup.
 | MAP / pause | `#hud-map`, `#hud-pause` | Clickable whenever the mouse isn't captured; same as Tab/M and Esc |
 | Score / kills | `#score`, `#kills` | Score with `×N` combo multiplier; kills turn green when the sector is cleared out. Not in the mockup — kept small under the buttons |
 | Buffs | `#buffs` | QUAD / SHIELD / HASTE chips with seconds left |
-| Crosshair | `#crosshair` | Green `+`; red on hit, gold on headshot, `✕` on kill |
+| Crosshair | `#crosshair` | Fixed white four-bar cross with an open center and dark backing for contrast. Separate diagonal hit marker: white on hit, gold on headshot, larger red on kill (gold for a headshot kill). Feedback never moves or scales the aiming bars |
 | Weapon slots | `#slots` | 1–5; owned slots bright, active slot yellow with an underline bar |
 | Keycards | `#keys` | Red key slot always shown (dim until held); blue/yellow only when held |
 | Weapon + ammo | `#ammo-block` | Weapon name, ammo-type icon, count, `AMMO` label |
@@ -123,10 +123,10 @@ matches.
 | Settings | Sensitivity, master + music volume, FOV, pixelation (180 / 240 / 320 / 480 lines; default 480 on desktop, 320 on touch), screen shake, aim assist, *New layout*. Saved on the device |
 | Co-op lobby | Host shows a 4-character code; join types it |
 | Pause | Resume, Settings, and a quit button (*Main menu*, or *Save & quit to menu* from sector 2 on) |
-| Intermission | Sector stats; click to descend. Arms after 0.7 s |
+| Sector clear (solo) | `#sector-clear`. Heading centred on the panel with the rank stamp pinned right on its midline. Tally rows land one by one (kills with their points, secrets, time vs par, sector clear, rank bonus), the score counts up, then the S/A/B/C stamp lands (gold / cyan / light / grey) with *NEW BEST RANK!* flashing when it beats that sector number's best (else *SECTOR n BEST: X*). Then *CHOOSE A PERK*: three cards (keys 1–3 / click / tap) that arm 0.5 s after they appear; picking one descends. Any click / Enter / Space during the tally skips to the end. Landscape phones: tally left, perk cards stacked right. Co-op keeps the old click-to-descend intermission |
 | Facility terminal | After the sector 3 intermission (solo): full-screen void with a steel header bar (*VXS-OS 4.12* / *SERVICE TERMINAL B3-07*) and a scanlined cyan terminal typing the route-out message (hazard-yellow `!` warnings, a bright last line). The box is full height from the first character so it never re-centres. Click / tap / Enter / Space prints the rest; the foot then pulses *CLICK* (*TAP*) *TO DESCEND*; that press glitches, collapses the screen like a CRT switching off and fades violet into sector 4. Fits 667×375 without clipping |
 | Death | Top row, equal size: *Revive* (in place, once per sector attempt; on Poki *Revive · Watch ad* with the clapperboard icon, steel not green, hidden without the SDK, "No video available" if none played) beside the yellow *Retry from keycard* (once the red key was taken: in place, back at the key) or *Retry sector N* (sector-entry gear, health floored at 60). Second row, quiet: *Restart sector N* (only with a keycard checkpoint) and *New run*. Enter / Space = retry, never the ad. Fits 667×375 on one line per button |
-| Results | CAMPAIGN COMPLETE, totals, *Play a new layout* / *Main menu*. Arms after 1.2 s |
+| Results | The last sector's clear screen headed CAMPAIGN COMPLETE: the same tally + rank stamp, then campaign totals, the layout record line, and *Play a new layout* / *Main menu* (disabled until the tally ends, then armed after 0.5 s). Co-op keeps the old results screen |
 | READY | After an ad break on desktop: one click to recapture the mouse |
 | Graphics lost | Pauses on WebGL context loss; *Reload game* appears after 4 s |
 

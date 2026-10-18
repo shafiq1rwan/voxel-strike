@@ -218,9 +218,23 @@ try {
     const endState = await completeLevel(sector);
     if (sector < 5) {
       check(endState === 'intermission', `sector ${sector}: reached exit → intermission (state=${endState})`);
+      // the sector-clear moment: a click skips the tally, then a perk card descends
+      const clear = await page.evaluate(() => ({
+        rank: document.querySelector('.sc-rank-letter')?.textContent ?? '',
+        cards: document.querySelectorAll('.sc-perk').length,
+      }));
+      check(/^[SABC]$/.test(clear.rank) && clear.cards === 3, `sector ${sector}: clear screen ranks it ${clear.rank} and offers ${clear.cards} perks`);
+      await page.mouse.click(640, 120); // skip the tally (anywhere but a card)
+      let armedCard = false;
+      for (let i = 0; i < 30 && !armedCard; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        armedCard = await page.evaluate(() => { const c = document.querySelector('.sc-perk'); return !!c && !c.disabled; });
+      }
       await page.screenshot({ path: `${OUT}/e2e-3-sector${sector}-done.png` });
-      // click through to the next sector
-      await page.mouse.click(640, 360);
+      const perkBefore = await page.evaluate(() => window.__voxelstrike.perks.size);
+      await page.click('.sc-perk');
+      check(armedCard && await page.evaluate((n) => window.__voxelstrike.perks.size === n + 1, perkBefore),
+        `sector ${sector}: a perk was picked (${perkBefore + 1} owned)`);
       if (sector === 3) {
         // sector 3 → 4 goes through the facility terminal: it types, a click
         // prints the rest, the next click powers the screen off into sector 4
@@ -295,6 +309,15 @@ try {
       }
     } else {
       check(endState === 'won', `sector 5: campaign complete (state=${endState})`);
+      const fin = await page.evaluate(() => ({
+        head: document.querySelector('#sector-clear h1')?.textContent ?? '',
+        rank: document.querySelector('.sc-rank-letter')?.textContent ?? '',
+        perks: document.querySelectorAll('.sc-perk').length,
+        owned: window.__voxelstrike.perks.size,
+      }));
+      check(fin.head.includes('CAMPAIGN COMPLETE') && /^[SABC]$/.test(fin.rank) && fin.perks === 0,
+        `the last clear is CAMPAIGN COMPLETE, ranked ${fin.rank}, no perk offer`);
+      check(fin.owned === 4, `four perks were collected over the run (${fin.owned})`);
       await page.screenshot({ path: `${OUT}/e2e-4-campaign.png` });
     }
   }

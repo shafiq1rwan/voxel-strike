@@ -80,6 +80,12 @@ whether players die or wander.
 
 ## Done
 
+- 2026-10-18 — Sector-clear moment: S–C rank from kills, secrets and
+  time vs par with a score bonus, the tally counting up, a NEW BEST RANK
+  flash per sector, then a pick of 1 of 3 run perks (9 in the pool) that
+  carry through retry, save and Continue. Playtest feedback: "fun, but short
+  and not rewarding enough".
+
 - 2026-10-18 — Sector 4 in the campaign: a Biofoundry-themed sector
   generated fresh every run (solo, web and Poki) with the same keycard →
   red door → lift → pad flow, specimen tanks with dormant Vatborn, entered

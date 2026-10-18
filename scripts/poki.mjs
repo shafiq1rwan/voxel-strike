@@ -151,10 +151,16 @@ try {
   check(c.includes('measure level 1 complete'), 'level 1 complete measured');
   check(c[c.length - 1] === 'gameplayStop' && (await state(page)) === 'intermission', 'intermission → gameplayStop');
   const breaks = c.filter((x) => x === 'commercialBreak').length;
-  await sleep(800); // the intermission screen arms after 0.7s
+  // the sector-clear screen: skip the tally, wait for the perk cards to arm
+  await page.evaluate(() => document.querySelector('#sector-clear').click());
+  for (let i = 0; i < 30; i++) {
+    await sleep(100);
+    if (await page.evaluate(() => { const b = document.querySelector('.sc-perk'); return !!b && !b.disabled; })) break;
+  }
   await page.evaluate(() => {
-    document.querySelector('.screen').click();
-    document.querySelector('.screen').click(); // impatient double click during the ad
+    const cards = document.querySelectorAll('.sc-perk');
+    cards[0].click();
+    cards[1].click(); // impatient double pick during the ad
   });
   await sleep(700);
   await page.mouse.click(640, 360); // READY → click to continue
@@ -162,6 +168,7 @@ try {
   c = await calls(page);
   check(c.filter((x) => x === 'commercialBreak').length === breaks + 1, 'one ad per break, even on double click');
   check((await page.evaluate(() => window.__voxelstrike.levelIndex)) === 2, 'advanced exactly one sector');
+  check((await page.evaluate(() => window.__voxelstrike.perks.size)) === 1, 'a double pick still takes exactly one perk');
   check(c[c.length - 1] !== 'gameplayStop', 'sector 2: gameplay resumed');
   await page.screenshot({ path: `${OUT}/poki-sector2.png` });
 

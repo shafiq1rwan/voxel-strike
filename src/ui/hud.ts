@@ -5,6 +5,7 @@ import { GameSettings, RESOLUTIONS } from '../core/settings';
 import { ICONS, AmmoIcon } from './icons';
 import type { OverloadReward } from '../entities/overload';
 import { typeLines, type TerminalLine, type TerminalRun } from './terminal';
+import type { PerkId } from '../core/perks';
 
 const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
 
@@ -35,11 +36,18 @@ const CSS = `
 }
 #crosshair {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  font-size: 18px; color: #9fe8b0; transition: color .08s, transform .08s;
+  width: 24px; height: 24px; color: #f0f2f6; text-shadow: none;
 }
-#crosshair.hit { color: #ff5040; transform: translate(-50%,-50%) scale(1.5); }
-#crosshair.kill { color: #ff5040; transform: translate(-50%,-50%) scale(2); text-shadow: 0 0 10px rgba(255,80,64,.9); }
-#crosshair.hs { color: #ffd028 !important; text-shadow: 0 0 12px rgba(255,208,40,.9); }
+#hud #crosshair svg { display: block; overflow: visible; }
+#crosshair path { fill: none; stroke: currentColor; stroke-width: 2; }
+#crosshair path.crosshair-edge { stroke: #05060a; stroke-width: 4; stroke-opacity: .85; }
+#crosshair .crosshair-marker {
+  position: absolute; left: -4px; top: -4px; width: 32px; height: 32px;
+  opacity: 0; color: #f0f2f6;
+}
+#crosshair.hit .crosshair-marker { opacity: 1; }
+#crosshair.kill .crosshair-marker { opacity: 1; color: #ff5040; transform: scale(1.15); }
+#crosshair.hs .crosshair-marker { color: #ffd028; }
 #lowvignette {
   position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .5s;
   background: radial-gradient(ellipse at center, rgba(120,0,0,0) 52%, rgba(150,12,6,.55) 100%);
@@ -97,6 +105,106 @@ const CSS = `
   animation: transitfade .9s ease-out forwards;
 }
 @keyframes termcaret { 0% { opacity: 1; } 50% { opacity: 0; } }
+/* ---------------- sector clear: tally, rank stamp, perk choice ---------------- */
+.sc-screen { overflow-y: auto; justify-content: flex-start; cursor: default; padding: 12px 0; }
+.sc-screen > .sc-panel { margin: auto 0; flex-shrink: 0; width: min(780px, 94vw); padding: 24px 32px 20px; box-sizing: border-box; }
+/* the title is centred on the panel on its own; the rank stamp is pinned to
+   the right edge, centred on the title's line (centring the pair pushed the
+   title off-centre) */
+.sc-head { position: relative; display: flex; align-items: center; justify-content: center; min-height: 88px; padding: 0 100px; }
+.sc-screen .sc-head h1 { margin: 0; font-size: 34px; line-height: 1; letter-spacing: 4px; text-indent: 4px; white-space: nowrap; text-align: center; }
+.sc-rank {
+  position: absolute; right: 0; top: calc(50% - 44px);
+  width: 88px; height: 88px; border: 3px solid currentColor; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  opacity: 0; transform: scale(2.4) rotate(-12deg);
+}
+.sc-rank.stamp { animation: scstamp .32s cubic-bezier(.2,1.6,.4,1) forwards; }
+.sc-rank-label { font-size: 10px; letter-spacing: .3em; text-indent: .3em; }
+.sc-rank-letter { font-size: 54px; line-height: 1; font-weight: bold; }
+.r-S { color: #ffd028; text-shadow: 0 0 18px rgba(255,208,40,.6); box-shadow: 0 0 26px rgba(255,208,40,.35), inset 0 0 18px rgba(255,208,40,.2); }
+.r-A { color: #8ee8ff; text-shadow: 0 0 14px rgba(142,232,255,.5); box-shadow: 0 0 18px rgba(142,232,255,.25); }
+.r-B { color: #cfd6e4; }
+.r-C { color: #8a94a8; }
+@keyframes scstamp {
+  0% { opacity: 0; transform: scale(2.4) rotate(-12deg); }
+  60% { opacity: 1; transform: scale(.92) rotate(-6deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+}
+.sc-body { margin-top: 14px; }
+.sc-tally { width: min(540px, 100%); margin: 0 auto; text-align: left; }
+.sc-row {
+  display: grid; grid-template-columns: 1fr auto 96px; gap: 14px; padding: 5px 2px;
+  border-bottom: 1px dashed #262c38; font-size: 14px; letter-spacing: .08em; color: #cfd6e4;
+  opacity: 0; transform: translateX(-10px); transition: opacity .18s, transform .18s;
+}
+.sc-row.on { opacity: 1; transform: none; }
+.sc-l { text-transform: uppercase; color: #8a94a8; }
+.sc-v i { font-style: normal; color: #566076; margin-left: 8px; font-size: 12px; }
+.sc-p { text-align: right; color: #ffd028; }
+.sc-p.zero { color: #39404f; }
+.sc-total { margin-top: 12px; display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; letter-spacing: .2em; color: #8a94a8; }
+.sc-total b { font-size: 30px; color: #f0f2f6; letter-spacing: .06em; }
+.sc-best { min-height: 18px; margin-top: 4px; text-align: right; font-size: 12px; letter-spacing: .26em; color: #566076; opacity: 0; }
+.sc-best.show { opacity: 1; }
+.sc-best.new.show { color: #ffd028; text-shadow: 0 0 10px rgba(255,208,40,.6); animation: scbest .45s steps(2) 4; }
+@keyframes scbest { 50% { opacity: .15; } }
+.sc-after { margin-top: 14px; opacity: 0; pointer-events: none; transition: opacity .25s; }
+.sc-after.show { opacity: 1; pointer-events: auto; }
+.sc-pick-title { font-size: 12px; letter-spacing: .3em; color: #cfd6e4; margin-bottom: 10px; }
+.sc-pick-title i { font-style: normal; color: #566076; margin-left: 12px; letter-spacing: .12em; }
+.sc-perks { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.sc-perk {
+  position: relative; flex: 1 1 0; min-width: 170px; max-width: 232px;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start; text-align: left;
+  padding: 12px 14px; font-family: 'Courier New', Courier, monospace; cursor: pointer;
+  background: rgba(10,13,20,.85); color: #cfd6e4; border: 1px solid #39404f;
+  transition: border-color .12s, transform .12s, background .12s, opacity .2s;
+}
+.sc-perk b { color: #ffd028; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; padding-right: 14px; }
+.sc-perk span:last-child { font-size: 12px; line-height: 1.35; color: #a9b3c6; }
+.sc-key { position: absolute; top: 6px; right: 8px; font-size: 10px; color: #566076; }
+.sc-perk:not([disabled]):hover, .sc-perk:not([disabled]):focus-visible { border-color: #ffd028; transform: translateY(-2px); background: rgba(255,208,40,.07); }
+.sc-perk[disabled] { cursor: default; }
+.sc-perk.chosen { border-color: #ffd028; background: rgba(255,208,40,.14); opacity: 1; }
+.sc-perks.picked .sc-perk:not(.chosen) { opacity: .3; }
+.sc-note { margin-top: 10px; font-size: 11px; letter-spacing: .1em; color: #566076; }
+.sc-skip { margin-top: 12px; font-size: 11px; letter-spacing: .24em; color: #566076; }
+.sc-totals { margin: 4px 0; font-size: 13px; color: #8a94a8; }
+.sc-record { color: #ffd028; }
+@media (max-height: 560px) {
+  .sc-screen { padding: 4px 0; }
+  .sc-screen > .sc-panel { padding: 10px 16px 8px; }
+  .sc-head { min-height: 58px; padding: 0 66px; }
+  .sc-screen .sc-head h1 { font-size: 24px; letter-spacing: 3px; text-indent: 3px; }
+  .sc-rank { width: 58px; height: 58px; top: calc(50% - 29px); border-width: 2px; }
+  .sc-rank-letter { font-size: 34px; }
+  .sc-rank-label { font-size: 8px; }
+  .sc-body { margin-top: 6px; }
+  .sc-row { font-size: 11px; padding: 2px; gap: 8px; grid-template-columns: 1fr auto 70px; }
+  .sc-v i { font-size: 10px; }
+  .sc-total { margin-top: 5px; font-size: 11px; }
+  .sc-total b { font-size: 20px; }
+  .sc-best { font-size: 10px; min-height: 14px; }
+  .sc-after { margin-top: 6px; }
+  .sc-pick-title { font-size: 10px; margin-bottom: 6px; }
+  .sc-perk { padding: 7px 10px; min-width: 140px; gap: 3px; }
+  .sc-perk b { font-size: 11.5px; }
+  .sc-perk span:last-child { font-size: 10.5px; }
+  .sc-note, .sc-skip { font-size: 9.5px; margin-top: 6px; }
+}
+/* landscape phone: tally on the left, the perks on the right */
+@media (max-height: 460px) and (min-width: 600px) {
+  .sc-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .sc-tally { width: 100%; }
+  .sc-after { margin-top: 0; }
+  .sc-perks { flex-direction: column; gap: 6px; }
+  .sc-perk { max-width: none; min-width: 0; flex: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-rank.stamp { animation: none; opacity: 1; transform: rotate(-6deg); }
+  .sc-best.new.show { animation: none; }
+}
 @keyframes termflicker { 0% { opacity: .9; } 50% { opacity: 1; } 97% { opacity: .7; } }
 @keyframes termglitch {
   0% { transform: translate(-6px, 2px) skewX(-4deg); filter: hue-rotate(60deg) saturate(2); }
@@ -661,6 +769,8 @@ export class HUD {
   private hitTimer: number | null = null;
   private logoStop: (() => void) | null = null;
   private titleKey: ((ev: KeyboardEvent) => void) | null = null;
+  /** timers owned by the current screen (cleared by hideScreen) */
+  private readonly screenTimers: number[] = [];
   /** the facility terminal's typing run, if one is on screen */
   private termRun: TerminalRun | null = null;
 
@@ -675,7 +785,16 @@ export class HUD {
       <div id="lowvignette"></div>
       <div id="pickupflash"></div>
       <div id="shieldflash"></div>
-      <div id="crosshair">+</div>
+      <div id="crosshair" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24">
+          <path class="crosshair-edge" d="M12 2v6 M12 16v6 M2 12h6 M16 12h6"/>
+          <path d="M12 2v6 M12 16v6 M2 12h6 M16 12h6"/>
+        </svg>
+        <svg class="crosshair-marker" width="32" height="32" viewBox="0 0 32 32">
+          <path class="crosshair-edge" d="M4 4l6 6 M22 22l6 6 M4 28l6-6 M22 10l6-6"/>
+          <path d="M4 4l6 6 M22 22l6 6 M4 28l6-6 M22 10l6-6"/>
+        </svg>
+      </div>
       <div id="messages"></div>
       <div id="fps"></div>
       <div id="vitals">
@@ -953,29 +1072,28 @@ export class HUD {
   }
 
   hitMarker(): void {
-    this.crosshairEl.classList.remove('hs');
-    this.crosshairEl.classList.add('hit');
-    if (this.hitTimer !== null) clearTimeout(this.hitTimer);
-    this.hitTimer = window.setTimeout(() => this.crosshairEl.classList.remove('hit', 'hs'), 90);
+    this.showHitMarker(false, false, 90);
   }
 
   /** gold flash for a critical hit to the head */
   headshotMarker(): void {
-    this.crosshairEl.classList.add('hit', 'hs');
-    if (this.hitTimer !== null) clearTimeout(this.hitTimer);
-    this.hitTimer = window.setTimeout(() => this.crosshairEl.classList.remove('hit', 'hs'), 110);
+    this.showHitMarker(true, false, 110);
   }
 
   /** bigger, distinct confirmation when something dies (gold for headshots) */
   killMarker(headshot = false): void {
-    this.crosshairEl.textContent = '✕';
+    this.showHitMarker(headshot, true, 170);
+  }
+
+  private showHitMarker(headshot: boolean, kill: boolean, duration: number): void {
     this.crosshairEl.classList.toggle('hs', headshot);
-    this.crosshairEl.classList.add('kill');
+    this.crosshairEl.classList.toggle('kill', kill);
+    this.crosshairEl.classList.add('hit');
     if (this.hitTimer !== null) clearTimeout(this.hitTimer);
     this.hitTimer = window.setTimeout(() => {
       this.crosshairEl.classList.remove('kill', 'hit', 'hs');
-      this.crosshairEl.textContent = '+';
-    }, 170);
+      this.hitTimer = null;
+    }, duration);
   }
 
   setLowHealth(on: boolean): void {
@@ -1575,10 +1693,183 @@ export class HUD {
     window.addEventListener('keydown', this.titleKey);
   }
 
+  /**
+   * The sector-clear moment (solo). The tally rows land one by one, the score
+   * counts up to the new total, the rank stamps in (S–C) with a NEW BEST RANK
+   * flash when it beats this sector's best, then three perk cards — or, after
+   * the last sector, the campaign results and buttons. A click / tap / Enter
+   * during the animation skips to the end; the cards and buttons only arm
+   * 0.5 s after they appear so a held trigger can't pick one. Keys 1–3 pick.
+   */
+  showSectorClear(o: {
+    sector: number;
+    nextSector: number | null;
+    rows: Array<{ label: string; value: string; points: number }>;
+    scoreFrom: number;
+    scoreTo: number;
+    rank: 'S' | 'A' | 'B' | 'C';
+    newBest: boolean;
+    prevBest: string | null;
+    saved: boolean;
+    touch: boolean;
+    perks: Array<{ id: PerkId; name: string; desc: string }> | null;
+    final?: { totals: string; record: string };
+    onTick: () => void;
+    onStamp: () => void;
+    onPick?: (id: PerkId) => void;
+    onContinue?: () => void;
+    onAgain?: () => void;
+    onMenu?: () => void;
+  }): void {
+    this.hideScreen();
+    const tap = o.touch ? 'TAP' : 'CLICK';
+    const fmt = (n: number): string => n.toLocaleString();
+    const el = document.createElement('div');
+    el.id = 'sector-clear';
+    el.className = 'screen sc-screen';
+    const rowsHtml = o.rows.map((r) => `
+      <div class="sc-row"><span class="sc-l">${r.label}</span><span class="sc-v">${r.value}</span>
+      <span class="sc-p${r.points > 0 ? '' : ' zero'}">${r.points > 0 ? `+${fmt(r.points)}` : '&mdash;'}</span></div>`).join('');
+    const perks = o.perks ?? [];
+    let after: string;
+    if (o.final) {
+      after = `
+        <p class="sc-totals">${o.final.totals}</p>
+        <p class="sc-totals">${o.final.record}</p>
+        <div class="screen-btns">
+          <button id="again-btn" class="tbtn tbtn-primary" disabled>Play a new layout</button>
+          <div class="tbtn-row"><button id="menu-btn" class="tbtn tbtn-quiet" disabled>Main menu</button></div>
+        </div>`;
+    } else if (perks.length) {
+      after = `
+        <div class="sc-pick-title">CHOOSE A PERK<i>${o.touch ? 'tap a card' : 'click or press 1&ndash;3'}</i></div>
+        <div class="sc-perks">${perks.map((p, i) => `
+          <button class="sc-perk" data-id="${p.id}" disabled><span class="sc-key">${i + 1}</span><b>${p.name}</b><span>${p.desc}</span></button>`).join('')}
+        </div>
+        ${o.saved ? `<div class="sc-note">Progress saved &mdash; you can continue from sector ${o.nextSector} later. The perk carries over.</div>` : ''}`;
+    } else {
+      after = `<div class="prompt sc-descend">${tap} TO DESCEND TO SECTOR ${o.nextSector}</div>`;
+    }
+    el.innerHTML = `
+      <div class="panel sc-panel">
+        <div class="sc-head">
+          <h1 class="win">${o.final ? 'CAMPAIGN COMPLETE' : `SECTOR ${o.sector} CLEARED`}</h1>
+          <div class="sc-rank r-${o.rank}"><span class="sc-rank-label">RANK</span><span class="sc-rank-letter">${o.rank}</span></div>
+        </div>
+        <div class="sc-body">
+          <div class="sc-tally">
+            <div class="sc-rows">${rowsHtml}</div>
+            <div class="sc-total"><span>SCORE</span><b id="sc-score">${fmt(o.scoreFrom)}</b></div>
+            <div class="sc-best${o.newBest ? ' new' : ''}">${o.newBest ? 'NEW BEST RANK!' : o.prevBest ? `SECTOR ${o.sector} BEST: ${o.prevBest}` : ''}</div>
+          </div>
+          <div class="sc-after">${after}</div>
+        </div>
+        <div class="sc-skip">${tap} TO SKIP</div>
+      </div>`;
+    document.body.appendChild(el);
+    this.screenEl = el;
+    this.root.style.visibility = 'hidden';
+
+    const rowEls = [...el.querySelectorAll<HTMLElement>('.sc-row')];
+    const scoreEl = el.querySelector('#sc-score') as HTMLElement;
+    const rankEl = el.querySelector('.sc-rank') as HTMLElement;
+    const bestEl = el.querySelector('.sc-best') as HTMLElement;
+    const afterEl = el.querySelector('.sc-after') as HTMLElement;
+    const skipEl = el.querySelector('.sc-skip') as HTMLElement;
+    const cards = [...el.querySelectorAll<HTMLButtonElement>('.sc-perk')];
+    const timer = (fn: () => void, ms: number): void => {
+      this.screenTimers.push(window.setTimeout(fn, ms));
+    };
+    let done = false;
+    let armed = false;
+    let picked = false;
+
+    const arm = (): void => {
+      armed = true;
+      for (const c of cards) c.disabled = false;
+      for (const b of el.querySelectorAll<HTMLButtonElement>('#again-btn, #menu-btn')) b.disabled = false;
+    };
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      for (const t of this.screenTimers) window.clearTimeout(t);
+      this.screenTimers.length = 0;
+      for (const r of rowEls) r.classList.add('on');
+      scoreEl.textContent = fmt(o.scoreTo);
+      rankEl.classList.add('stamp');
+      o.onStamp();
+      bestEl.classList.add('show');
+      skipEl.style.visibility = 'hidden';
+      timer(() => {
+        afterEl.classList.add('show');
+        timer(arm, 500);
+      }, 380);
+    };
+
+    // the tally: rows land, then the score counts up, then the stamp
+    const ROW_MS = 160;
+    o.rows.forEach((_, i) => timer(() => {
+      rowEls[i].classList.add('on');
+      o.onTick();
+    }, 250 + i * ROW_MS));
+    const countAt = 250 + o.rows.length * ROW_MS + 120;
+    const COUNT_MS = 900;
+    const STEPS = 22;
+    for (let s = 1; s <= STEPS; s++) {
+      timer(() => {
+        const k = s / STEPS;
+        const ease = 1 - (1 - k) * (1 - k);
+        scoreEl.textContent = fmt(Math.round(o.scoreFrom + (o.scoreTo - o.scoreFrom) * ease));
+        if (s % 2 === 0) o.onTick();
+      }, countAt + (COUNT_MS * s) / STEPS);
+    }
+    timer(finish, countAt + COUNT_MS + 120);
+
+    const pick = (i: number): void => {
+      if (!armed || picked || !cards[i]) return;
+      picked = true;
+      cards[i].classList.add('chosen');
+      el.querySelector('.sc-perks')?.classList.add('picked');
+      for (const c of cards) c.disabled = true;
+      o.onPick?.(cards[i].dataset.id as PerkId);
+    };
+    cards.forEach((c, i) => c.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      pick(i);
+    }));
+    el.querySelector('#again-btn')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (armed) o.onAgain?.();
+    });
+    el.querySelector('#menu-btn')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (armed) o.onMenu?.();
+    });
+    // anywhere else: skip the animation, or (no perks left to offer) descend
+    el.addEventListener('click', () => {
+      if (!done) finish();
+      else if (armed && !o.final && !cards.length) o.onContinue?.();
+    });
+    this.titleKey = (ev: KeyboardEvent) => {
+      const n = ['Digit1', 'Digit2', 'Digit3', 'Numpad1', 'Numpad2', 'Numpad3'].indexOf(ev.code);
+      if (n >= 0) {
+        pick(n % 3);
+        return;
+      }
+      if (ev.code !== 'Enter' && ev.code !== 'NumpadEnter' && ev.code !== 'Space') return;
+      if (!done) finish();
+      else if (armed && o.final) o.onAgain?.();
+      else if (armed && !cards.length) o.onContinue?.();
+    };
+    window.addEventListener('keydown', this.titleKey);
+  }
+
   hideScreen(): void {
     this.root.style.visibility = 'visible';
     this.termRun?.stop();
     this.termRun = null;
+    for (const t of this.screenTimers) window.clearTimeout(t);
+    this.screenTimers.length = 0;
     this.logoStop?.();
     this.logoStop = null;
     if (this.titleKey) {

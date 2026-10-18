@@ -17,6 +17,9 @@ const FRICTION = 9;
 const GRAVITY = 24;
 const JUMP_VEL = 8.5;
 
+export const BASE_MAX_HEALTH = 100;
+export const BASE_AMMO_MAX: Readonly<Record<AmmoType, number>> = { bullets: 240, shells: 60, rockets: 30, cells: 60 };
+
 export class Player {
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
@@ -26,11 +29,15 @@ export class Player {
   onGround = false;
   health = 100;
   armor = 0;
-  readonly maxHealth = 100;
+  /** 100, or 125 with the Vitality perk (Game.applyPerkStats) */
+  maxHealth = BASE_MAX_HEALTH;
   readonly maxArmor = 100;
   readonly keys = new Set<KeyColor>();
   readonly ammo: Record<AmmoType, number> = { bullets: 48, shells: 0, rockets: 0, cells: 0 };
-  readonly ammoMax: Record<AmmoType, number> = { bullets: 240, shells: 60, rockets: 30, cells: 60 };
+  /** carry caps: the base values, ×1.5 with the Deep Pockets perk */
+  readonly ammoMax: Record<AmmoType, number> = { ...BASE_AMMO_MAX };
+  /** seconds since the last damage that got through (the Self-Repair perk) */
+  sinceHurt = 999;
   dead = false;
   /** recoil pitch offset applied by weapons, recovers over time */
   recoilPitch = 0;
@@ -92,6 +99,7 @@ export class Player {
     const soak = Math.min(this.armor, Math.ceil(amount / 3));
     this.armor -= soak;
     this.health -= amount - soak;
+    this.sinceHurt = 0;
     game.hud.damageFlash();
     if (source) this.hitIndicator(source, game);
     this.shake = Math.min(0.5, this.shake + amount * 0.008);
@@ -125,6 +133,7 @@ export class Player {
     this.buffs.quad = Math.max(0, this.buffs.quad - dt);
     this.buffs.shield = Math.max(0, this.buffs.shield - dt);
     this.buffs.haste = Math.max(0, this.buffs.haste - dt);
+    this.sinceHurt += dt;
     // mouse look
     const [mdx, mdy] = input.consumeMouse();
     if (!this.dead) {

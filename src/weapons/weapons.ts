@@ -839,7 +839,10 @@ export class WeaponSystem {
 
     // build the chain: nearest visible enemy to each previous target
     const targets: Enemy[] = [eHit.enemy];
-    while (targets.length < 4) {
+    // Overcharge perk: two more hops, and each hop keeps more of its punch
+    const overcharge = game.hasPerk('overcharge');
+    const maxTargets = overcharge ? 6 : 4;
+    while (targets.length < maxTargets) {
       const last = targets[targets.length - 1];
       let best: Enemy | null = null;
       let bestD = CHAIN_RANGE;
@@ -868,7 +871,7 @@ export class WeaponSystem {
       const dl = Math.hypot(ddx, ddz) || 1;
       game.applyEnemyHit(e, dmg, ddx / dl, ddz / dl, false);
       px = e.pos.x; py = ty; pz = e.pos.z;
-      dmg = Math.max(6, Math.round(dmg * 0.7)); // each hop hits softer
+      dmg = Math.max(6, Math.round(dmg * (overcharge ? 0.8 : 0.7))); // each hop hits softer
     }
     game.hud.hitMarker();
   }

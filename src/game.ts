@@ -26,6 +26,8 @@ import { Netplay } from './net/netplay';
 import { GameSettings, loadSettings, saveSettings } from './core/settings';
 import { EnemySpec, KeyColor, PickupKind } from './types';
 import { POKI, poki } from './platform/poki';
+import { PERKS, isPerkId, rollPerkOffer, type PerkId } from './core/perks';
+import { BASE_AMMO_MAX, BASE_MAX_HEALTH } from './entities/player';
 import { biofoundryTerminal, decorateBiofoundry } from './preview/biofoundry';
 
 type GameState = 'title' | 'playing' | 'paused' | 'overload' | 'dead' | 'intermission' | 'won';
@@ -103,10 +105,17 @@ interface Checkpoint {
   totalSecrets: number;
   totalTime: number;
   focusedShotgun?: boolean;
+  /** run perks picked so far (src/core/perks.ts) */
+  perks?: string[];
 }
 
 /** localStorage key of the saved run (same key as the earlier Poki build) */
 const RUN_KEY = 'voxelstrike-run';
+/** sector ranks, best first, and the score each adds (solo) */
+type Rank = 'S' | 'A' | 'B' | 'C';
+const RANK_ORDER: Rank[] = ['S', 'A', 'B', 'C'];
+const RANK_BONUS: Record<Rank, number> = { S: 1500, A: 1000, B: 500, C: 0 };
+
 /** set the first time the player enters the Biofoundry: hides the title's NEW SECTOR banner */
 const BIOFOUNDRY_SEEN_KEY = 'voxelstrike-biofoundry-seen';
 
@@ -564,7 +573,7 @@ export class Game {
     if (this.level.theme === 'biofoundry' && !this.preview) storageSet(BIOFOUNDRY_SEEN_KEY, '1');
     // a fresh attempt at a sector: no keycard checkpoint yet, revive available
     this.keyCheckpoint = null;
-    this.reviveUsed = false;
+    this.revivesUsed = 0;
     this.player.spawnAt(this.level.spawn.x, this.level.spawn.y, this.level.spawn.z);
     this.safePos.set(0, 0, 0);
     this.embedTime = 0;
@@ -689,8 +698,53 @@ export class Game {
    * Continue resumes at the sector start.
    */
   private keyCheckpoint: { cp: Checkpoint; x: number; y: number; z: number; yaw: number } | null = null;
-  /** revive spent on this sector attempt (once per attempt; a retry gives it back) */
-  private reviveUsed = false;
+  /** revives spent on this sector attempt (1 allowed, 2 with Second Wind; a retry gives them back) */
+  private revivesUsed = 0;
+  /** perks picked this run (sector-clear screen); kept by retry / save / Continue */
+  private perks = new Set<PerkId>();
+  /** score when this sector attempt began: the clear screen's kill points */
+  private levelStartScore = 0;
+
+  hasPerk(p: PerkId): boolean {
+    return this.perks.has(p);
+  }
+
+  /** the player's own blasts (barrels, rockets): wider with Volatile */
+  blastRadius(base: number): number {
+    return this.perks.has('volatile') ? base * 1.35 : base;
+  }
+
+  private get revivesAllowed(): number {
+    return this.perks.has('secondWind') ? 2 : 1;
+  }
+
+  /** Self-Repair perk: armor rebuilds to 50 after 4 s without taking damage */
+  private repairAcc = 0;
+  private selfRepair(dt: number): void {
+    const pl = this.player;
+    if (pl.dead || pl.sinceHurt < 4 || pl.armor >= 50) {
+      this.repairAcc = 0;
+      return;
+    }
+    this.repairAcc += dt * 12; // 12 armor a second
+    if (this.repairAcc < 1) return;
+    const n = Math.floor(this.repairAcc);
+    this.repairAcc -= n;
+    pl.armor = Math.min(50, pl.armor + n);
+    this.hud.updateStats(pl);
+  }
+
+  /** caps that perks change: max health (Vitality) and ammo capacity (Deep Pockets) */
+  private applyPerkStats(): void {
+    const pl = this.player;
+    pl.maxHealth = this.perks.has('vitality') ? BASE_MAX_HEALTH + 25 : BASE_MAX_HEALTH;
+    const k = this.perks.has('deepPockets') ? 1.5 : 1;
+    for (const t of Object.keys(BASE_AMMO_MAX) as (keyof typeof BASE_AMMO_MAX)[]) {
+      pl.ammoMax[t] = Math.round(BASE_AMMO_MAX[t] * k);
+      pl.ammo[t] = Math.min(pl.ammo[t], pl.ammoMax[t]);
+    }
+    pl.health = Math.min(pl.health, pl.maxHealth);
+  }
   /** first-run control hints: index of the next hint, -1 = off */
   private tipStep = -1;
   /** current objective step; null forces a refresh (new sector) */
@@ -753,6 +807,7 @@ export class Game {
       totalSecrets: this.totalSecretsSoFar,
       totalTime: this.totalPlayTime,
       focusedShotgun: this.weapons.focusedShotgun,
+      perks: [...this.perks],
     };
   }
 
@@ -783,6 +838,9 @@ export class Game {
     this.score = cp.score;
     this.comboChain = 0;
     this.comboTimer = 0;
+    // perks first: they set the health / ammo caps the rest is clamped to
+    this.perks = new Set((cp.perks ?? []).filter(isPerkId));
+    this.applyPerkStats();
     // a retry never starts you nearly dead
     this.player.health = Math.max(60, Math.min(this.player.maxHealth, cp.health));
     this.player.armor = cp.armor;
@@ -848,6 +906,7 @@ export class Game {
     this.clearTransientFX();
     this.weapons.viewModel.visible = true;
     this.levelStartTime = this.time;
+    this.levelStartScore = this.score;
     this.input.releaseAll();
     this.hud.message(message);
     if (adShown && !this.isTouch && !this.net) {
@@ -875,7 +934,7 @@ export class Game {
    * the sector; or start a new run.
    */
   private showDeathScreen(): void {
-    const revive: 'ad' | 'free' | null = this.reviveUsed ? null : POKI ? (poki.adsAvailable() ? 'ad' : null) : 'free';
+    const revive: 'ad' | 'free' | null = this.revivesUsed >= this.revivesAllowed ? null : POKI ? (poki.adsAvailable() ? 'ad' : null) : 'free';
     this.hud.showDeath({
       stats: `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,
       sector: this.levelIndex,
@@ -898,7 +957,7 @@ export class Game {
 
   /** the revive button: free outside Poki; on Poki only after the video really played */
   private requestRevive(): void {
-    if (this.state !== 'dead' || this.reviveUsed || this.breakPending) return;
+    if (this.state !== 'dead' || this.revivesUsed >= this.revivesAllowed || this.breakPending) return;
     if (!POKI) {
       this.reviveHere(false);
       return;
@@ -925,9 +984,11 @@ export class Game {
 
   /** get up where you fell: 60 health, a short spawn shield, nearby enemies shoved back */
   private reviveHere(adShown: boolean): void {
-    this.reviveUsed = true;
+    this.revivesUsed++;
     const p = this.player.pos;
-    this.bringBack(p.x, p.y, p.z, this.player.yaw, 60, 'Revived — get clear, this one only happens once.', adShown);
+    const left = this.revivesAllowed - this.revivesUsed;
+    this.bringBack(p.x, p.y, p.z, this.player.yaw, 60,
+      left > 0 ? 'Revived — Second Wind keeps one more for this sector.' : 'Revived — get clear, there are no more in this sector.', adShown);
   }
 
   /**
@@ -947,7 +1008,7 @@ export class Game {
     }
     pl.keys.add('red');
     // a keycard retry is a fresh attempt at the rest of the sector: revive comes back
-    this.reviveUsed = false;
+    this.revivesUsed = 0;
     this.bringBack(k.x, k.y, k.z, k.yaw, Math.max(60, k.cp.health), 'Back at the keycard. The red door is still waiting.', adShown);
   }
 
@@ -1488,7 +1549,7 @@ export class Game {
       // short fuse so chains ripple instead of detonating in the same frame
       // (host owns the actual blast in co-op; clients just see the debris)
       this.particles.debris(x + 0.5, y + 0.5, z + 0.5, 0.35, 0.5, 0.2, 8);
-      if (!this.isNetClient) this.queueExplosion(x + 0.5, y + 0.5, z + 0.5, 0.14, 70, 3.2);
+      if (!this.isNetClient) this.queueExplosion(x + 0.5, y + 0.5, z + 0.5, 0.14, 70, this.blastRadius(3.2));
     } else {
       this.particles.debris(x + 0.5, y + 0.5, z + 0.5, 0.36, 0.4, 0.47);
       this.audio.play('wallBreak', { x, y, z });
@@ -1529,6 +1590,15 @@ export class Game {
     else if (this.comboChain === 4) this.hud.streak('RAMPAGE');
     else if (this.comboChain >= 6 && this.comboChain % 2 === 0) this.hud.streak('MASSACRE');
     this.hud.updateScore(this.score, mult);
+    // perks that pay out on a kill
+    const pl = this.player;
+    if (this.perks.has('headhunter') && e.lastHitHead && pl.heal(8)) this.hud.updateStats(pl);
+    if (this.perks.has('momentum') && this.comboChain >= 3) pl.buffs.haste = Math.max(pl.buffs.haste, 3);
+    if (this.perks.has('scavenger') && Math.random() < 1 / 3) {
+      const ammo = this.weapons.definition().ammoType;
+      const kind: PickupKind = ammo === 'shells' ? 'ammoShells' : ammo === 'cells' ? 'ammoCells' : ammo === 'rockets' ? 'ammoRockets' : 'ammoBullets';
+      this.spawnPickup(kind, e.pos.x, e.pos.y - e.half.y + 0.4, e.pos.z);
+    }
   }
 
   /** grabbing the red keycard springs a security response around the player */
@@ -1688,6 +1758,116 @@ export class Game {
     }
   }
 
+  /**
+   * S–C for the sector just cleared: kills (full marks at 85% of the
+   * roster) 50 pts, secrets 20, time 30 — full at or under par
+   * (45 s + 16 s a room), nothing at 2.5× par. S ≥ 88, A ≥ 72, B ≥ 50.
+   */
+  private rankSector(levelTime: number): { rank: Rank; points: number; par: number } {
+    const par = 45 + 16 * this.level.rooms.length;
+    const killK = this.level.totalEnemies > 0 ? Math.min(1, this.kills / (this.level.totalEnemies * 0.85)) : 1;
+    const secretK = this.level.totalSecrets > 0 ? this.secretsFound / this.level.totalSecrets : 1;
+    const timeK = levelTime <= par ? 1 : Math.max(0, 1 - (levelTime - par) / (par * 1.5));
+    const points = Math.round(50 * killK + 20 * secretK + 30 * timeK);
+    const rank: Rank = points >= 88 ? 'S' : points >= 72 ? 'A' : points >= 50 ? 'B' : 'C';
+    return { rank, points, par };
+  }
+
+  /** solo sector clear: the tally screen, then a perk (or, after the last sector, the results) */
+  private showSectorClear(
+    levelTime: number,
+    graded: { rank: Rank; points: number; par: number },
+    pts: { scoreFrom: number; killPoints: number; secretPoints: number; speedBonus: number; rankBonus: number },
+  ): void {
+    // best rank per sector number (layouts differ, ranks compare fairly)
+    const bestKey = `voxelstrike-best-rank-${this.levelIndex}`;
+    const prevBest = storageGet(bestKey) as Rank | null;
+    const newBest = !prevBest || RANK_ORDER.indexOf(graded.rank) < RANK_ORDER.indexOf(prevBest);
+    if (newBest && !this.preview) storageSet(bestKey, graded.rank);
+    const rows = [
+      { label: 'Kills', value: `${this.kills} / ${this.level.totalEnemies}`, points: pts.killPoints },
+      { label: 'Secrets', value: `${this.secretsFound} / ${this.level.totalSecrets}`, points: pts.secretPoints },
+      { label: 'Time', value: `${this.formatTime(levelTime)} <i>par ${this.formatTime(graded.par)}</i>`, points: pts.speedBonus },
+      { label: 'Sector clear', value: '', points: 1000 },
+      { label: `Rank ${graded.rank} bonus`, value: '', points: pts.rankBonus },
+    ];
+    const common = {
+      sector: this.levelIndex,
+      rows,
+      scoreFrom: pts.scoreFrom,
+      scoreTo: this.score,
+      rank: graded.rank,
+      newBest,
+      prevBest,
+      touch: this.isTouch,
+      onTick: () => this.audio.play('termKey'),
+      onStamp: () => this.audio.play('rankStamp'),
+    };
+    if (this.levelIndex < this.totalSectors) {
+      this.state = 'intermission';
+      // the save points at the NEXT sector: quitting now resumes there
+      this.captureCheckpoint(this.levelIndex + 1);
+      const offer = rollPerkOffer(this.perks, this.baseSeed, this.levelIndex);
+      this.hud.showSectorClear({
+        ...common,
+        nextSector: this.levelIndex + 1,
+        saved: true,
+        perks: offer.map((id) => PERKS[id]),
+        onPick: (id) => this.pickPerk(id),
+        onContinue: () => this.descendFromClear(),
+      });
+      return;
+    }
+    // the last sector: the same tally, then the campaign results
+    this.state = 'won';
+    storageSet(RUN_KEY, null); // campaign done: nothing left to continue
+    const best = this.bestScoreForSeed();
+    const isRecord = this.score > best;
+    if (isRecord) {
+      try {
+        localStorage.setItem(`voxelstrike-best-${this.seedHex()}`, String(this.score));
+      } catch { /* storage may be unavailable */ }
+    }
+    const totals =
+      `Total kills: ${this.totalKills} / ${this.totalEnemiesSoFar} &nbsp;·&nbsp; ` +
+      `Secrets: ${this.totalSecretsFound} / ${this.totalSecretsSoFar} &nbsp;·&nbsp; ` +
+      `Total time: ${this.formatTime(this.totalPlayTime)}`;
+    const record = isRecord
+      ? `<b class="sc-record">FINAL SCORE ${this.score.toLocaleString()} — NEW LAYOUT RECORD!</b>`
+      : `Final score: ${this.score.toLocaleString()}` + (best > 0 ? ` &nbsp;·&nbsp; Layout best: ${best.toLocaleString()}` : '');
+    this.hud.showSectorClear({
+      ...common,
+      nextSector: null,
+      saved: false,
+      perks: null,
+      final: { totals, record },
+      onAgain: () => {
+        if (this.state === 'won') this.afterBreak((ad) => this.newRunNow(ad));
+      },
+      onMenu: () => this.goToTitle(),
+    });
+  }
+
+  /** a perk card was picked on the sector-clear screen: keep it, then descend */
+  private pickPerk(id: PerkId): void {
+    if (this.state !== 'intermission' || this.perks.has(id)) return;
+    this.perks.add(id);
+    this.applyPerkStats();
+    if (id === 'vitality') this.player.heal(25);
+    this.hud.updateStats(this.player);
+    this.hud.updateWeapon(this.weapons);
+    // the save at the next sector now carries the new perk
+    this.captureCheckpoint(this.levelIndex + 1);
+    this.descendFromClear();
+  }
+
+  /** leave the sector-clear screen for the next sector (the terminal after sector 3) */
+  private descendFromClear(): void {
+    if (this.state !== 'intermission') return;
+    if (this.levelIndex === FACILITY_SECTORS) this.afterBreak((ad) => this.descendToBiofoundry(ad));
+    else this.afterBreak((ad) => this.nextLevel(ad));
+  }
+
   private win(): void {
     if (this.state !== 'playing') return;
     if (this.preview) {
@@ -1708,13 +1888,26 @@ export class Game {
     this.totalEnemiesSoFar += this.level.totalEnemies;
     this.totalSecretsFound += this.secretsFound;
     this.totalSecretsSoFar += this.level.totalSecrets;
-    // sector clear bonus, plus a bonus for speed
-    this.score += 1000 + Math.max(0, 900 - Math.floor(levelTime) * 3);
+    // what this sector earned before the bonuses: kills (with combos) + the secret
+    const secretPoints = this.secretsFound * 500;
+    const killPoints = Math.max(0, this.score - this.levelStartScore - secretPoints);
+    const scoreFrom = this.levelStartScore;
+    // sector clear bonus, a bonus for speed, and (solo) the rank bonus
+    const speedBonus = Math.max(0, 900 - Math.floor(levelTime) * 3);
+    const graded = this.rankSector(levelTime);
+    const rankBonus = this.net ? 0 : RANK_BONUS[graded.rank];
+    this.score += 1000 + speedBonus + rankBonus;
     this.hud.updateScore(this.score, 1);
     this.audio.play('win');
     this.clearTransientFX();
     poki.measure('level', this.levelIndex, 'complete'); // the only other Poki event (POKI.md)
     this.input.releaseLock();
+
+    // solo: the sector-clear moment — tally, rank stamp, new best, then a perk
+    if (!this.net) {
+      this.showSectorClear(levelTime, graded, { scoreFrom, killPoints, secretPoints, speedBonus, rankBonus });
+      return;
+    }
 
     const levelStats =
       `Kills: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; ` +
@@ -1773,6 +1966,7 @@ export class Game {
     // death screen or intermission (on touch it would also eat their taps)
     if (this.automap.visible && this.state !== 'playing') this.automap.setVisible(false);
     if (this.state === 'playing') this.updateTips(dt);
+    if (this.state === 'playing' && this.perks.has('plating')) this.selfRepair(dt);
 
     // fps meter
     this.fpsAccum += dt;

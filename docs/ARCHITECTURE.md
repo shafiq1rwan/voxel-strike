@@ -54,7 +54,7 @@ off the core. The per-file rules and known gotchas live in
             │               ├► Retry / Restart sector ► playing (sector rebuilt)
             │               └► New run ────────────► playing   (solo only; co-op respawns instead)
             │
-            ├──► intermission (sector 1, 2 cleared) ──► playing (next sector)
+            ├──► intermission = sector clear: tally + rank, pick 1 of 3 perks (solo) ──► playing (next sector)
             ├──► intermission (sector 3 cleared) ──► facility terminal ──► playing (sector 4, Biofoundry)
             ├──► intermission (sector 4 cleared) ──► playing (sector 5, deep Biofoundry)
             │

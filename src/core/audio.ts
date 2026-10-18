@@ -15,7 +15,7 @@ export type SoundName =
   | 'playerPain' | 'playerDie'
   | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup' | 'secret'
   | 'doorOpen' | 'doorClose' | 'doorLocked' | 'elevator' | 'teleport'
-  | 'step' | 'clank' | 'termKey' | 'termOff'
+  | 'step' | 'clank' | 'termKey' | 'termOff' | 'rankStamp'
   | 'win';
 
 interface ListenerState {
@@ -444,6 +444,12 @@ export class AudioMan {
       case 'step':
         // soft boot thud
         this.noise(out, 0.13, 0.005, 0.05, 'lowpass', 380, 160);
+        break;
+      case 'rankStamp':
+        // the rank lands: a heavy thump under a bright two-note sting
+        this.noise(out, 0.4, 0.002, 0.22, 'lowpass', 500, 90);
+        this.tone(out, 'square', 0.3, 0.005, 0.18, 392);
+        this.tone(out, 'square', 0.32, 0.005, 0.38, 784, undefined, 0.09);
         break;
       case 'termKey':
         // terminal key tick: a tiny, slightly varied click

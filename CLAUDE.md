@@ -118,6 +118,21 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   until the context returns. `checkpoint.mjs` covers all of this. Also:
   explosions via `queueExplosion` fuses (barrel chains AND ticker corpses —
   each entry carries its own damage/radius), FOV punch, screen wiring.
+  Sector clear (solo, `showSectorClear` → `HUD.showSectorClear`): `rankSector`
+  grades S–C from kills (full at 85% of the roster) 50 pts, secrets 20, time
+  30 (full at or under par = 45 s + 16 s/room, zero at 2.5× par); S ≥ 88,
+  A ≥ 72, B ≥ 50. Rank bonus S 1500 / A 1000 / B 500 on top of the 1000
+  clear + speed bonus (co-op: no rank bonus, old screens). Best rank per
+  sector number in `voxelstrike-best-rank-<n>`. Then a perk: `rollPerkOffer`
+  (src/core/perks.ts) offers 3 unowned perks seeded by run seed + sector;
+  `pickPerk` adds it, re-captures the next-sector checkpoint and descends.
+  Perks (`Game.perks`, `hasPerk`) live in `Checkpoint.perks` — retry / save /
+  Continue keep them, a new run clears them; `applyPerkStats` sets the caps
+  they change (`Player.maxHealth`, `ammoMax` from `BASE_*`). Hooks: Volatile
+  → `blastRadius()` (barrels + rockets only, never enemy blasts),
+  Overcharge → arc caster 6 targets / ×0.8 falloff, Headhunter / Momentum /
+  Scavenger → `onEnemyKilled`, Second Wind → `revivesAllowed`, Self-Repair →
+  `selfRepair` (uses `Player.sinceHurt`).
   Also owns score + combo (kills within 2.5s chain a ×5-capped multiplier,
   streak popups at 2/3/4 kills), per-seed best score in localStorage
   (`voxelstrike-best-<seedHex>`), and `onKeyPickup()` — grabbing the red

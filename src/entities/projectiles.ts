@@ -157,7 +157,7 @@ export class ProjectilePool {
           const eh = game.enemies.raycast(p.x, p.y, p.z, p.dx, p.dy, p.dz, Math.min(step, hitT));
           if (eh) {
             if (p.kind === 'rocket') {
-              game.detonate(p.x + p.dx * eh.t, p.y + p.dy * eh.t, p.z + p.dz * eh.t, 90 * p.dmgMult, 3.5);
+              game.detonate(p.x + p.dx * eh.t, p.y + p.dy * eh.t, p.z + p.dz * eh.t, 90 * p.dmgMult, game.blastRadius(3.5));
             } else {
               eh.enemy.damage(10, p.dx, p.dz, game);
             }
@@ -193,7 +193,7 @@ export class ProjectilePool {
           const hy = p.y + p.dy * hitT;
           const hz = p.z + p.dz * hitT;
           if (p.kind === 'rocket') {
-            game.detonate(hx - p.dx * 0.1, hy - p.dy * 0.1, hz - p.dz * 0.1, 90 * p.dmgMult, 3.5);
+            game.detonate(hx - p.dx * 0.1, hy - p.dy * 0.1, hz - p.dz * 0.1, 90 * p.dmgMult, game.blastRadius(3.5));
           } else {
             game.particles.impact(hx, hy, hz, -p.dx, -p.dy, -p.dz, 0.4, 0.8, 1);
             game.audio.play('boltHit', { x: hx, y: hy, z: hz });

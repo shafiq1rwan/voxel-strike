@@ -186,10 +186,25 @@ try {
   check(inter.state === 'intermission' && inter.text.includes('Progress saved'), 'intermission says progress is saved');
   const sv2 = await save();
   check(sv2 && sv2.sector === 2 && sv2.seed === s1.seed, `save points at sector 2 (${sv2 && sv2.sector})`);
-  await sleep(800); // screen arms after 0.7s
-  await g(() => document.querySelector('.screen').click());
+  // the sector-clear screen: a click skips the tally, then a perk card descends
+  const clear = await g(() => ({
+    rank: document.querySelector('.sc-rank-letter')?.textContent ?? '',
+    cards: document.querySelectorAll('.sc-perk').length,
+  }));
+  check(/^[SABC]$/.test(clear.rank) && clear.cards === 3, `sector clear shows a rank (${clear.rank}) and three perks (${clear.cards})`);
+  await g(() => document.querySelector('#sector-clear').click()); // skip the tally
+  let cardReady = false;
+  for (let i = 0; i < 30 && !cardReady; i++) {
+    await sleep(100);
+    cardReady = await g(() => { const c = document.querySelector('.sc-perk'); return !!c && !c.disabled; });
+  }
+  check(cardReady, 'a click skips the tally and the perk cards arm');
+  const chosen = await g(() => document.querySelector('.sc-perk').dataset.id);
+  await g(() => document.querySelector('.sc-perk').click());
   await sleep(500);
-  check((await g(() => window.__voxelstrike.levelIndex)) === 2, 'descended to sector 2');
+  check((await g(() => window.__voxelstrike.levelIndex)) === 2, `picking a perk (${chosen}) descends to sector 2`);
+  const svPerk = await save();
+  check(svPerk?.perks?.includes(chosen), `the save at sector 2 carries the perk (${svPerk?.perks})`);
 
   // --- 4. gear picked up mid-sector is lost on retry --------------------------
   const entry = await g(() => window.__voxelstrike.weapons.loadout());
@@ -206,6 +221,7 @@ try {
   check(after.idx === 2, 'retry stays in sector 2');
   check(JSON.stringify(after.lo.owned) === JSON.stringify(entry.owned), `retry restores the sector-entry loadout (${after.lo.owned.join(',')})`);
   check(after.rockets === 0, `retry restores sector-entry ammo (rockets=${after.rockets})`);
+  check(await g((id) => window.__voxelstrike.perks.has(id), chosen), 'retry keeps the perk picked at the sector-1 clear');
 
   // --- 5. pause → "Save & quit to menu" → title offers Continue ---------------
   await g(() => window.__voxelstrike.requestPause());
@@ -245,11 +261,19 @@ try {
   await g(() => { const game = window.__voxelstrike; game.state = 'playing'; game.hud.hideScreen(); game.levelIndex = 5; game.win(); });
   await sleep(200);
   check((await save()) === null, 'campaign complete clears the save');
-  await sleep(1300); // win screen arms after 1.2s
+  // the last sector's clear screen ends in the results + buttons (armed after the tally)
+  let againReady = false;
+  for (let i = 0; i < 60 && !againReady; i++) {
+    await sleep(100);
+    againReady = await g(() => { const b = document.querySelector('#again-btn'); return !!b && !b.disabled; });
+  }
+  check(againReady && await g(() => document.querySelector('#sector-clear h1')?.textContent.includes('CAMPAIGN COMPLETE')),
+    'the last sector ends on CAMPAIGN COMPLETE with its rank tally, then the buttons arm');
   await clickBtn('#again-btn');
   await sleep(500);
-  const nr = await g(() => ({ state: window.__voxelstrike.state, idx: window.__voxelstrike.levelIndex, seed: window.__voxelstrike.baseSeed, score: window.__voxelstrike.score }));
+  const nr = await g(() => ({ state: window.__voxelstrike.state, idx: window.__voxelstrike.levelIndex, seed: window.__voxelstrike.baseSeed, score: window.__voxelstrike.score, perks: window.__voxelstrike.perks.size }));
   check(nr.state === 'playing' && nr.idx === 1 && nr.score === 0, `"Play a new layout" → sector 1, score 0 (state=${nr.state})`);
+  check(nr.perks === 0, 'a new run starts without perks');
   check(nr.seed !== s1.seed, 'new run gets a new layout seed');
   check(await samePage(), 'new run started without a page reload');
 

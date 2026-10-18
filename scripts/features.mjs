@@ -745,6 +745,60 @@ try {
     await ph.close();
   }
 
+  // --- 17. run perks do what their cards say ---------------------------------
+  {
+    const pk = await browser.newPage();
+    pk.on('pageerror', (err) => errors.push(`[perk pageerror] ${err.message}`));
+    await pk.setViewport({ width: 1280, height: 720 });
+    await pk.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await pk.waitForSelector('#start-btn');
+    await pk.evaluate(() => document.querySelector('#start-btn').click());
+    await new Promise((r) => setTimeout(r, 700));
+    const perk = await pk.evaluate(async () => {
+      const g = window.__voxelstrike;
+      g.input.locked = true;
+      for (const e of g.enemies.list) if (e.alive) { e.pos.set(4, e.pos.y, 4); e.awake = false; e.state = 'idle'; e.wake = () => {}; }
+      const give = (id) => { g.perks.add(id); g.applyPerkStats(); };
+      const out = {};
+      out.blastBase = g.blastRadius(3.5);
+      give('volatile');
+      out.blastPerk = g.blastRadius(3.5);
+      give('deepPockets');
+      out.bulletsMax = g.player.ammoMax.bullets;
+      give('vitality');
+      out.maxHealth = g.player.maxHealth;
+      give('secondWind');
+      out.revives = g.revivesAllowed;
+      // Momentum: a triple kill hastes
+      give('momentum');
+      g.player.buffs.haste = 0;
+      const husks = g.enemies.list.filter((e) => e.alive && e.kind === 'husk').slice(0, 3);
+      for (const h of husks) h.damage(9999, 0, 0, g);
+      out.haste = g.player.buffs.haste;
+      // Headhunter: a headshot kill heals
+      give('headhunter');
+      g.player.health = 50;
+      const h4 = g.enemies.list.find((e) => e.alive && e.kind === 'husk');
+      if (h4) { h4.lastHitHead = true; g.onEnemyKilled(h4); }
+      out.healed = g.player.health;
+      // Self-Repair: armor rebuilds after 4 s without damage
+      give('plating');
+      g.player.armor = 0;
+      g.player.sinceHurt = 5;
+      await new Promise((r) => setTimeout(r, 1500));
+      out.armor = g.player.armor;
+      return out;
+    });
+    check(perk.blastPerk > perk.blastBase * 1.3, `Volatile widens blasts (${perk.blastBase} → ${perk.blastPerk.toFixed(2)})`);
+    check(perk.bulletsMax === 360, `Deep Pockets raises ammo caps (bullets max ${perk.bulletsMax})`);
+    check(perk.maxHealth === 125, `Vitality raises max health (${perk.maxHealth})`);
+    check(perk.revives === 2, `Second Wind allows two revives per sector (${perk.revives})`);
+    check(perk.haste > 2, `Momentum: a triple kill gives haste (${perk.haste.toFixed(2)} s)`);
+    check(perk.healed === 58, `Headhunter: a headshot kill heals 8 (50 → ${perk.healed})`);
+    check(perk.armor > 5 && perk.armor <= 50, `Self-Repair rebuilds armor when unhurt (0 → ${perk.armor})`);
+    await pk.close();
+  }
+
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
   // Desktop defaults to 480 lines, touch to 320 (above), still cycled in

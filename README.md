@@ -106,6 +106,14 @@ holding it, with the rest of the sector as you left it. You can also restart
 the whole sector, or start a new run. From sector 2 on, progress is saved so
 the title offers **Continue**.
 
+**Clearing a sector** ranks it **S, A, B or C** from your kills, the secret
+and your time against par — a better rank adds more score, and beating your
+best rank for that sector flashes **NEW BEST RANK**. Then you **pick one of
+three perks** for the rest of the run: wider blasts, extra arc chains,
+healing headshots, haste on triple kills, a second revive, deeper ammo
+pockets, self-repairing armor, ammo drops or more max health. Perks survive
+retries and Continue; a new run starts clean.
+
 **Pixelation** defaults to 480 lines on desktop and 320 on phones; change it
 in Settings (180 / 240 / 320 / 480).
 
