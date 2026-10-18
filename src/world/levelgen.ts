@@ -338,6 +338,12 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
   else ledgeSide = ndz > 0 ? 'zmin' : 'zmax';
 
   const ledgeCells: Array<[number, number]> = [];
+  // guard rail along the ledge's open edge (hazard Trim on top of the ledge),
+  // leaving the two cells where the lift docks open so stepping off the deck
+  // walks straight onto the pad. Falling off the ledge meant a whole second
+  // lift cycle; a 1-block rail still clears with a jump (1.5u) for anyone who
+  // wants back down.
+  const railCells: Array<[number, number]> = [];
   let elevator: ElevatorSpec | null = null;
   let exitPad: LevelData['exitPad'] = null;
   {
@@ -353,6 +359,10 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
       padCZ = ledgeSide === 'zmax' ? r.z + r.d - 2 : r.z + 1;
       elevX = r.cx - 1;
       elevZ = ledgeSide === 'zmax' ? z0 - 2 : z0 + depth;
+      const railZ = ledgeSide === 'zmax' ? z0 : z0 + depth - 1;
+      for (let x = r.x; x < r.x + r.w; x++) {
+        if (x !== elevX && x !== elevX + 1) railCells.push([x, railZ]);
+      }
     } else {
       const x0 = ledgeSide === 'xmax' ? r.x + r.w - depth : r.x;
       for (let z = r.z; z < r.z + r.d; z++) {
@@ -362,9 +372,16 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
       padCZ = r.cz;
       elevX = ledgeSide === 'xmax' ? x0 - 2 : x0 + depth;
       elevZ = r.cz - 1;
+      const railX = ledgeSide === 'xmax' ? x0 : x0 + depth - 1;
+      for (let z = r.z; z < r.z + r.d; z++) {
+        if (z !== elevZ && z !== elevZ + 1) railCells.push([railX, z]);
+      }
     }
     for (const [x, z] of ledgeCells) {
       for (let y = 1; y <= 3; y++) world.set(x, y, z, Block.Metal);
+    }
+    for (const [x, z] of railCells) {
+      if (world.get(x, 4, z) === Block.Air) world.set(x, 4, z, Block.Trim);
     }
     // exit pad blocks (their top faces glow green + emit light)
     for (let dx = -1; dx <= 0; dx++) {
@@ -372,7 +389,10 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
         world.set(padCX + dx, 3, padCZ + dz, Block.ExitPad);
       }
     }
-    elevator = { x: elevX, z: elevZ, lowY: 1, highY: 4 };
+    elevator = {
+      x: elevX, z: elevZ, lowY: 1, highY: 4,
+      walkAxis: ledgeSide === 'zmax' || ledgeSide === 'zmin' ? 'z' : 'x',
+    };
     exitPad = { x: padCX, y: 4, z: padCZ };
   }
 

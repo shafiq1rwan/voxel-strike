@@ -4,7 +4,10 @@ VOXELSTRIKE is tested by headless-browser suites that drive the real game in
 Microsoft Edge through `puppeteer-core` (no browser download). They play the
 game, assert on state through a debug handle, and save screenshots to
 `scripts/shots/`. There's no unit-test framework; `npm run build` adds the
-type check.
+type check. Every suite takes the browser from the `VOXEL_BROWSER` env var
+when set (any Chromium executable, e.g. a Chrome for Testing from
+`npx @puppeteer/browsers install chrome@stable --path <dir>`), falling back
+to the Edge path below — handy where Edge refuses to launch headless.
 
 ## Running
 
@@ -27,9 +30,10 @@ changed (when in doubt, all of them).
 | `smoke.mjs` | Boot, move, shoot, explode; fails on any console error; enemy-bounds watchdog |
 | `e2e.mjs` | The whole 3-sector campaign: aggro, barrel chain, key → vault → lift → exit, results screen |
 | `movement.mjs` | WASD displacement matches the camera basis at 5 yaw angles |
+| `husk.mjs` | Husk feet still at rest/when blocked or planted, support sole stays on floor, comparable chase distance at 30/60/120 Hz, single claw hit and dodge after aim lock, forward lunge brace; saves five real-render poses and a seven-second WebM in `scripts/shots/` |
 | `firing.mjs` | Spam-click, hold-to-fire and the click buffer |
 | `aimassist.mjs` | Touch: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop never assisted |
-| `features.mjs` | Ticker suicide + corpse chain, key ambush, powerups, score + combo, arena/brute/arc caster, headshots, automap, lift ride, door push regression, touch map, touch weapon button + wheel + auto-switch, phone-size settings |
+| `features.mjs` | Ticker suicide + corpse chain, key ambush, powerups, score + combo, arena/brute/arc caster, headshots, automap, lift ride (walk-on carry, call-down from below, strafing rider held, ledge rail), door push regression, touch map, touch weapon button + wheel + auto-switch, phone-size settings |
 | `checkpoint.mjs` | Run flow without reloads: retry with sector-entry gear, save + Continue, quit to menu, new run, graphics-lost overlay |
 | `monkey.mjs` | Randomized stress run with NaN / out-of-world invariants |
 | `coop.mjs` | Two tabs over BroadcastChannel: link + seed handshake, avatar/puppet sync, authority routing, shared keys/score, level transition, respawn, mouse recapture |

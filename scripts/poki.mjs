@@ -13,7 +13,7 @@ import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 import { mkdirSync } from 'node:fs';
 
 const URL = process.argv[2] ?? 'http://localhost:5173/?seed=12345';
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const EDGE = process.env.VOXEL_BROWSER ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const OUT = 'scripts/shots';
 const SDK_URL = 'https://game-cdn.poki.com/scripts/v2/poki-sdk.js';
 mkdirSync(OUT, { recursive: true });

@@ -17,7 +17,7 @@ if (!url) {
 const outDir = resolve(outDirArg ?? 'downloads');
 mkdirSync(outDir, { recursive: true });
 
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const EDGE = process.env.VOXEL_BROWSER ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const browser = await puppeteer.launch({
   executablePath: EDGE,
   headless: true,

@@ -8,6 +8,63 @@ import type { Game, PlayerTarget } from '../game';
 
 export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'charge' | 'pain' | 'dead';
 
+/**
+ * Every attack runs prepare → commit → recover. `attack` is a planted strike
+ * (husk claw, brute backhand, vatborn club, sentinel bolt, ticker arming);
+ * `charge` is a committed move (husk lunge, brute charge, vatborn rush) whose
+ * commit phase is `move`. The schedule is the only thing a co-op client needs
+ * to pose a puppet: it derives the phase from state + time with SCHED.
+ */
+export type Phase = 'prep' | 'strike' | 'move' | 'recover';
+
+interface Sched {
+  /** warning length; the facing locks at `lock` and tracks the target before it */
+  prep: number;
+  lock: number;
+  /** follow-through (strike) or maximum travel time (move) */
+  commit: number;
+  /** protected interval: no new attack can start until it ends */
+  recover: number;
+}
+
+/** reference/enemy-upgrades.md timings */
+const SCHED: Record<EnemySpec['kind'], { attack: Sched; charge: Sched }> = {
+  husk: {
+    attack: { prep: 0.4, lock: 0.2, commit: 0.12, recover: 0.6 },
+    charge: { prep: 0.5, lock: 0.3, commit: 0.3, recover: 0.85 },
+  },
+  brute: {
+    attack: { prep: 0.6, lock: 0.35, commit: 0.15, recover: 0.9 },
+    charge: { prep: 0.8, lock: 0.55, commit: 1.2, recover: 0.9 },
+  },
+  vatborn: {
+    // 1.10 of recovery after the impact: follow-through + recover
+    attack: { prep: 0.65, lock: 0.3, commit: 0.15, recover: 0.95 },
+    charge: { prep: 0.3, lock: 0, commit: 0.35, recover: 0.6 },
+  },
+  ticker: {
+    attack: { prep: 0.75, lock: 0, commit: 0, recover: 0 },
+    charge: { prep: 0.75, lock: 0, commit: 0, recover: 0 },
+  },
+  sentinel: {
+    attack: { prep: 0.7, lock: 0.45, commit: 0, recover: 0.9 },
+    charge: { prep: 0.7, lock: 0.45, commit: 0, recover: 0.9 },
+  },
+};
+
+/** ticker arming beeps (seconds into the warning) */
+const TICKER_BEEPS = [0, 0.25, 0.45, 0.6];
+/** husk lunge / brute charge / vatborn rush speeds and reaches */
+const HUSK_LUNGE_SPEED = 9.0;
+// Approximately the old chase's effective speed at 60 Hz, without per-frame
+// steering/friction changing it on faster or slower devices.
+const HUSK_RUN_SPEED = 3.2;
+const BRUTE_CHARGE_SPEED = 2.3 * 4.2;
+const VAT_RUSH_SPEED = 6.8;
+/** sentinel: keep this far away when it can */
+const SENTINEL_NEAR = 7;
+const SENTINEL_FAR = 12;
+
 interface EnemyTuning {
   hp: number;
   speed: number;
@@ -35,7 +92,7 @@ const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'ti
   husk: 'huskAlert', sentinel: 'sentinelAlert', ticker: 'tickerAlert', brute: 'bruteRoar', vatborn: 'bruteRoar',
 };
 
-/** husk-skeleton walkers: the jointed rig + husk gait/attack animation drive them */
+/** husk-skeleton walkers: the jointed rig + walker gait/attack animation drive them */
 function humanoid(kind: EnemySpec['kind']): boolean {
   return kind === 'husk' || kind === 'brute' || kind === 'vatborn';
 }
@@ -56,6 +113,22 @@ function part(parent: THREE.Object3D, w: number, h: number, d: number, color: nu
   return mesh;
 }
 
+function lerp(a: number, b: number, k: number): number {
+  return a + (b - a) * k;
+}
+
+function smooth01(t: number): number {
+  t = Math.max(0, Math.min(1, t));
+  return t * t * (3 - 2 * t);
+}
+
+/** Lowest Husk foot corner after its hip and knee rotations. */
+function huskSole(hip: number, knee: number): number {
+  const a = hip + knee;
+  return -0.14 - Math.cos(hip) * 0.32 - Math.cos(a) * 0.34 + Math.sin(a) * 0.05 -
+    Math.abs(Math.cos(a)) * 0.05 - Math.abs(Math.sin(a)) * 0.14;
+}
+
 export class Enemy {
   readonly kind: EnemySpec['kind'];
   readonly tuning: EnemyTuning;
@@ -72,20 +145,31 @@ export class Enemy {
   private jinkSign = 1;
   private animPhase = Math.random() * 10;
   private patrolTarget: [number, number] | null = null;
+  /** husk lunge / vatborn rush cooldown (counted from the end of the recovery) */
   private lungeCooldown = 0;
   private flashTime = 0;
   private lightTick = Math.random();
   private hoverPhase = Math.random() * 10;
   private room: RoomDef | null;
-  // model parts used by animation (husk: jointed groups pivoting at hip/shoulder/neck)
+  // model parts used by animation (walkers: jointed groups pivoting at hip/shoulder/neck)
   private legLG: THREE.Group | null = null;
   private legRG: THREE.Group | null = null;
+  private huskKneeLG: THREE.Group | null = null;
+  private huskKneeRG: THREE.Group | null = null;
+  private huskMotionReady = false;
+  private huskLastX = 0;
+  private huskLastZ = 0;
+  private huskWalk = 0;
   private armLG: THREE.Group | null = null;
   private armRG: THREE.Group | null = null;
   private torsoG: THREE.Group | null = null;
   private headG: THREE.Group | null = null;
   private jaw: THREE.Mesh | null = null;
-  private fins: THREE.Mesh[] = [];
+  /** ticker: six legs + two lid pivots; sentinel: four paddle pivots + two shutters */
+  private legs: THREE.Mesh[] = [];
+  private lids: THREE.Group[] = [];
+  private paddles: THREE.Group[] = [];
+  private shutters: THREE.Mesh[] = [];
   private glowParts: THREE.Mesh[] = [];
   private body: THREE.Group;
   /** occlusion cull: seconds left to keep the rig drawn after last sighting */
@@ -94,11 +178,30 @@ export class Enemy {
   private lastStride = 0;
   /** ticker arming beeps played so far this attack */
   private beepCount = 0;
-  /** brute charge: locked direction, cooldown, and post-slam stun length */
-  private cdx = 0;
-  private cdz = 0;
+  /** brute charge cooldown and the post-slam stun length (pain state) */
   private chargeCooldown = 0;
   private stunTime = 0.32;
+  // --- the current attack ---------------------------------------------------
+  phase: Phase = 'prep';
+  phaseT = 0;
+  /** the player this attack was declared against — never swapped mid-attack */
+  private atkTgt: PlayerTarget | null = null;
+  /** locked facing/strike direction (world xz); tracking stops at SCHED.lock */
+  private lockX = 0;
+  private lockZ = -1;
+  private faceLocked = false;
+  /** one strike/charge deals damage once */
+  private hitConsumed = false;
+  /** committed move: travel time, capped so a lunge/rush stops short of the target */
+  private moveMax = 0;
+  /** sentinel: aim committed at SCHED.lock, fired at SCHED.prep */
+  private aimX = 0;
+  private aimY = 0;
+  private aimZ = -1;
+  private onGround = false;
+  /** sentinel: seconds its lateral choice has been blocked by a wall */
+  private blockedT = 0;
+  private strafeSign = Math.random() < 0.5 ? -1 : 1;
   /** which way the whole model jolts on the current hit flash */
   private flinchSign = 1;
   /** set by hitscan right before damage() when the shot landed in the head zone */
@@ -140,82 +243,31 @@ export class Enemy {
     if (startPatrolling) this.state = 'patrol';
   }
 
+  // ---------------------------------------------------------------------------
+  // Rigs: reference/enemy-upgrades.md construction contract — large boxes only,
+  // flat colours, the budgets in its table. Models face local -z.
+  // ---------------------------------------------------------------------------
+
   private buildHusk(): void {
-    // legs: pivot groups at the hips so strides swing from the joint
+    // reference/enemy-upgrade-husk-v2.png: a lean rust-red hunter, 1.64 tall,
+    // low forward head with a dark visor and amber eye slit, long thin arms
+    // ending in small dark claw hands, a low shallow back ridge. 23 boxes.
+    const RUST = 0xd2622f, RUST_D = 0x9c4426, BROWN = 0x5c2f23, DARK = 0x2a2c33, PALE = 0xe5d6ad;
     const mkLeg = (side: number): THREE.Group => {
       const g = new THREE.Group();
-      g.position.set(0.18 * side, -0.24, 0);
-      const thigh = part(g, 0.19, 0.34, 0.21, 0x863b29);
-      thigh.position.y = -0.15;
-      const shin = part(g, 0.15, 0.28, 0.17, 0x552c26);
-      shin.position.set(0, -0.42, -0.03);
-      const foot = part(g, 0.2, 0.1, 0.27, 0x292b34);
-      foot.position.set(0, -0.57, -0.06);
-      this.body.add(g);
-      return g;
-    };
-    this.legLG = mkLeg(-1);
-    this.legRG = mkLeg(1);
-
-    // torso group carries the hunch lean and waddle roll
-    this.torsoG = new THREE.Group();
-    this.torsoG.position.y = -0.12;
-    this.body.add(this.torsoG);
-    const torso = part(this.torsoG, 0.56, 0.5, 0.38, 0xc45a36);
-    torso.position.y = 0.32;
-    torso.rotation.x = 0.14;
-    const belly = part(this.torsoG, 0.4, 0.26, 0.32, 0x863b29);
-    belly.position.y = 0.04;
-    // One broad collar keeps the silhouette readable at the retro resolution.
-    const collar = part(this.torsoG, 0.46, 0.12, 0.3, 0x863b29);
-    collar.position.set(0, 0.56, 0.02);
-
-    // head: pivot at the neck, with a working jaw
-    this.headG = new THREE.Group();
-    this.headG.position.set(0, 0.62, -0.18);
-    this.torsoG.add(this.headG);
-    const skull = part(this.headG, 0.4, 0.28, 0.36, 0xb84c2e);
-    skull.position.y = 0.08;
-    const mask = part(this.headG, 0.34, 0.2, 0.04, 0x292b34);
-    mask.position.set(0, 0.06, -0.19);
-    const eye = part(this.headG, 0.3, 0.07, 0.03, 0xffcc33, true);
-    eye.position.set(0, 0.1, -0.225);
-    this.glowParts.push(eye);
-    this.jaw = part(this.headG, 0.3, 0.1, 0.3, 0x863b29);
-    this.jaw.position.set(0, -0.06, -0.08);
-    const teeth = part(this.headG, 0.22, 0.04, 0.04, 0xe5d6ad);
-    teeth.position.set(0, -0.01, -0.22);
-
-    // arms: pivot groups at the shoulders, long enough to claw ahead of it
-    const mkArm = (side: number): THREE.Group => {
-      const g = new THREE.Group();
-      g.position.set(0.36 * side, 0.5, -0.02);
-      const upper = part(g, 0.18, 0.34, 0.18, 0xc45a36);
-      upper.position.y = -0.17;
-      const fore = part(g, 0.15, 0.3, 0.16, 0x863b29);
-      fore.position.set(0, -0.44, -0.07);
-      fore.rotation.x = -0.25;
-      const claw = part(g, 0.22, 0.16, 0.24, 0x292b34);
-      claw.position.set(0, -0.6, -0.16);
-      this.torsoG!.add(g);
-      return g;
-    };
-    this.armLG = mkArm(-1);
-    this.armRG = mkArm(1);
-  }
-
-  private buildBrute(): void {
-    // a husk scaled into a wall of meat: same jointed-group skeleton so the
-    // husk gait animation drives it, but heavier proportions + bone plating
-    const mkLeg = (side: number): THREE.Group => {
-      const g = new THREE.Group();
-      g.position.set(0.28 * side, -0.3, 0);
-      const thigh = part(g, 0.28, 0.46, 0.3, 0x884331);
-      thigh.position.y = -0.19;
-      const shin = part(g, 0.24, 0.38, 0.26, 0x55352e);
-      shin.position.set(0, -0.54, -0.03);
-      const foot = part(g, 0.3, 0.12, 0.36, 0x292b34);
-      foot.position.set(0, -0.72, -0.07);
+      g.position.set(0.17 * side, -0.14, 0);
+      const thigh = part(g, 0.2, 0.32, 0.22, RUST);
+      thigh.position.y = -0.16;
+      // A knee pivot reuses the same shin/foot boxes, adding no meshes.
+      const knee = new THREE.Group();
+      knee.position.y = -0.32;
+      g.add(knee);
+      if (side < 0) this.huskKneeLG = knee;
+      else this.huskKneeRG = knee;
+      const shin = part(knee, 0.17, 0.28, 0.19, RUST_D);
+      shin.position.set(0, -0.14, -0.01);
+      const foot = part(knee, 0.22, 0.1, 0.28, DARK);
+      foot.position.set(0, -0.34, -0.05);
       this.body.add(g);
       return g;
     };
@@ -225,48 +277,117 @@ export class Enemy {
     this.torsoG = new THREE.Group();
     this.torsoG.position.y = -0.1;
     this.body.add(this.torsoG);
-    const torso = part(this.torsoG, 0.95, 0.76, 0.6, 0xa84b32);
-    torso.position.y = 0.44;
-    torso.rotation.x = 0.16;
-    const belly = part(this.torsoG, 0.72, 0.38, 0.5, 0x70382c);
-    belly.position.y = 0.02;
-    // bone plating across the shoulders and back
-    const plateL = part(this.torsoG, 0.34, 0.24, 0.46, 0xe0c990);
-    plateL.position.set(-0.38, 0.74, 0);
-    plateL.rotation.z = -0.12;
-    const plateR = part(this.torsoG, 0.34, 0.24, 0.46, 0xe0c990);
-    plateR.position.set(0.38, 0.74, 0);
-    plateR.rotation.z = 0.12;
-    const chestPlate = part(this.torsoG, 0.44, 0.32, 0.08, 0xc1aa79);
-    chestPlate.position.set(0, 0.43, -0.32);
+    const pelvis = part(this.torsoG, 0.4, 0.24, 0.3, RUST_D);
+    pelvis.position.y = 0.04;
+    const chest = part(this.torsoG, 0.5, 0.46, 0.34, RUST);
+    chest.position.y = 0.38;
+    chest.rotation.x = 0.1;
+    const ridge = part(this.torsoG, 0.34, 0.2, 0.22, BROWN);
+    ridge.position.set(0, 0.58, 0.17);
+    const collar = part(this.torsoG, 0.6, 0.12, 0.3, BROWN);
+    collar.position.set(0, 0.62, 0);
 
     this.headG = new THREE.Group();
-    this.headG.position.set(0, 0.86, -0.26);
+    this.headG.position.set(0, 0.66, -0.16);
     this.torsoG.add(this.headG);
-    const skull = part(this.headG, 0.5, 0.34, 0.46, 0x884331);
+    const neck = part(this.headG, 0.14, 0.12, 0.14, RUST_D);
+    neck.position.set(0, -0.08, 0.06);
+    const skull = part(this.headG, 0.36, 0.3, 0.38, RUST);
     skull.position.y = 0.1;
-    const brow = part(this.headG, 0.54, 0.1, 0.14, 0xe0c990);
-    brow.position.set(0, 0.24, -0.2);
-    const eye = part(this.headG, 0.4, 0.07, 0.06, 0xff8030, true);
-    eye.position.set(0, 0.13, -0.25);
+    const visor = part(this.headG, 0.32, 0.14, 0.04, DARK);
+    visor.position.set(0, 0.08, -0.21);
+    const eye = part(this.headG, 0.2, 0.06, 0.03, 0xffb028, true);
+    eye.position.set(0, 0.08, -0.235);
     this.glowParts.push(eye);
-    this.jaw = part(this.headG, 0.42, 0.14, 0.4, 0x55352e);
-    this.jaw.position.set(0, -0.09, -0.1);
-    const tuskL = part(this.headG, 0.09, 0.2, 0.09, 0xe0c990);
-    tuskL.position.set(-0.16, -0.02, -0.3);
-    const tuskR = part(this.headG, 0.09, 0.2, 0.09, 0xe0c990);
-    tuskR.position.set(0.16, -0.02, -0.3);
+    this.jaw = part(this.headG, 0.3, 0.1, 0.3, RUST_D);
+    this.jaw.position.set(0, -0.07, -0.06);
 
     const mkArm = (side: number): THREE.Group => {
       const g = new THREE.Group();
-      g.position.set(0.56 * side, 0.62, -0.02);
-      const upper = part(g, 0.28, 0.5, 0.28, 0xa84b32);
-      upper.position.y = -0.22;
-      const fore = part(g, 0.26, 0.4, 0.28, 0x884331);
-      fore.position.set(0, -0.6, -0.08);
-      fore.rotation.x = -0.25;
-      const slab = part(g, 0.32, 0.22, 0.36, 0x292b34);
-      slab.position.set(0, -0.86, -0.18);
+      g.position.set(0.31 * side, 0.56, 0);
+      const upper = part(g, 0.14, 0.4, 0.14, RUST);
+      upper.position.y = -0.2;
+      const fore = part(g, 0.12, 0.38, 0.12, RUST_D);
+      fore.position.set(0, -0.58, -0.02);
+      const hand = part(g, 0.18, 0.16, 0.18, DARK);
+      hand.position.set(0, -0.84, -0.04);
+      const claw = part(g, 0.08, 0.06, 0.1, PALE);
+      claw.position.set(0, -0.9, -0.12);
+      this.torsoG!.add(g);
+      return g;
+    };
+    this.armLG = mkArm(-1);
+    this.armRG = mkArm(1);
+  }
+
+  private buildBrute(): void {
+    // reference/enemy-upgrade-brute.png: a broad rust-red heavy — two pale
+    // bone shoulder slabs, a chest slab, a brow plate and two square tusks,
+    // huge dark fists, two back blocks for the hunch. 25 boxes. Same jointed
+    // skeleton as the husk so one walker animation drives both.
+    const RED = 0xa8402c, RED_D = 0x7a2f22, BONE = 0xd9c9a0, DARK = 0x2e2b2f;
+    const mkLeg = (side: number): THREE.Group => {
+      const g = new THREE.Group();
+      g.position.set(0.3 * side, -0.2, 0);
+      const thigh = part(g, 0.3, 0.42, 0.32, RED);
+      thigh.position.y = -0.19;
+      const shin = part(g, 0.26, 0.36, 0.28, RED_D);
+      shin.position.set(0, -0.58, -0.02);
+      const foot = part(g, 0.34, 0.12, 0.4, DARK);
+      foot.position.set(0, -0.81, -0.06);
+      this.body.add(g);
+      return g;
+    };
+    this.legLG = mkLeg(-1);
+    this.legRG = mkLeg(1);
+
+    this.torsoG = new THREE.Group();
+    this.torsoG.position.y = -0.06;
+    this.body.add(this.torsoG);
+    const belly = part(this.torsoG, 0.76, 0.4, 0.54, RED_D);
+    belly.position.y = 0.1;
+    const chest = part(this.torsoG, 0.98, 0.72, 0.64, RED);
+    chest.position.y = 0.52;
+    chest.rotation.x = 0.14;
+    const backA = part(this.torsoG, 0.6, 0.36, 0.3, RED_D);
+    backA.position.set(0, 0.8, 0.3);
+    const backB = part(this.torsoG, 0.4, 0.26, 0.24, RED_D);
+    backB.position.set(0, 0.96, 0.2);
+    const plateL = part(this.torsoG, 0.42, 0.26, 0.5, BONE);
+    plateL.position.set(-0.5, 0.86, 0);
+    plateL.rotation.z = -0.12;
+    const plateR = part(this.torsoG, 0.42, 0.26, 0.5, BONE);
+    plateR.position.set(0.5, 0.86, 0);
+    plateR.rotation.z = 0.12;
+    const chestPlate = part(this.torsoG, 0.5, 0.36, 0.1, BONE);
+    chestPlate.position.set(0, 0.5, -0.34);
+
+    this.headG = new THREE.Group();
+    this.headG.position.set(0, 0.8, -0.3);
+    this.torsoG.add(this.headG);
+    const skull = part(this.headG, 0.52, 0.36, 0.48, RED);
+    skull.position.y = 0.1;
+    const brow = part(this.headG, 0.56, 0.12, 0.16, BONE);
+    brow.position.set(0, 0.26, -0.2);
+    const eye = part(this.headG, 0.36, 0.07, 0.05, 0xff8030, true);
+    eye.position.set(0, 0.12, -0.26);
+    this.glowParts.push(eye);
+    this.jaw = part(this.headG, 0.44, 0.14, 0.4, RED_D);
+    this.jaw.position.set(0, -0.1, -0.1);
+    const tuskL = part(this.headG, 0.1, 0.2, 0.1, BONE);
+    tuskL.position.set(-0.17, -0.02, -0.3);
+    const tuskR = part(this.headG, 0.1, 0.2, 0.1, BONE);
+    tuskR.position.set(0.17, -0.02, -0.3);
+
+    const mkArm = (side: number): THREE.Group => {
+      const g = new THREE.Group();
+      g.position.set(0.62 * side, 0.74, 0);
+      const upper = part(g, 0.3, 0.5, 0.3, RED);
+      upper.position.y = -0.24;
+      const fore = part(g, 0.28, 0.42, 0.3, RED_D);
+      fore.position.set(0, -0.66, -0.06);
+      const fist = part(g, 0.4, 0.34, 0.4, DARK);
+      fist.position.set(0, -1.02, -0.1);
       this.torsoG!.add(g);
       return g;
     };
@@ -275,14 +396,14 @@ export class Enemy {
   }
 
   private buildVatborn(): void {
-    // reference/sector4-vatborn.png: a hunched pale mutant whose right arm is
-    // a club — huge stained shoulder, thick forearm in a dark restraint cuff
-    // with a broken bolt, and an enormous dark fist that hangs to the floor.
-    // The left arm stays thin. Dark chest band with the green specimen mark,
-    // a blunt head pushed forward with a dark visor and an amber eye slot,
-    // olive-stained shins, dark boots. Husk skeleton, so the husk gait and
-    // attack animation drive it. Model faces -z, so its right side is +x
-    // (a viewer in front sees the club on their left, as in the concept).
+    // reference/enemy-upgrade-vatborn.png (= sector4-vatborn.png): a hunched
+    // pale mutant whose right arm is a club — huge stained shoulder, thick
+    // forearm in a dark restraint cuff with a broken bolt, and an enormous
+    // dark fist that hangs to the floor. The left arm stays thin. Dark chest
+    // band with the green specimen mark, a blunt head pushed forward with a
+    // dark visor and an amber eye slot, olive-stained shins, dark boots.
+    // 29 boxes. Model faces -z, so its right side is +x (a viewer in front
+    // sees the club on their left, as in the concept).
     const PALE = 0xcfc7b0, PALE_DARK = 0xb3ab95, STAIN = 0x7f8c4f, BAND = 0x2c3034, FIST = 0x46433f;
     const mkLeg = (side: number): THREE.Group => {
       const g = new THREE.Group();
@@ -371,48 +492,78 @@ export class Enemy {
   }
 
   private buildTicker(): void {
-    // squat hazard-striped shell over a glowing amber core, six skittering legs
-    const shell = part(this.body, 0.44, 0.24, 0.5, 0xe2ad32);
-    shell.position.y = 0.02;
-    const stripeA = part(this.body, 0.46, 0.035, 0.1, 0x30323b);
-    stripeA.position.set(0, 0.155, -0.12);
-    const stripeB = part(this.body, 0.46, 0.035, 0.1, 0x30323b);
-    stripeB.position.set(0, 0.155, 0.12);
-    const bezel = part(this.body, 0.32, 0.19, 0.05, 0x30323b);
-    bezel.position.set(0, 0.01, -0.265);
-    const core = part(this.body, 0.22, 0.12, 0.03, 0xffb028, true);
-    core.position.set(0, 0.01, -0.3);
-    this.glowParts.push(core);
+    // reference/enemy-upgrade-ticker.png: a low hazard-yellow crawler. Two
+    // side-hinged lids (each carrying a dark band) open when it commits to
+    // explode, exposing an amber battery; a dark front bezel frames the core;
+    // six single-box angled legs. 16 boxes.
+    const YEL = 0xe2b230, DARK = 0x2b2d35, AMBER = 0xffb028;
+    const chassis = part(this.body, 0.44, 0.16, 0.5, YEL);
+    chassis.position.y = -0.03;
+    // the lids enclose the battery while closed, so it only shows once they lift
+    const battery = part(this.body, 0.2, 0.1, 0.28, AMBER, true);
+    battery.position.y = 0.06;
+    const bezel = part(this.body, 0.3, 0.18, 0.05, DARK);
+    bezel.position.set(0, -0.02, -0.27);
+    const core = part(this.body, 0.2, 0.1, 0.03, AMBER, true);
+    core.position.set(0, -0.02, -0.3);
+    this.glowParts.push(core, battery);
+    for (const side of [-1, 1]) {
+      const hinge = part(this.body, 0.06, 0.08, 0.16, DARK);
+      hinge.position.set(0.23 * side, 0.05, 0);
+      const lid = new THREE.Group();
+      lid.position.set(0.22 * side, 0.05, 0);
+      const slab = part(lid, 0.22, 0.06, 0.5, YEL);
+      slab.position.set(-0.11 * side, 0.03, 0);
+      const bandSlab = part(lid, 0.07, 0.02, 0.5, DARK);
+      bandSlab.position.set(-0.11 * side, 0.07, 0);
+      this.body.add(lid);
+      this.lids.push(lid);
+    }
     for (let i = 0; i < 6; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      const leg = part(this.body, 0.09, 0.22, 0.09, 0x30323b);
-      leg.position.set(0.26 * side, -0.16, -0.16 + Math.floor(i / 2) * 0.16);
-      leg.rotation.z = 0.5 * side;
-      this.fins.push(leg); // reuse the fin slots as leg joints
+      const leg = part(this.body, 0.08, 0.26, 0.08, DARK);
+      leg.position.set(0.26 * side, -0.14, -0.16 + Math.floor(i / 2) * 0.16);
+      leg.rotation.z = 0.55 * side;
+      this.legs.push(leg);
     }
   }
 
   private buildSentinel(): void {
-    const core = part(this.body, 0.55, 0.42, 0.5, 0x497583);
-    core.position.y = 0;
-    const bezel = part(this.body, 0.4, 0.3, 0.06, 0x202d3b);
-    bezel.position.set(0, 0.02, -0.27);
-    const panelF = part(this.body, 0.28, 0.2, 0.04, 0x55e0ff, true);
-    panelF.position.set(0, 0.02, -0.32);
-    this.glowParts.push(panelF);
-    const pupil = part(this.body, 0.1, 0.12, 0.025, 0x202d3b);
-    pupil.position.set(0, 0.02, -0.355);
-    const top = part(this.body, 0.36, 0.12, 0.36, 0x202d3b);
-    top.position.y = 0.27;
-    const emitter = part(this.body, 0.18, 0.16, 0.18, 0x88f0ff, true);
-    emitter.position.y = -0.32;
+    // reference/enemy-upgrade-sentinel.png: a steel-teal hovering box with one
+    // cyan optic between two pale shutters, a dark cap, a cyan emitter below,
+    // and four thick paddles on corner hinges. Charging spreads the paddles and
+    // slides the shutters out; recovery folds everything in. 16 boxes.
+    const TEAL = 0x4c7f93, DARK = 0x202830, CYAN = 0x55e0ff, PALE = 0xb8c4cc, PADDLE = 0x6f9fb0;
+    const body = part(this.body, 0.56, 0.4, 0.5, TEAL);
+    body.position.y = 0;
+    const cap = part(this.body, 0.36, 0.1, 0.3, DARK);
+    cap.position.y = 0.25;
+    const bezel = part(this.body, 0.42, 0.3, 0.06, DARK);
+    bezel.position.set(0, 0, -0.27);
+    const optic = part(this.body, 0.3, 0.2, 0.04, CYAN, true);
+    optic.position.set(0, 0, -0.31);
+    this.glowParts.push(optic);
+    const pupil = part(this.body, 0.06, 0.12, 0.03, DARK);
+    pupil.position.set(0, 0, -0.335);
+    const emitter = part(this.body, 0.2, 0.14, 0.2, CYAN, true);
+    emitter.position.y = -0.27;
     this.glowParts.push(emitter);
-    for (let i = 0; i < 4; i++) {
-      const fin = part(this.body, 0.34, 0.09, 0.18, 0x6b9ba6);
-      const a = (i / 4) * Math.PI * 2;
-      fin.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
-      fin.rotation.y = -a;
-      this.fins.push(fin);
+    for (const side of [-1, 1]) {
+      const shutter = part(this.body, 0.1, 0.26, 0.06, PALE);
+      shutter.position.set(0.3 * side, 0, -0.29);
+      this.shutters.push(shutter);
+    }
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const housing = part(this.body, 0.1, 0.12, 0.1, DARK);
+        housing.position.set(0.3 * sx, 0.06, 0.22 * sz);
+        const pivot = new THREE.Group();
+        pivot.position.set(0.3 * sx, 0.06, 0.22 * sz);
+        const paddle = part(pivot, 0.36, 0.12, 0.18, PADDLE);
+        paddle.position.set(0.26 * sx, 0, 0);
+        this.body.add(pivot);
+        this.paddles.push(pivot);
+      }
     }
   }
 
@@ -423,6 +574,11 @@ export class Enemy {
   /** dormant in a tank or walking out of one: scripted, outside the AI */
   get scripted(): boolean {
     return this.dormant || this.emerge !== null;
+  }
+
+  /** planted or committed: separation must not shove it (reference/enemy-upgrades.md) */
+  get planted(): boolean {
+    return this.state === 'attack' || this.state === 'charge';
   }
 
   /**
@@ -458,6 +614,35 @@ export class Enemy {
     this.stateTime = 0;
   }
 
+  // ---------------------------------------------------------------------------
+  // Damage
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Ordinary pain may interrupt a warning (the attack is cancelled with a
+   * retry delay) but never a committed move, a strike, a recovery, a ticker
+   * that has armed, or a brute's wall stun — those are the windows the design
+   * promises the player.
+   */
+  private painAllowed(): boolean {
+    if (this.kind === 'ticker' && this.state === 'attack') return false;
+    if (this.state === 'pain') return this.stunTime <= 0.32;
+    if (this.state === 'attack' || this.state === 'charge') return this.phase === 'prep';
+    return true;
+  }
+
+  /** a warning was interrupted: drop the attack and wait before trying again */
+  private cancelAttack(): void {
+    if (this.state === 'charge') {
+      if (this.kind === 'brute') this.chargeCooldown = Math.max(this.chargeCooldown, 1.0);
+      else this.lungeCooldown = Math.max(this.lungeCooldown, 1.0);
+    } else if (this.state === 'attack') {
+      this.attackCooldown = Math.max(this.attackCooldown, 0.5);
+    }
+    this.faceLocked = false;
+    this.atkTgt = null;
+  }
+
   damage(dmg: number, dx: number, dz: number, game: Game): void {
     if (!this.alive) return;
     this.hp -= dmg;
@@ -480,16 +665,18 @@ export class Enemy {
       return;
     }
     // micro-stagger + knockback: the hit interrupts momentum, then shoves
-    // (brutes are too heavy to shove far)
+    // (brutes are too heavy to shove far; a committed move keeps its momentum)
     const mass = this.kind === 'brute' ? 0.25 : 1;
-    if (this.state !== 'charge') {
+    const committed = this.state === 'charge' && this.phase === 'move';
+    if (!committed) {
       this.vel.x *= 0.6;
       this.vel.z *= 0.6;
     }
     const kb = Math.min(8, dmg * 0.2) * mass;
     this.vel.x += dx * kb;
     this.vel.z += dz * kb;
-    if (Math.random() < this.tuning.painChance) {
+    if (Math.random() < this.tuning.painChance && this.painAllowed()) {
+      this.cancelAttack();
       this.setState('pain');
       game.audio.play(humanoid(this.kind) ? 'enemyPainA' : 'enemyPainB', this.pos);
     }
@@ -500,9 +687,12 @@ export class Enemy {
 
   private die(game: Game): void {
     this.setState('dead');
+    this.atkTgt = null;
+    this.faceLocked = false;
     game.audio.play(humanoid(this.kind) ? 'enemyDieA' : 'enemyDieB', this.pos);
     // tickers are walking bombs: death always detonates them (short fuse so a
-    // sniped ticker still chains into barrels and packmates).
+    // sniped ticker still chains into barrels and packmates). Exactly one
+    // explosion per ticker — arming ends by calling this same path.
     // Co-op clients skip the gameplay side effects — the host owns those.
     if (this.kind === 'ticker' && !game.isNetClient) {
       game.queueExplosion(this.pos.x, this.pos.y, this.pos.z, 0.08, 55, 2.8);
@@ -539,6 +729,10 @@ export class Enemy {
     game.onEnemyKilled(this);
   }
 
+  // ---------------------------------------------------------------------------
+  // Frame
+  // ---------------------------------------------------------------------------
+
   update(dt: number, game: Game): void {
     if (this.puppet) {
       this.puppetUpdate(dt, game);
@@ -549,7 +743,8 @@ export class Enemy {
     this.lungeCooldown = Math.max(0, this.lungeCooldown - dt);
     this.chargeCooldown = Math.max(0, this.chargeCooldown - dt);
     this.flashTime = Math.max(0, this.flashTime - dt);
-    // hunt whichever player is closest (co-op adds the partner as a target)
+    // hunt whichever player is closest (co-op adds the partner as a target);
+    // a declared attack keeps its own target in atkTgt
     const pl = this.pickTarget(game);
     this.tgt = pl;
 
@@ -587,10 +782,8 @@ export class Enemy {
         this.doChase(dt, dist, toPlayer, game);
         break;
       case 'attack':
-        this.doAttack(dt, dist, toPlayer, game);
-        break;
       case 'charge':
-        this.doCharge(dt, game);
+        this.doAttack(dt, game);
         break;
       case 'pain':
         this.vel.x *= 0.85;
@@ -612,39 +805,60 @@ export class Enemy {
       const targetY = floorY + 1.55 + Math.sin(this.hoverPhase * 2) * 0.15;
       this.vel.y += (targetY - this.pos.y) * 6 * dt - this.vel.y * 3 * dt;
     }
-    const res = moveBody(game.world, this.pos, this.half, this.vel, dt, game.solidBoxes());
+    // a committed move is swept in substeps: at a long frame a charge must
+    // not tunnel through a wall, a closed door or a player
+    const moving = this.state === 'charge' && this.phase === 'move';
+    const sub = moving ? Math.max(1, Math.ceil((Math.hypot(this.vel.x, this.vel.z) * dt) / 0.25)) : 1;
+    let onGround = false;
+    let hitWall = false;
+    for (let i = 0; i < sub; i++) {
+      const res = moveBody(game.world, this.pos, this.half, this.vel, dt / sub, game.solidBoxes());
+      onGround = res.onGround;
+      hitWall = res.hitX || res.hitZ;
+      if (moving && this.sweepCommitted(hitWall, game)) break;
+    }
+    this.onGround = onGround;
     // ground friction for walkers
-    if (this.kind !== 'sentinel' && res.onGround) {
+    const huskSteering = this.kind === 'husk' && (this.state === 'chase' || this.state === 'patrol' ||
+      ((this.state === 'attack' || this.state === 'charge') && this.phase === 'recover'));
+    if (this.kind !== 'sentinel' && onGround && !huskSteering) {
       const f = Math.exp(-6 * dt);
       this.vel.x *= f;
       this.vel.z *= f;
     }
-    // brute wall slam: a charge that hits a wall stuns it (punish window)
-    if (this.kind === 'brute' && this.state === 'charge' && this.stateTime > 0.6 && (res.hitX || res.hitZ)) {
-      game.audio.play('bruteSlam', this.pos);
-      game.particles.debris(this.pos.x + this.cdx, this.pos.y + 0.3, this.pos.z + this.cdz, 0.45, 0.42, 0.4, 12);
-      game.player.shake = Math.min(0.6, game.player.shake + 0.25);
-      game.enemies.alertAt(this.pos.x, this.pos.z, 14, game);
-      this.chargeCooldown = 4.5;
-      this.stunTime = 1.3; // dazed — free hits
-      this.setState('pain');
-      this.vel.x = -this.cdx * 3;
-      this.vel.z = -this.cdz * 3;
-    }
     // wall jink: when blocked while chasing, sidestep for a moment
-    if ((res.hitX || res.hitZ) && (this.state === 'chase' || this.state === 'patrol')) {
+    if (hitWall && (this.state === 'chase' || this.state === 'patrol')) {
       if (this.jinkTime <= 0) {
         this.jinkTime = 0.45;
         this.jinkSign = Math.random() < 0.5 ? 1 : -1;
       }
     }
     this.jinkTime = Math.max(0, this.jinkTime - dt);
+    // sentinel: a lateral choice blocked for 0.5s flips instead of vibrating
+    if (this.kind === 'sentinel') {
+      this.blockedT = hitWall && this.state === 'chase' ? this.blockedT + dt : 0;
+      if (this.blockedT > 0.5) {
+        this.strafeSign = -this.strafeSign;
+        this.blockedT = 0;
+      }
+    }
 
     // face movement / player
     // models are built facing local -z, so front_world = (-sin yaw, -cos yaw):
     // to face a direction (dx, dz), yaw = atan2(-dx, -dz)
-    if (this.awake && dist > 0.3) {
-      const targetYaw = Math.atan2(-toPlayer.x, -toPlayer.z);
+    const attacking = this.state === 'attack' || this.state === 'charge';
+    if (attacking && this.faceLocked) {
+      // locked: the strike direction is committed, a dodge isn't followed
+      const targetYaw = Math.atan2(-this.lockX, -this.lockZ);
+      this.mesh.rotation.y = lerpAngle(this.mesh.rotation.y, targetYaw, Math.min(1, dt * 14));
+    } else if (this.kind === 'husk' && !attacking && Math.hypot(this.vel.x, this.vel.z) > 0.4) {
+      // Follow the actual travel direction instead of skating sideways while
+      // the whole body stares at the player throughout a weave.
+      const targetYaw = Math.atan2(-this.vel.x, -this.vel.z);
+      this.mesh.rotation.y = lerpAngle(this.mesh.rotation.y, targetYaw, 1 - Math.exp(-10 * dt));
+    } else if (this.awake && dist > 0.3) {
+      const face = attacking && this.atkTgt ? this.atkTgt : pl;
+      const targetYaw = Math.atan2(-(face.pos.x - this.pos.x), -(face.pos.z - this.pos.z));
       this.mesh.rotation.y = lerpAngle(this.mesh.rotation.y, targetYaw, Math.min(1, dt * 10));
     } else if (Math.hypot(this.vel.x, this.vel.z) > 0.5) {
       const targetYaw = Math.atan2(-this.vel.x, -this.vel.z);
@@ -696,7 +910,7 @@ export class Enemy {
     );
     // the walk speed drives the gait animation
     this.vel.set((e.tx - e.fx) / DUR, 0, (e.tz - e.fz) / DUR);
-    this.animateHusk(dt, Math.hypot(this.vel.x, this.vel.z), game);
+    this.animateWalker(dt, Math.hypot(this.vel.x, this.vel.z), game);
     this.vel.set(0, 0, 0);
     this.mesh.position.copy(this.pos);
     this.mesh.scale.setScalar(1 + this.flashTime * 1.6);
@@ -724,6 +938,10 @@ export class Enemy {
     return best;
   }
 
+  // ---------------------------------------------------------------------------
+  // Co-op puppets
+  // ---------------------------------------------------------------------------
+
   /** co-op client: interpolate toward the host's snapshot; no AI, no physics */
   private puppetUpdate(dt: number, game: Game): void {
     this.stateTime += dt;
@@ -740,14 +958,25 @@ export class Enemy {
     this.vel.x = (this.pos.x - prevX) / Math.max(dt, 0.001);
     this.vel.z = (this.pos.z - prevZ) / Math.max(dt, 0.001);
     this.mesh.rotation.y = lerpAngle(this.mesh.rotation.y, this.nyaw, Math.min(1, dt * 10));
-    // arming beeps are a survival cue — replicate them for the client
-    if (this.kind === 'ticker' && this.state === 'attack') {
-      const beepsDue = Math.floor(this.stateTime / 0.16);
-      if (beepsDue > this.beepCount) {
-        this.beepCount = beepsDue;
-        game.audio.play('tickerBeep', this.pos);
+    // the pose follows the same schedule the host runs (early exits — a
+    // charge that hit a wall — arrive as a state change instead)
+    if (this.state === 'attack' || this.state === 'charge') {
+      const S = SCHED[this.kind][this.state];
+      const t = this.stateTime;
+      if (t < S.prep) {
+        this.phase = 'prep';
+        this.phaseT = t;
+      } else if (t < S.prep + S.commit) {
+        this.phase = this.state === 'charge' ? 'move' : 'strike';
+        this.phaseT = t - S.prep;
+      } else {
+        this.phase = 'recover';
+        this.phaseT = t - S.prep - S.commit;
       }
+      this.faceLocked = t >= S.lock;
     }
+    // arming beeps are a survival cue — replicate them for the client
+    if (this.kind === 'ticker' && this.state === 'attack') this.playBeeps(this.stateTime, game);
     this.animate(dt, game);
     this.mesh.position.copy(this.pos);
     this.mesh.scale.setScalar(1 + this.flashTime * 1.6);
@@ -775,7 +1004,13 @@ export class Enemy {
       } else {
         this.state = state;
         this.stateTime = 0;
-        if (state === 'attack') this.beepCount = 0;
+        this.phase = 'prep';
+        this.phaseT = 0;
+        this.faceLocked = false;
+        if (state === 'attack' || state === 'charge') {
+          this.beepCount = 0;
+          this.playAttackCue(game);
+        }
       }
     }
     this.awake = state !== 'idle' && state !== 'patrol' && state !== 'dead';
@@ -809,8 +1044,11 @@ export class Enemy {
     return 1;
   }
 
+  // ---------------------------------------------------------------------------
+  // Movement
+  // ---------------------------------------------------------------------------
+
   private doPatrol(dt: number): void {
-    void dt;
     const r = this.room;
     if (!r) {
       this.setState('idle');
@@ -828,11 +1066,11 @@ export class Enemy {
       this.patrolTarget = null;
       return;
     }
-    const sp = this.tuning.speed * 0.4;
-    this.steer(dx / d, dz / d, sp);
+    const sp = this.kind === 'husk' ? HUSK_RUN_SPEED * 0.4 : this.tuning.speed * 0.4;
+    this.steer(dx / d, dz / d, sp, dt);
   }
 
-  private steer(nx: number, nz: number, speed: number): void {
+  private steer(nx: number, nz: number, speed: number, dt = 1 / 60): void {
     if (this.jinkTime > 0) {
       // rotate desired direction ~70 degrees to slip around walls
       const s = this.jinkSign;
@@ -841,8 +1079,32 @@ export class Enemy {
       nx = rx;
       nz = rz;
     }
-    this.vel.x += (nx * speed - this.vel.x) * 0.15;
-    this.vel.z += (nz * speed - this.vel.z) * 0.15;
+    const k = this.kind === 'husk' ? 1 - Math.exp(-10 * dt) : 0.15;
+    this.vel.x += (nx * speed - this.vel.x) * k;
+    this.vel.z += (nz * speed - this.vel.z) * k;
+  }
+
+  /** line of sight from the chest to a target's body (melee reach / eligibility) */
+  private losTo(t: PlayerTarget, game: Game): boolean {
+    return game.hasLOS(this.pos.x, this.pos.y + 0.2, this.pos.z, t.pos.x, t.pos.y, t.pos.z);
+  }
+
+  /** same floor, roughly: the bodies overlap vertically */
+  private overlapsY(t: PlayerTarget): boolean {
+    return Math.abs(t.pos.y - this.pos.y) < this.half.y + t.half.y;
+  }
+
+  /** sentinel positioning: hold 7–12 with line of sight, strafing; approach otherwise */
+  private sentinelPosition(dist: number, nx: number, nz: number, los: boolean): void {
+    const s = this.strafeSign;
+    if (los && dist < SENTINEL_NEAR) {
+      // keep distance + strafe
+      this.steer(-nx * 0.5 + -nz * s * 0.8, -nz * 0.5 + nx * s * 0.8, this.tuning.speed);
+    } else if (los && dist <= SENTINEL_FAR) {
+      this.steer(-nz * s, nx * s, this.tuning.speed * 0.6);
+    } else {
+      this.steer(nx, nz, this.tuning.speed);
+    }
   }
 
   private doChase(dt: number, dist: number, toPlayer: THREE.Vector3, game: Game): void {
@@ -862,30 +1124,33 @@ export class Enemy {
         this.growlCd = 3.5 + Math.random() * 4;
         game.audio.play('huskGrowl', this.pos);
       }
-      if (dist < 1.75 && this.attackCooldown === 0) {
-        this.setState('attack');
+      // claw inside 1.75 with sight; a warned lunge from 2.5–4.0 when grounded
+      if (dist < 1.75 && this.attackCooldown === 0 && this.losTo(pl, game)) {
+        this.beginAttack('attack', pl, game);
         return;
       }
-      // occasional lunge
-      if (dist > 2.2 && dist < 5 && this.lungeCooldown === 0 && Math.random() < dt * 0.8) {
-        this.vel.x = nx * this.tuning.speed * 2.1;
-        this.vel.z = nz * this.tuning.speed * 2.1;
-        this.vel.y = 3.5;
-        this.lungeCooldown = 2.2;
-        game.audio.play('huskAlert', this.pos);
+      if (dist >= 2.5 && dist <= 4.0 && this.lungeCooldown === 0 && this.onGround && this.losTo(pl, game)) {
+        this.beginAttack('charge', pl, game);
         return;
       }
-      // serpentine approach: weave across the line to the player
+      // standoff: it fights from a step away, not from inside the camera
+      if (dist < 1.55) {
+        this.steer(0, 0, 0, dt);
+        return;
+      }
+      // A restrained weave fades near the target. Ease into the standoff
+      // instead of reaching it at full speed and abruptly freezing.
+      const speed = HUSK_RUN_SPEED * Math.min(1, Math.max(0, (dist - 1.55) / 1.2));
       if (dist > 3) {
-        const weave = Math.sin(this.animPhase * 2.2) * 0.5;
+        const weave = Math.sin(this.animPhase * 1.3) * 0.14 * Math.min(1, dist - 3);
         let wx = nx - nz * weave;
         let wz = nz + nx * weave;
         const wl = Math.hypot(wx, wz);
         wx /= wl;
         wz /= wl;
-        this.steer(wx, wz, this.tuning.speed);
+        this.steer(wx, wz, speed, dt);
       } else {
-        this.steer(nx, nz, this.tuning.speed);
+        this.steer(nx, nz, speed, dt);
       }
     } else if (this.kind === 'brute') {
       this.growlCd -= dt;
@@ -893,19 +1158,13 @@ export class Enemy {
         this.growlCd = 4 + Math.random() * 3;
         game.audio.play('huskGrowl', this.pos);
       }
-      if (dist < 2.4 && this.attackCooldown === 0) {
-        this.setState('attack');
+      if (dist < 2.4 && this.attackCooldown === 0 && this.losTo(pl, game)) {
+        this.beginAttack('attack', pl, game);
         return;
       }
       // telegraphed charge when it has a clear mid-range line to the player
-      if (
-        dist > 4 && dist < 15 && this.chargeCooldown === 0 &&
-        game.hasLOS(this.pos.x, this.pos.y + 0.3, this.pos.z, pl.pos.x, pl.pos.y, pl.pos.z)
-      ) {
-        this.setState('charge');
-        this.cdx = nx;
-        this.cdz = nz;
-        game.audio.play('bruteRoar', this.pos);
+      if (dist >= 4 && dist <= 12 && this.chargeCooldown === 0 && this.onGround && this.losTo(pl, game)) {
+        this.beginAttack('charge', pl, game);
         return;
       }
       this.steer(nx, nz, this.tuning.speed);
@@ -915,26 +1174,22 @@ export class Enemy {
         this.growlCd = 3 + Math.random() * 3;
         game.audio.play('huskGrowl', this.pos);
       }
-      if (dist < 1.7 && this.attackCooldown === 0) {
-        this.setState('attack');
-        this.beepCount = 0; // reused: "restraint clank played" flag
+      if (dist < 1.7 && this.attackCooldown === 0 && this.losTo(pl, game)) {
+        this.beginAttack('attack', pl, game);
         return;
       }
-      // short forward rush once it has had a look at you: movement only,
-      // no hop, no contact damage; then it slows back to a shamble
-      if (dist > 2.5 && dist < 6 && this.lungeCooldown === 0 && this.stateTime > 0.8 && Math.random() < dt * 0.9) {
-        this.vel.x = nx * this.tuning.speed * 2.4;
-        this.vel.z = nz * this.tuning.speed * 2.4;
-        this.lungeCooldown = 2.6;
-        game.audio.play('bruteStep', this.pos);
+      // braced short rush: movement only, then it walks off the recovery
+      // before the separately warned club can start
+      if (dist >= 2.5 && dist <= 5.0 && this.lungeCooldown === 0 && this.onGround && this.losTo(pl, game)) {
+        this.beginAttack('charge', pl, game);
         return;
       }
       this.steer(nx, nz, this.tuning.speed);
     } else if (this.kind === 'ticker') {
-      // flat-out sprint with a nervous jitter; arm the charge on contact
-      if (dist < 1.8) {
-        this.setState('attack');
-        this.beepCount = 0;
+      // flat-out sprint with a nervous jitter; arm on contact — but never
+      // through a wall or from a different floor
+      if (dist < 1.8 && this.overlapsY(pl) && this.losTo(pl, game)) {
+        this.beginAttack('attack', pl, game);
         return;
       }
       const jitter = Math.sin(this.animPhase * 6) * 0.25;
@@ -951,247 +1206,642 @@ export class Enemy {
     } else {
       const los = game.hasLOS(this.pos.x, this.pos.y, this.pos.z, pl.pos.x, pl.eyeY(), pl.pos.z);
       if (los && dist < 14 && this.attackCooldown === 0) {
-        this.setState('attack');
+        this.beginAttack('attack', pl, game);
         return;
       }
-      if (los && dist < 7) {
-        // keep distance + strafe
-        const strafe = Math.sin(this.hoverPhase * 0.9) > 0 ? 1 : -1;
-        this.steer(-nx * 0.5 + -nz * strafe * 0.8, -nz * 0.5 + nx * strafe * 0.8, this.tuning.speed);
+      if (Math.random() < dt * 0.25) this.strafeSign = -this.strafeSign;
+      this.sentinelPosition(dist, nx, nz, los);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Attacks: prepare → commit → recover (reference/enemy-upgrades.md)
+  // ---------------------------------------------------------------------------
+
+  /** declare an attack against one target; its direction is set now and locked at SCHED.lock */
+  private beginAttack(state: 'attack' | 'charge', target: PlayerTarget, game: Game): void {
+    this.setState(state);
+    this.phase = 'prep';
+    this.phaseT = 0;
+    this.atkTgt = target;
+    this.hitConsumed = false;
+    this.faceLocked = false;
+    this.beepCount = 0;
+    if (this.kind === 'husk') {
+      this.vel.x = 0;
+      this.vel.z = 0;
+    }
+    this.aimAt(target);
+    if (SCHED[this.kind][state].lock <= 0) this.faceLocked = true;
+    this.playAttackCue(game);
+  }
+
+  /** the warning's sound: paired with the pose so it reads without colour alone */
+  private playAttackCue(game: Game): void {
+    const charge = this.state === 'charge';
+    switch (this.kind) {
+      case 'husk':
+        game.audio.play(charge ? 'huskGrowl' : 'huskAlert', this.pos);
+        break;
+      case 'brute':
+        game.audio.play(charge ? 'bruteRoar' : 'huskGrowl', this.pos);
+        break;
+      case 'vatborn':
+        game.audio.play('clank', this.pos); // restraint clank / cuff scrape
+        break;
+      case 'sentinel':
+        game.audio.play('sentinelAlert', this.pos); // rising charge cue
+        break;
+      case 'ticker':
+        break; // the beep schedule is the cue
+    }
+  }
+
+  /** point the strike direction at the target (tracking before the lock) */
+  private aimAt(t: PlayerTarget): void {
+    const dx = t.pos.x - this.pos.x;
+    const dz = t.pos.z - this.pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    this.lockX = dx / d;
+    this.lockZ = dz / d;
+    if (this.kind === 'sentinel') {
+      const dy = t.eyeY() - this.pos.y;
+      const l = Math.hypot(dx, dy, dz) || 1;
+      this.aimX = dx / l;
+      this.aimY = dy / l;
+      this.aimZ = dz / l;
+    }
+  }
+
+  private enterPhase(p: Phase): void {
+    this.phase = p;
+    this.phaseT = 0;
+  }
+
+  /**
+   * One melee check at the strike frame: reach, same floor, inside the
+   * facing cone of the LOCKED direction (a dodge after the lock is a miss),
+   * line of sight from the chest at impact. Damage once per attack.
+   */
+  private meleeStrike(range: number, coneDeg: number, dmg: number, kbH: number, kbV: number, game: Game): boolean {
+    const t = this.atkTgt;
+    if (!t || t.dead || this.hitConsumed) return false;
+    const dx = t.pos.x - this.pos.x;
+    const dz = t.pos.z - this.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > range || !this.overlapsY(t)) return false;
+    const dot = (dx * this.lockX + dz * this.lockZ) / Math.max(0.001, d);
+    if (dot < Math.cos((coneDeg * Math.PI) / 180)) return false;
+    if (!this.losTo(t, game)) return false;
+    this.hitConsumed = true;
+    t.damage(dmg, game, { x: this.pos.x, z: this.pos.z });
+    if (kbH > 0 || kbV > 0) {
+      const n = Math.max(0.3, d);
+      t.vel.x += (dx / n) * kbH;
+      t.vel.y += kbV;
+      t.vel.z += (dz / n) * kbH;
+    }
+    return true;
+  }
+
+  private playBeeps(t: number, game: Game): void {
+    while (this.beepCount < TICKER_BEEPS.length && t >= TICKER_BEEPS[this.beepCount]) {
+      this.beepCount++;
+      game.audio.play('tickerBeep', this.pos);
+    }
+  }
+
+  private doAttack(dt: number, game: Game): void {
+    const S = SCHED[this.kind][this.state === 'charge' ? 'charge' : 'attack'];
+    this.phaseT += dt;
+    const t = this.atkTgt;
+    const moving = this.phase === 'move';
+    if (!moving) {
+      // planted (sentinels keep their hover spring; vatborn walks its rush off)
+      const walkOff = this.kind === 'vatborn' && this.state === 'charge' && this.phase === 'recover';
+      // a husk's recovery is a bent-over shuffle, not a freeze (it still can't attack)
+      const shuffle = this.kind === 'husk' && this.phase === 'recover';
+      if (walkOff && t && !t.dead) {
+        const dx = t.pos.x - this.pos.x;
+        const dz = t.pos.z - this.pos.z;
+        const d = Math.hypot(dx, dz) || 1;
+        this.steer(dx / d, dz / d, this.tuning.speed);
+      } else if (shuffle && t && !t.dead) {
+        const dx = t.pos.x - this.pos.x;
+        const dz = t.pos.z - this.pos.z;
+        const d = Math.hypot(dx, dz) || 1;
+        const speed = HUSK_RUN_SPEED * 0.3 * Math.min(1, Math.max(0, d - 1.6));
+        this.steer(dx / d, dz / d, speed, dt);
+      } else if (this.kind === 'sentinel' && this.phase === 'recover' && t) {
+        const dx = t.pos.x - this.pos.x;
+        const dz = t.pos.z - this.pos.z;
+        const d = Math.hypot(dx, dz) || 1;
+        this.sentinelPosition(d, dx / d, dz / d, true);
       } else {
-        this.steer(nx, nz, this.tuning.speed);
+        this.vel.x *= 0.8;
+        this.vel.z *= 0.8;
       }
     }
-  }
 
-  /** brute charge: rear back, then barrel forward smashing crates/barrels */
-  private doCharge(dt: number, game: Game): void {
-    const pl = this.tgt ?? game.player;
-    const TELEGRAPH = 0.55;
-    if (this.stateTime < TELEGRAPH) {
-      // dig in and track the player until launch
-      this.vel.x *= 0.7;
-      this.vel.z *= 0.7;
-      const dx = pl.pos.x - this.pos.x;
-      const dz = pl.pos.z - this.pos.z;
-      const d = Math.hypot(dx, dz) || 1;
-      this.cdx = dx / d;
-      this.cdz = dz / d;
-      return;
-    }
-    const speed = this.tuning.speed * 4.2; // outruns the player in a straight line
-    this.vel.x = this.cdx * speed;
-    this.vel.z = this.cdz * speed;
-    // dust kicked up behind it
-    if (Math.random() < dt * 18) {
-      game.particles.smoke(this.pos.x - this.cdx * 0.6, this.pos.y - 0.7, this.pos.z - this.cdz * 0.6, 1);
-    }
-    // smashes destructibles in its path (barrels explode ON it — its problem)
-    const fx = Math.floor(this.pos.x + this.cdx * 0.9);
-    const fz = Math.floor(this.pos.z + this.cdz * 0.9);
-    const footY = Math.floor(this.pos.y - this.half.y + 0.2);
-    for (let dy = 0; dy <= 1; dy++) {
-      if (!isDestructible(game.world.get(fx, footY + dy, fz))) continue;
-      const broke = game.world.damageVoxel(fx, footY + dy, fz, 200);
-      if (broke !== null) game.onVoxelBroken(fx, footY + dy, fz, broke);
-    }
-    // trampled the player: heavy hit + launch
-    const pdx = pl.pos.x - this.pos.x;
-    const pdz = pl.pos.z - this.pos.z;
-    const pd = Math.hypot(pdx, pdz);
-    if (!pl.dead && pd < this.half.x + 1.0) {
-      pl.damage(24 + Math.floor(Math.random() * 8), game, { x: this.pos.x, z: this.pos.z });
-      const d = pd || 1;
-      pl.vel.x += (pdx / d) * 13;
-      pl.vel.y += 5.5;
-      pl.vel.z += (pdz / d) * 13;
-      pl.shake = Math.min(0.7, pl.shake + 0.35);
-      game.audio.play('bruteSlam', this.pos);
-      game.punchFOV(2);
-      this.chargeCooldown = 4;
-      this.attackCooldown = 0.8;
-      this.vel.x *= 0.2;
-      this.vel.z *= 0.2;
-      this.setState('chase');
-      return;
-    }
-    // ran out of steam
-    if (this.stateTime > TELEGRAPH + 1.6) {
-      this.chargeCooldown = 3.5;
-      this.setState('chase');
-    }
-  }
-
-  private doAttack(dt: number, dist: number, toPlayer: THREE.Vector3, game: Game): void {
-    void dt;
-    const pl = this.tgt ?? game.player;
-    this.vel.x *= 0.8;
-    this.vel.z *= 0.8;
-    if (this.kind === 'vatborn') {
-      // plant feet, restraint clank, 0.65s windup with locked facing, one
-      // heavy swing (range + LOS checked at impact), then a long recovery
-      if (this.beepCount === 0) {
-        this.beepCount = 1;
-        game.audio.play('clank', this.pos);
-      }
-      if (this.stateTime > 0.65 && this.attackCooldown === 0) {
-        this.attackCooldown = 1.9;
-        if (dist < 2.0 && !pl.dead && game.hasLOS(this.pos.x, this.pos.y + 0.2, this.pos.z, pl.pos.x, pl.pos.y, pl.pos.z)) {
-          pl.damage(16, game, { x: this.pos.x, z: this.pos.z });
-          const d = Math.max(0.3, dist);
-          pl.vel.x += (toPlayer.x / d) * 5;
-          pl.vel.z += (toPlayer.z / d) * 5;
-          game.audio.play('bruteSlam', this.pos);
+    switch (this.phase) {
+      case 'prep': {
+        // track until the lock, then the direction is committed
+        if (!this.faceLocked) {
+          if (t && !t.dead) this.aimAt(t);
+          if (this.phaseT >= S.lock) this.faceLocked = true;
         }
+        if (this.kind === 'ticker') this.playBeeps(this.phaseT, game);
+        if (this.phaseT >= S.prep) this.commit(game);
+        break;
       }
-      if (this.stateTime > 0.65 + 1.1) this.setState('chase');
-    } else if (this.kind === 'husk' || this.kind === 'brute') {
-      // windup then strike — must not reach through doors or walls
-      const brute = this.kind === 'brute';
-      if (this.stateTime > (brute ? 0.45 : 0.32) && this.attackCooldown === 0) {
-        this.attackCooldown = brute ? 1.6 : 1.1;
-        if (
-          dist < (brute ? 2.9 : 2.1) && !pl.dead &&
-          game.hasLOS(this.pos.x, this.pos.y + 0.2, this.pos.z, pl.pos.x, pl.pos.y, pl.pos.z)
-        ) {
-          pl.damage(
-            brute ? 18 + Math.floor(Math.random() * 10) : 8 + Math.floor(Math.random() * 8),
-            game, { x: this.pos.x, z: this.pos.z }
-          );
-          if (brute) {
-            // backhand shove
-            const d = Math.max(0.3, dist);
-            pl.vel.x += (toPlayer.x / d) * 7;
-            pl.vel.y += 3;
-            pl.vel.z += (toPlayer.z / d) * 7;
-            game.audio.play('bruteSlam', this.pos);
-          } else {
-            game.audio.play('huskBite', this.pos);
+      case 'strike':
+        if (this.phaseT >= S.commit) this.enterPhase('recover');
+        break;
+      case 'move': {
+        // committed movement: a fixed direction, gravity and collision kept
+        const speed = this.kind === 'brute' ? BRUTE_CHARGE_SPEED : this.kind === 'husk' ? HUSK_LUNGE_SPEED : VAT_RUSH_SPEED;
+        this.vel.x = this.lockX * speed;
+        this.vel.z = this.lockZ * speed;
+        if (this.kind === 'brute') {
+          // dust kicked up behind it; smashes destructibles in its path
+          // (barrels explode ON it — its problem)
+          if (Math.random() < dt * 18) {
+            game.particles.smoke(this.pos.x - this.lockX * 0.6, this.pos.y - 0.7, this.pos.z - this.lockZ * 0.6, 1);
+          }
+          const fx = Math.floor(this.pos.x + this.lockX * 0.9);
+          const fz = Math.floor(this.pos.z + this.lockZ * 0.9);
+          const footY = Math.floor(this.pos.y - this.half.y + 0.2);
+          for (let dy = 0; dy <= 1; dy++) {
+            if (!isDestructible(game.world.get(fx, footY + dy, fz))) continue;
+            const broke = game.world.damageVoxel(fx, footY + dy, fz, 200);
+            if (broke !== null) game.onVoxelBroken(fx, footY + dy, fz, broke);
           }
         }
+        if (this.phaseT >= this.moveMax) this.endMove(false, game);
+        break;
       }
-      if (this.stateTime > (brute ? 0.95 : 0.75)) this.setState('chase');
-    } else if (this.kind === 'ticker') {
-      // armed: it stops, beeps faster and faster, then self-destructs — no
-      // backing out once the charge is lit, so kite away from it
-      const t = this.stateTime;
-      const beepsDue = Math.floor(t / 0.16);
-      if (beepsDue > this.beepCount) {
-        this.beepCount = beepsDue;
-        game.audio.play('tickerBeep', this.pos);
-      }
-      if (t > 0.55) {
-        this.hp = 0;
-        this.die(game); // die() queues the explosion
-      }
-    } else {
-      // telegraph glow then fire a bolt
-      const t = this.stateTime;
-      for (const g of this.glowParts) {
-        const m = g.material as THREE.MeshBasicMaterial;
-        m.color.copy(g.userData.baseColor as THREE.Color).multiplyScalar(1 + Math.min(1.4, t * 3));
-      }
-      if (t > 0.5 && this.attackCooldown === 0) {
-        this.attackCooldown = 1.5;
-        const dir = new THREE.Vector3(toPlayer.x, pl.eyeY() - this.pos.y, toPlayer.z).normalize();
-        // slight spread
-        dir.x += (Math.random() - 0.5) * 0.04;
-        dir.y += (Math.random() - 0.5) * 0.04;
-        dir.z += (Math.random() - 0.5) * 0.04;
-        dir.normalize();
-        game.projectiles.spawn('bolt', this.pos.x + dir.x * 0.5, this.pos.y + dir.y * 0.5, this.pos.z + dir.z * 0.5, dir.x, dir.y, dir.z, 13, false);
-        game.audio.play('boltFire', this.pos);
-      }
-      if (t > 0.85) this.setState('chase');
+      case 'recover':
+        if (this.phaseT >= S.recover) this.finishAttack();
+        break;
     }
   }
+
+  /** the strike frame (planted attacks) or the launch (committed moves) */
+  private commit(game: Game): void {
+    if (this.state === 'charge') {
+      this.enterPhase('move');
+      this.vel.y = 0;
+      // a lunge/rush travels only as far as a step short of the target; the
+      // brute's charge runs its full course (the trample is the point)
+      const S = SCHED[this.kind].charge;
+      this.moveMax = S.commit;
+      if (this.kind !== 'brute' && this.atkTgt) {
+        const speed = this.kind === 'husk' ? HUSK_LUNGE_SPEED : VAT_RUSH_SPEED;
+        const d = Math.hypot(this.atkTgt.pos.x - this.pos.x, this.atkTgt.pos.z - this.pos.z);
+        this.moveMax = Math.max(0.06, Math.min(S.commit, (d - 1.6) / speed));
+      }
+      if (this.kind === 'brute') game.audio.play('bruteStep', this.pos);
+      return;
+    }
+    switch (this.kind) {
+      case 'husk':
+        if (this.meleeStrike(2.1, 45, 12, 0, 0, game)) game.audio.play('huskBite', this.pos);
+        this.enterPhase('strike');
+        break;
+      case 'brute':
+        if (this.meleeStrike(2.9, 50, 22, 7, 3, game)) game.audio.play('bruteSlam', this.pos);
+        this.enterPhase('strike');
+        break;
+      case 'vatborn':
+        this.attackCooldown = 1.9; // swing cooldown counts from the impact
+        if (this.meleeStrike(2.0, 45, 16, 5, 0, game)) game.audio.play('bruteSlam', this.pos);
+        this.enterPhase('strike');
+        break;
+      case 'ticker':
+        // exactly one explosion: the ordinary death path queues it (0.08 fuse)
+        this.hp = 0;
+        this.die(game);
+        break;
+      case 'sentinel': {
+        // one bolt along the direction committed at the lock, no spread. The
+        // muzzle must be clear: a door or pillar in the way catches the shot
+        // rather than the spawn point being pushed through it.
+        const mx = this.pos.x + this.aimX * 0.5;
+        const my = this.pos.y + this.aimY * 0.5;
+        const mz = this.pos.z + this.aimZ * 0.5;
+        if (game.hasLOS(this.pos.x, this.pos.y, this.pos.z, mx, my, mz)) {
+          game.projectiles.spawn('bolt', mx, my, mz, this.aimX, this.aimY, this.aimZ, 13, false);
+          game.audio.play('boltFire', this.pos);
+        }
+        this.enterPhase('recover');
+        break;
+      }
+    }
+  }
+
+  /**
+   * Swept check after each movement substep of a committed move. Obstruction
+   * is resolved before any player behind it can be hit. Returns true when
+   * the move ended.
+   */
+  private sweepCommitted(hitWall: boolean, game: Game): boolean {
+    if (hitWall) {
+      if (this.kind === 'brute') {
+        // wall slam: stunned (free hits), heavy cooldown
+        game.audio.play('bruteSlam', this.pos);
+        game.particles.debris(this.pos.x + this.lockX, this.pos.y + 0.3, this.pos.z + this.lockZ, 0.45, 0.42, 0.4, 12);
+        game.player.shake = Math.min(0.6, game.player.shake + 0.25);
+        game.enemies.alertAt(this.pos.x, this.pos.z, 14, game);
+        this.chargeCooldown = 4.5;
+        this.stunTime = 1.3;
+        this.vel.x = -this.lockX * 3;
+        this.vel.z = -this.lockZ * 3;
+        this.atkTgt = null;
+        this.faceLocked = false;
+        this.setState('pain');
+        return true;
+      }
+      // a lunge/rush stopped by a wall or door: no strike, straight to recovery
+      this.endMove(true, game);
+      return true;
+    }
+    if (this.kind !== 'brute') {
+      // a lunge/rush that has reached its target pulls up instead of
+      // shoving through it (the husk's claw comes at the end of the move)
+      const t = this.atkTgt;
+      if (t && Math.hypot(t.pos.x - this.pos.x, t.pos.z - this.pos.z) < 1.5) {
+        this.endMove(false, game);
+        return true;
+      }
+      return false;
+    }
+    if (!this.hitConsumed) {
+      // trample: the first living player overlapping the charge, once
+      for (const p of game.playerTargets()) {
+        if (p.dead) continue;
+        const pdx = p.pos.x - this.pos.x;
+        const pdz = p.pos.z - this.pos.z;
+        const pd = Math.hypot(pdx, pdz);
+        if (pd >= this.half.x + 1.0 || !this.overlapsY(p)) continue;
+        this.hitConsumed = true;
+        p.damage(28, game, { x: this.pos.x, z: this.pos.z });
+        const d = pd || 1;
+        p.vel.x += (pdx / d) * 13;
+        p.vel.y += 5.5;
+        p.vel.z += (pdz / d) * 13;
+        p.shake = Math.min(0.7, p.shake + 0.35);
+        game.audio.play('bruteSlam', this.pos);
+        game.punchFOV(2);
+        this.chargeCooldown = 4.0;
+        this.vel.x *= 0.2;
+        this.vel.z *= 0.2;
+        this.enterPhase('recover');
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** a committed move ran its course (or was stopped): strike if it still can, then recover */
+  private endMove(obstructed: boolean, game: Game): void {
+    switch (this.kind) {
+      case 'husk':
+        // the lunge itself has no contact damage — one claw at its end
+        if (!obstructed && this.meleeStrike(1.6, 45, 12, 0, 0, game)) game.audio.play('huskBite', this.pos);
+        break;
+      case 'brute':
+        if (!this.hitConsumed) this.chargeCooldown = 3.5; // ran out of steam
+        break;
+      case 'vatborn':
+        break; // movement only
+      default:
+        break;
+    }
+    this.vel.x *= 0.3;
+    this.vel.z *= 0.3;
+    this.enterPhase('recover');
+  }
+
+  /** the recovery ended: back to the hunt, with the cooldowns the design names */
+  private finishAttack(): void {
+    if (this.state === 'charge') {
+      if (this.kind !== 'brute') this.lungeCooldown = 3.0; // measured from the end of the recovery
+    } else if (this.kind === 'sentinel') {
+      this.attackCooldown = 0.3;
+    }
+    this.atkTgt = null;
+    this.faceLocked = false;
+    this.setState('chase');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Animation
+  // ---------------------------------------------------------------------------
 
   private animate(dt: number, game: Game): void {
     const speed = Math.hypot(this.vel.x, this.vel.z);
     this.animPhase += dt * 2;
-    if (humanoid(this.kind)) {
-      this.animateHusk(dt, speed, game);
-    } else if (this.kind === 'ticker') {
-      this.animateTicker(speed, game);
-    } else {
-      for (let i = 0; i < this.fins.length; i++) {
-        const fin = this.fins[i];
-        const a = (i / 4) * Math.PI * 2 + this.animPhase * 1.5;
-        fin.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
-        fin.rotation.y = -a;
-      }
-    }
+    if (this.kind === 'husk') this.animateHusk(dt, game);
+    else if (humanoid(this.kind)) this.animateWalker(dt, speed, game);
+    else if (this.kind === 'ticker') this.animateTicker(speed, game);
+    else this.animateSentinel();
+  }
+
+  /** windup progress 0..1, strike progress 0..1, recovery progress 0..1 for the current attack */
+  private attackK(): [number, number, number] {
+    const S = SCHED[this.kind][this.state === 'charge' ? 'charge' : 'attack'];
+    const p = this.phase;
+    const t = this.phaseT;
+    const prepK = p === 'prep' ? Math.min(1, t / Math.max(0.001, S.prep)) : 1;
+    const strikeK = p === 'strike' || p === 'move' ? Math.min(1, t / Math.max(0.001, S.commit)) : p === 'recover' ? 1 : 0;
+    const recK = p === 'recover' ? Math.min(1, t / Math.max(0.001, S.recover)) : 0;
+    return [prepK, strikeK, recK];
   }
 
   private animateTicker(speed: number, game: Game): void {
-    // legs skitter in alternating tripods; the body vibrates when armed
-    const g = this.animPhase * (2 + speed * 1.6);
-    for (let i = 0; i < this.fins.length; i++) {
-      const side = i % 2 === 0 ? -1 : 1;
-      const leg = this.fins[i];
-      leg.rotation.x = Math.sin(g * 3 + i * 1.1) * Math.min(0.7, speed * 0.14);
-      leg.rotation.z = 0.5 * side;
-    }
+    // legs skitter in alternating tripods; while arming they plant and spread
     const arming = this.state === 'attack';
-    this.body.position.y = arming ? Math.sin(this.animPhase * 60) * 0.02 : Math.abs(Math.sin(g * 1.5)) * 0.03;
-    // the core blinks with the arming beeps and glows hotter as it closes
+    const g = this.animPhase * (2 + speed * 1.6);
+    for (let i = 0; i < this.legs.length; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const leg = this.legs[i];
+      leg.rotation.x = arming ? 0 : Math.sin(g * 3 + i * 1.1) * Math.min(0.7, speed * 0.14);
+      leg.rotation.z = (arming ? 0.75 : 0.55) * side;
+    }
+    // the lids open over the first 0.25s of the warning
+    const open = arming ? Math.min(1, this.phaseT / 0.25) : 0;
+    for (let i = 0; i < this.lids.length; i++) {
+      const side = i === 0 ? -1 : 1;
+      this.lids[i].rotation.z = -side * open * 1.3;
+    }
+    this.body.position.y = arming ? Math.sin(this.animPhase * 60) * 0.015 : Math.abs(Math.sin(g * 1.5)) * 0.03;
+    // the core pulses with the beeps and glows hotter as it closes
     const core = this.glowParts[0];
-    if (core) {
-      const m = core.material as THREE.MeshBasicMaterial;
-      const base = core.userData.baseColor as THREE.Color;
-      const blink = arming ? (Math.floor(this.stateTime / 0.16) % 2 === 0 ? 2.2 : 0.6) : this.awake ? 1.4 : 1;
-      m.color.copy(base).multiplyScalar(blink);
-      if (arming) {
-        game.dynLights.submit(this.pos.x, this.pos.y + 0.2, this.pos.z, 1, 0.65, 0.1, 0.5 * blink, 3);
+    const battery = this.glowParts[1];
+    const blink = arming ? (Math.floor(this.phaseT / 0.12) % 2 === 0 ? 2.4 : 0.7) : this.awake ? 1.4 : 1;
+    (core.material as THREE.MeshBasicMaterial).color.copy(core.userData.baseColor as THREE.Color).multiplyScalar(blink);
+    (battery.material as THREE.MeshBasicMaterial).color.copy(battery.userData.baseColor as THREE.Color).multiplyScalar(arming ? 1.6 + open : 1);
+    if (arming) game.dynLights.submit(this.pos.x, this.pos.y + 0.2, this.pos.z, 1, 0.65, 0.1, 0.5 * blink, 3);
+  }
+
+  private animateSentinel(): void {
+    // paddles: a loose X at rest, spread wide and lifted while charging,
+    // folded in during recovery; shutters slide out with the charge
+    let spread = 0.3;
+    let glow = this.awake ? 1.15 : 1;
+    if (this.state === 'attack') {
+      const [prepK, , recK] = this.attackK();
+      if (this.phase === 'prep') {
+        spread = 0.3 + 0.7 * prepK;
+        glow = 1 + 1.4 * prepK;
+      } else {
+        // folded in, easing back to the resting X
+        spread = lerp(-0.15, 0.3, recK);
+        glow = lerp(0.6, 1.15, recK);
       }
+    }
+    for (let i = 0; i < this.paddles.length; i++) {
+      const p = this.paddles[i];
+      const sx = i < 2 ? -1 : 1;
+      const sz = i % 2 === 0 ? -1 : 1;
+      // sweep toward front/back and lift
+      p.rotation.y = -sx * sz * (0.45 + spread * 0.6);
+      p.rotation.z = sx * (spread * 0.55 - 0.1);
+      p.position.y = 0.06 + spread * 0.04;
+    }
+    for (let i = 0; i < this.shutters.length; i++) {
+      const side = i === 0 ? -1 : 1;
+      this.shutters[i].position.x = side * (0.3 + 0.1 * Math.max(0, spread));
+    }
+    const optic = this.glowParts[0];
+    (optic.material as THREE.MeshBasicMaterial).color.copy(optic.userData.baseColor as THREE.Color).multiplyScalar(glow);
+    const emitter = this.glowParts[1];
+    (emitter.material as THREE.MeshBasicMaterial).color.copy(emitter.userData.baseColor as THREE.Color).multiplyScalar(0.8 + glow * 0.3);
+    this.body.rotation.z = Math.sin(this.hoverPhase * 1.7) * 0.04;
+  }
+
+  /** Husk gait follows distance actually travelled, including on co-op puppets.
+   * Knees reuse the existing boxes; feet settle at rest and stay on the floor.
+   */
+  private animateHusk(dt: number, game: Game): void {
+    const dx = this.pos.x - this.huskLastX;
+    const dz = this.pos.z - this.huskLastZ;
+    let distance = this.huskMotionReady ? Math.hypot(dx, dz) : 0;
+    this.huskLastX = this.pos.x;
+    this.huskLastZ = this.pos.z;
+    this.huskMotionReady = true;
+    // A spawn/teleport isn't a running stride.
+    if (distance > Math.max(1, dt * 20)) distance = 0;
+    const attacking = this.state === 'attack' || this.state === 'charge';
+    const moving = !attacking || this.phase === 'move' || this.phase === 'recover';
+    const grounded = this.puppet || this.onGround;
+    const travel = moving && grounded && this.state !== 'pain' ? distance : 0;
+    const previousGait = this.gait;
+    this.gait += travel * (Math.PI * 2 / 1.3);
+    const speed = travel / Math.max(dt, 0.001);
+    const k = 1 - Math.exp(-18 * dt);
+    this.huskWalk = lerp(this.huskWalk, Math.min(1, speed / HUSK_RUN_SPEED), k);
+    if (this.huskWalk < 0.003) this.huskWalk = 0;
+    const stride = Math.sin(this.gait);
+    const swing = Math.cos(this.gait);
+    const walk = this.huskWalk;
+    const legAmp = 0.5 * walk;
+    this.legLG!.rotation.x = lerp(this.legLG!.rotation.x, stride * legAmp, k);
+    this.legRG!.rotation.x = lerp(this.legRG!.rotation.x, -stride * legAmp, k);
+    this.huskKneeLG!.rotation.x = lerp(this.huskKneeLG!.rotation.x, -0.65 * Math.max(0, swing) * walk, k);
+    this.huskKneeRG!.rotation.x = lerp(this.huskKneeRG!.rotation.x, -0.65 * Math.max(0, -swing) * walk, k);
+
+    let lean = -0.12 - 0.10 * walk;
+    let twist = stride * 0.035 * walk;
+    let head = 0.10;
+    let leftArm = 0.18 - stride * 0.22 * walk;
+    let rightArm = 0.18 + stride * 0.22 * walk;
+    let jaw = this.awake ? 0.12 : 0.04;
+    if (attacking) {
+      const [prepK, strikeK, recK] = this.attackK();
+      const prep = this.phase === 'prep';
+      const recover = this.phase === 'recover';
+      const settle = smooth01(recK);
+      if (this.state === 'attack') {
+        // The rake arrives at the damage frame (end of prep), rather than
+        // only starting its forward swing after damage has already landed.
+        const draw = smooth01(prepK / 0.75);
+        const rake = smooth01((prepK - 0.75) / 0.25);
+        if (prep) {
+          rightArm = lerp(lerp(0.18, -0.65, draw), 1.0, rake);
+          leftArm = lerp(0.18, 0.35, draw);
+          lean = lerp(-0.12 - draw * 0.08, -0.32, rake);
+          twist = lerp(-0.12 * draw, 0.12, rake);
+          jaw = 0.12 + draw * 0.2;
+        } else {
+          rightArm = recover ? lerp(0.72, 0.18, settle) : lerp(1.0, 0.72, smooth01(strikeK));
+          leftArm = lerp(0.35, leftArm, recover ? settle : 0);
+          lean = lerp(-0.32, lean, recover ? settle : smooth01(strikeK) * 0.2);
+          twist = 0.12 * (1 - (recover ? settle : 0));
+          jaw = lerp(0.32, jaw, recover ? settle : strikeK);
+        }
+      } else {
+        // A grounded, short driving step. No frozen airborne legs or deep
+        // root crouch: the physics never launches this enemy into the air.
+        if (prep) {
+          const brace = smooth01(prepK);
+          leftArm = rightArm = lerp(0.18, -0.4, brace);
+          lean = lerp(-0.12, -0.28, brace);
+          jaw = 0.12 + 0.15 * brace;
+        } else if (recover) {
+          leftArm = lerp(0.75, leftArm, settle);
+          rightArm = lerp(0.85, rightArm, settle);
+          lean = lerp(-0.32, lean, settle);
+          jaw = lerp(0.27, jaw, settle);
+        } else {
+          const drive = smooth01(this.phaseT / 0.07);
+          leftArm = lerp(-0.4, 0.75, drive);
+          rightArm = lerp(-0.4, 0.85, drive);
+          lean = lerp(-0.28, -0.32, drive);
+          jaw = 0.27;
+        }
+        twist *= 0.4;
+      }
+      head = -lean * 0.55;
+    }
+    if (this.state === 'pain') lean = 0.14 * (1 - smooth01(this.stateTime / this.stunTime));
+    const poseK = 1 - Math.exp(-(attacking ? 36 : 18) * dt);
+    this.armLG!.rotation.set(lerp(this.armLG!.rotation.x, leftArm, poseK), 0, -0.10);
+    this.armRG!.rotation.set(lerp(this.armRG!.rotation.x, rightArm, poseK), 0, 0.10);
+    this.torsoG!.rotation.x = lerp(this.torsoG!.rotation.x, lean, poseK);
+    this.torsoG!.rotation.y = lerp(this.torsoG!.rotation.y, twist, poseK);
+    this.torsoG!.rotation.z = stride * 0.02 * walk;
+    this.body.rotation.z = 0;
+    this.headG!.rotation.x = lerp(this.headG!.rotation.x, head, poseK);
+    this.headG!.rotation.y = this.awake ? 0 : Math.sin(this.animPhase * 0.35) * 0.12;
+    this.jaw!.rotation.x = lerp(this.jaw!.rotation.x, jaw, poseK);
+
+    // Lowest sole after hip + knee rotations. Anchor the support foot without
+    // adding a fake bounce or letting a crouched root sink both feet through
+    // the floor. Knee position=-.32, foot center=(-.34,-.05), half size=(.05,.14).
+    this.body.position.y = -this.half.y - Math.min(
+      huskSole(this.legLG!.rotation.x, this.huskKneeLG!.rotation.x),
+      huskSole(this.legRG!.rotation.x, this.huskKneeRG!.rotation.x)
+    );
+    if (grounded && travel > 0.001 && Math.floor((this.gait - Math.PI / 2) / Math.PI) !==
+      Math.floor((previousGait - Math.PI / 2) / Math.PI)) {
+      game.audio.play('huskStep', this.pos);
     }
   }
 
-  private animateHusk(dt: number, speed: number, game: Game): void {
+  private animateWalker(dt: number, speed: number, game: Game): void {
     const speedF = Math.min(1, speed / this.tuning.speed);
     this.gait += dt * (2 + speed * (this.kind === 'brute' ? 1.7 : 2.9));
     const g = this.gait;
+    const vat = this.kind === 'vatborn';
+    const brute = this.kind === 'brute';
     const hunting = this.state === 'chase' || this.state === 'attack' || this.state === 'charge';
 
     // strides swing from the hips; feet drive a bob and a side-to-side waddle
     const amp = 0.2 + speedF * 0.75;
-    this.legLG!.rotation.x = Math.sin(g) * amp;
-    this.legRG!.rotation.x = Math.sin(g + Math.PI) * amp;
-    this.body.position.y = Math.abs(Math.cos(g)) * 0.08 * speedF;
-    this.body.rotation.z = Math.sin(g) * 0.08 * speedF;
+    if (this.state === 'charge' && this.phase === 'move' && this.kind !== 'brute') {
+      // a lunge/rush is one bound, not a 9u/s walk cycle: legs held in a leap
+      this.legLG!.rotation.x = -0.7;
+      this.legRG!.rotation.x = 0.5;
+      this.body.position.y = 0.06;
+      this.body.rotation.z = 0;
+    } else {
+      this.legLG!.rotation.x = Math.sin(g) * amp;
+      this.legRG!.rotation.x = Math.sin(g + Math.PI) * amp;
+      this.body.position.y = Math.abs(Math.cos(g)) * 0.08 * speedF;
+      this.body.rotation.z = Math.sin(g) * 0.08 * speedF;
+    }
 
     // hunched torso leans into its run
     let lean = 0.16 + speedF * 0.24;
+    let twist = 0;
+    let headX = -0.1;
     const roll = Math.sin(g) * 0.06 * speedF;
+    let crouch = 0;
 
-    if (this.state === 'attack') {
-      // telegraph: claws rise, then the strike lands with the damage frame.
-      // The vatborn winds up longer and swings only its heavy right arm.
-      const vat = this.kind === 'vatborn';
-      const t = this.stateTime;
-      const windup = Math.min(1, t / (vat ? 0.62 : 0.3));
-      const strikeAt = vat ? 0.65 : 0.32;
-      const slash = t > strikeAt ? Math.min(1, (t - strikeAt) / 0.12) : 0;
-      const armX = -0.5 - windup * 1.5 + slash * 2.1;
-      this.armLG!.rotation.x = vat ? -0.3 : armX;
-      this.armRG!.rotation.x = armX + (vat ? 0.4 : 0.18);
-      this.armLG!.rotation.z = 0.25 - slash * 0.35;
-      this.armRG!.rotation.z = -0.25 + slash * 0.35;
-      lean += slash * 0.35 - windup * 0.15;
-      this.jaw!.rotation.x = 0.15 + windup * 0.6 - slash * 0.35;
-    } else if (hunting && this.kind === 'vatborn') {
+    if (this.state === 'attack' || this.state === 'charge') {
+      const [prepK, strikeK, recK] = this.attackK();
+      const charge = this.state === 'charge';
+      const prep = this.phase === 'prep';
+      const rec = this.phase === 'recover';
+      if (vat && !charge) {
+        // heavy club: only the right arm rises overhead, torso twists away,
+        // then slams down and stays near the floor through the recovery
+        const up = prep ? lerp(-0.3, -2.6, prepK) : lerp(-2.6, 0.55, strikeK);
+        this.armRG!.rotation.x = rec ? lerp(0.55, -0.3, recK * recK) : up;
+        this.armRG!.rotation.z = 0.12 - 0.2 * (prep ? prepK : 1 - recK);
+        this.armLG!.rotation.x = -0.4;
+        this.armLG!.rotation.z = -0.25;
+        twist = prep ? -0.35 * prepK : lerp(-0.35, 0.25, strikeK) * (1 - recK);
+        lean += prep ? -0.1 * prepK : lerp(-0.1, 0.5, strikeK) * (1 - recK * 0.6);
+        this.jaw!.rotation.x = 0.2 + 0.4 * (prep ? prepK : 1 - recK);
+      } else if (vat) {
+        // braced rush: crouch with the club drawn back, then drive forward
+        const k = prep ? prepK : 1 - recK;
+        crouch = 0.12 * k;
+        lean += 0.3 * k;
+        // (arm pivot: negative x swings back/up, positive swings forward)
+        this.armRG!.rotation.x = lerp(-0.3, -0.9, k);
+        this.armLG!.rotation.x = lerp(0.3, 0.8, k);
+        this.armRG!.rotation.z = 0.1;
+        this.armLG!.rotation.z = -0.15;
+        this.jaw!.rotation.x = 0.3;
+      } else if (brute && !charge) {
+        // backhand: the arm pulls across the torso, then sweeps out
+        const across = prep ? lerp(0.2, 1.3, prepK) : lerp(1.3, -1.4, strikeK) * (1 - recK);
+        // the striking arm is held forward at chest height and swept by rotation.y
+        this.armRG!.rotation.x = rec ? lerp(1.2, 0.3, recK) : 1.2;
+        this.armRG!.rotation.y = across;
+        this.armLG!.rotation.x = 0.4 + 0.3 * (prep ? prepK : 1 - recK);
+        this.armLG!.rotation.z = 0.2;
+        this.armRG!.rotation.z = -0.2;
+        twist = prep ? 0.3 * prepK : lerp(0.3, -0.4, strikeK) * (1 - recK);
+        lean += prep ? -0.05 * prepK : lerp(0.0, 0.35, strikeK) * (1 - recK);
+        headX = 0.15;
+        this.jaw!.rotation.x = 0.2 + 0.4 * (prep ? prepK : 1 - recK);
+      } else if (brute) {
+        // charge: rear back with the head down and roar, bull forward, then
+        // the bent-forward recovery with the fists near the floor
+        const k = prep ? prepK : 1;
+        if (prep) {
+          lean -= 0.3 * k;
+          headX = 0.45 * k;
+          // reared back: arms drawn behind
+          this.armRG!.rotation.x = -0.7 * k;
+          this.armLG!.rotation.x = -0.7 * k;
+        } else if (rec) {
+          // bent forward, fists swinging down to the floor
+          lean += lerp(0.45, 0.65, recK) - 0.4 * recK * recK;
+          headX = 0.3;
+          this.armRG!.rotation.x = lerp(0.6, 0.2, recK);
+          this.armLG!.rotation.x = lerp(0.6, 0.2, recK);
+        } else {
+          // bulling forward, arms pumping back
+          lean += 0.45;
+          headX = 0.2;
+          this.armRG!.rotation.x = -0.5;
+          this.armLG!.rotation.x = -0.5;
+        }
+        this.armRG!.rotation.y = 0;
+        this.armLG!.rotation.z = 0.25;
+        this.armRG!.rotation.z = -0.25;
+        this.jaw!.rotation.x = 0.5;
+      }
+    } else if (hunting && vat) {
       // the club drags low and swings with the gait; the thin arm reaches
       this.armRG!.rotation.x = -0.3 + Math.sin(g) * 0.18;
-      this.armLG!.rotation.x = -0.7 + Math.sin(g * 2) * 0.2;
+      this.armLG!.rotation.x = 0.5 + Math.sin(g * 2) * 0.2;
       this.armRG!.rotation.z = 0.1;
       this.armLG!.rotation.z = -0.15;
       this.jaw!.rotation.x = 0.2;
     } else if (hunting) {
-      // claws up and raking as it closes in, maw hanging open
-      this.armLG!.rotation.x = -1.05 + Math.sin(g * 2) * 0.25;
-      this.armRG!.rotation.x = -1.05 + Math.sin(g * 2 + Math.PI) * 0.25;
+      // claws reaching ahead and raking as it closes in, maw hanging open
+      // (negative x would trail the arms behind it)
+      this.armLG!.rotation.x = 0.55 + Math.sin(g * 2) * 0.3;
+      this.armRG!.rotation.x = 0.55 + Math.sin(g * 2 + Math.PI) * 0.3;
       this.armLG!.rotation.z = 0.18;
       this.armRG!.rotation.z = -0.18;
+      this.armRG!.rotation.y = 0;
       this.jaw!.rotation.x = 0.3 + Math.sin(g) * 0.08;
     } else {
       // slouched shuffle, arms hanging, jaw shut
@@ -1199,17 +1849,28 @@ export class Enemy {
       this.armRG!.rotation.x = -0.12 - Math.sin(g) * 0.2;
       this.armLG!.rotation.z = 0.08;
       this.armRG!.rotation.z = -0.08;
+      this.armRG!.rotation.y = 0;
       this.jaw!.rotation.x = 0.05;
     }
 
-    // charge: rear back during the telegraph, then bull forward
-    if (this.state === 'charge') lean += this.stateTime < 0.55 ? -0.3 : 0.45;
-
-    // pain: recoil backward off the lean
-    if (this.state === 'pain') lean -= 0.5 * Math.max(0, 1 - this.stateTime / this.stunTime);
+    // pain: recoil backward off the lean; a brute's wall stun is the
+    // bent-forward daze instead, arms hanging
+    if (this.state === 'pain') {
+      if (brute && this.stunTime > 0.32) {
+        lean += 0.5 * Math.max(0, 1 - this.stateTime / this.stunTime) + 0.15;
+        headX = 0.35;
+        this.armRG!.rotation.x = 0.4;
+        this.armLG!.rotation.x = 0.4;
+        this.armRG!.rotation.y = 0;
+      } else {
+        lean -= 0.5 * Math.max(0, 1 - this.stateTime / this.stunTime);
+      }
+    }
 
     this.torsoG!.rotation.x = lean;
+    this.torsoG!.rotation.y = twist;
     this.torsoG!.rotation.z = roll;
+    this.body.position.y -= crouch;
 
     // head: scans the room while unaware, locks forward while hunting
     if (!this.awake) {
@@ -1217,7 +1878,7 @@ export class Enemy {
       this.headG!.rotation.x = Math.sin(this.animPhase * 0.27) * 0.12;
     } else {
       this.headG!.rotation.y *= 0.8;
-      this.headG!.rotation.x = -0.1;
+      this.headG!.rotation.x = headX;
     }
 
     // footfalls: chitin clicks for husks, ground-shaking thuds for brutes
@@ -1227,6 +1888,10 @@ export class Enemy {
     }
     this.lastStride = stride;
   }
+
+  // ---------------------------------------------------------------------------
+  // Culling + lighting
+  // ---------------------------------------------------------------------------
 
   /**
    * Occlusion cull (core/occlusion.ts): while no part of the rig is in sight
@@ -1345,7 +2010,8 @@ export class EnemyManager {
     for (const e of this.list) e.update(dt, game);
     // pairwise separation between alive enemies — applied as velocity so it
     // goes through wall collision (direct position pushes could embed an
-    // enemy in a wall, which breaks collision resolution entirely)
+    // enemy in a wall, which breaks collision resolution entirely). A planted
+    // or committed enemy is never shoved; the other one moves instead.
     for (let i = 0; i < this.list.length; i++) {
       const a = this.list[i];
       if (!a.alive || a.scripted) continue;
@@ -1361,10 +2027,15 @@ export class EnemyManager {
           const accel = ((min - d) / min) * 30 * dt;
           const nx = dx / d;
           const nz = dz / d;
-          a.vel.x -= nx * accel;
-          a.vel.z -= nz * accel;
-          b.vel.x += nx * accel;
-          b.vel.z += nz * accel;
+          const share = a.planted === b.planted ? 1 : 2;
+          if (!a.planted) {
+            a.vel.x -= nx * accel * share;
+            a.vel.z -= nz * accel * share;
+          }
+          if (!b.planted) {
+            b.vel.x += nx * accel * share;
+            b.vel.z += nz * accel * share;
+          }
         }
       }
     }

@@ -12,7 +12,7 @@ import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 import { mkdirSync } from 'node:fs';
 
 const BASE = process.argv[2] ?? 'http://localhost:5173/';
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const EDGE = process.env.VOXEL_BROWSER ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 mkdirSync('scripts/shots', { recursive: true });
 

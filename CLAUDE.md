@@ -36,15 +36,17 @@ npm run build:poki # Poki build → dist-poki/ (also dev:poki / preview:poki; zi
 
 Headless test suites (need a dev or preview server running; they drive Edge at
 `C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe` via
-puppeteer-core and save screenshots to `scripts/shots/`):
+puppeteer-core — or the Chromium named by the `VOXEL_BROWSER` env var — and
+save screenshots to `scripts/shots/`):
 
 ```bash
 node scripts/smoke.mjs      # boot, move, shoot, explode; fails on any console error; enemy-bounds watchdog
 node scripts/e2e.mjs        # plays the whole 3-sector campaign: aggro, barrels, key → vault → lift → exit
 node scripts/movement.mjs   # WASD displacement must match camera basis vectors at 5 yaw angles
+node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consistency, claw/dodge + rendered poses/motion clip
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, touch map + weapon button/wheel, phone settings fit
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start
@@ -147,14 +149,43 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   solid / above the world for >0.12s to their last on-ground position.
 - `src/entities/` — player (movement/health/keys, timed `buffs`:
   quad ×4 damage / shield full absorb / haste ×1.35 move+fire), enemies
-  (state machines: idle/patrol/chase/attack/charge/pain/dead; husks have
-  jointed rigs + serpentine chase; tickers sprint, arm at <1.8u, and ALWAYS
-  detonate on death via `queueExplosion` — even sniped at range; brutes share
-  the husk rig/gait at heavier proportions, telegraph a 4.2× charge that
-  smashes destructibles in its path, get stunned 1.3s on a wall slam via
-  `stunTime`, and always drop a powerup; deaths burst into per-part gibs;
+  (state machines: idle/patrol/chase/attack/charge/pain/dead. Rigs and
+  attack patterns follow `reference/enemy-upgrades.md` + the
+  `enemy-upgrade-*.png` sheets — box budgets husk 23 / sentinel 16 /
+  ticker 16 / brute 25 / vatborn 29, colliders unchanged. EVERY attack is
+  prepare → commit → recover on the `SCHED` table: `attack` = planted
+  strike (husk claw, brute backhand, vatborn club, sentinel bolt, ticker
+  arming), `charge` = committed move (husk lunge, brute charge, vatborn
+  rush). `beginAttack` stores the target (`atkTgt`, never swapped
+  mid-attack) and the facing locks at `SCHED.lock` (`lockX/Z`); melee goes
+  through `meleeStrike` — reach + same floor + cone against the LOCKED
+  direction + LOS at impact, damage once (`hitConsumed`); committed moves
+  are swept in ≤0.25u substeps (`sweepCommitted`: obstruction first, then
+  one trample). Pain can only interrupt a `prep` (cancel + retry delay) —
+  never a move, strike, recovery, armed ticker or brute wall stun
+  (`painAllowed`). Co-op clients derive the pose from state + time with the
+  same SCHED, so the snapshot format didn't change; `planted` enemies are
+  never shoved by separation. Walker arm pivots: NEGATIVE rotation.x
+  swings an arm back/up (club overhead), POSITIVE swings it forward — the
+  first pass had this mirrored and the husk ran with its claws trailing.
+  Husks have a separate distance-driven gait (`animateHusk`): knee pivots
+  reuse the same boxes, feet settle at rest and the support sole stays on
+  the floor. Chase at 3.2u/s with time-based steering, a restrained weave
+  and travel-facing body; hold a 1.55u standoff. Claw at <1.75 and lunge
+  from 2.5–4 (grounded, LOS; stop 1.6u short with a driving step, not a
+  frozen airborne pose). The torso leans toward local -Z, claw animation
+  reaches forward at the impact frame, and recovery eases into a shuffle.
+  Tickers sprint, arm at <1.8u (same floor + LOS),
+  beep at 0/0.25/0.45/0.6, blow at 0.75 and ALWAYS detonate on death via
+  `queueExplosion` — even sniped at range; sentinels hold 7–12u, commit
+  their aim at 0.45 and fire one spread-free bolt at 0.70 only if the
+  muzzle is clear; brutes share the husk rig/gait at heavier proportions,
+  backhand at <2.4, telegraph a 9.66u/s charge (0.8s) that smashes
+  destructibles, get stunned 1.3s on a wall slam via `stunTime`, and
+  always drop a powerup; deaths burst into per-part gibs;
   `vatborn` is the sector 4 preview's escaped specimen — husk skeleton via
-  `humanoid()`, 0.65s heavy-swing windup + 1.1s recovery, short rush, never
+  `humanoid()`, 0.65s heavy-swing windup + 1.1s recovery, a 0.3s braced
+  rush that can't become a swing, never
   placed by levelgen. Its right arm (+x — the model faces -z) is a giant
   club ending in a huge dark fist; keep that oversized. A real Vatborn sits
   in each occupied tank with `dormant = true` (no AI/physics/wake, green
@@ -168,9 +199,20 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   → 0.8s step-out onto a verified clear tile. One release per tank, at most
   two breaching at once, preallocated in `totalEnemies`),
   doors/elevator (door.ts: the lift is a `group` — hazard-striped deck with
-  an UP-arrow top + an additive chevron beam up the shaft while it waits at
-  the bottom; `ExitBeacon` is the same beam in green over the exit pad, lit
-  only during the "step on the exit pad" objective), pickups (magnetism,
+  an UP-arrow top, low side rails on the two sides off the boarding axis
+  (`ElevatorSpec.walkAxis`), and an additive chevron beam up the shaft while
+  it waits at the bottom; `ExitBeacon` is the same beam in green over the
+  exit pad, lit only during the "step on the exit pad" objective. Riders
+  fell off the open deck easily and then waited ~6s, so: `holdRider()`
+  clamps the local player inside the footprint while the deck moves (a jump
+  still clears it) and keeps holding the two OPEN sides for 0.4s after it
+  reaches the top (`settle`) so a strafe/thumb drift doesn't walk straight
+  off the edge — the boarding axis is released on arrival so stepping onto
+  the ledge is never delayed; `isWaitingBelow()` makes a player on the lower floor
+  call the deck straight back — mid-climb if the rider fell — and levelgen
+  tops the ledge's open edge with a hazard `Trim` rail, gap at the lift.
+  The co-op client smooths the lift at `LIFT_SPEED` from door.ts; keep the
+  two in sync), pickups (magnetism,
   full-bright + glow discs; powerups set
   player buff timers), pooled projectiles (rockets carry a `dmgMult` for
   quad). Hit feedback fires the SAME frame as the damage — `applyFlash()`

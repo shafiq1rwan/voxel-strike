@@ -318,6 +318,15 @@ export class ExitBeacon {
   }
 }
 
+/** deck travel speed (u/s): the 3-unit climb takes about a second */
+export const LIFT_SPEED = 3.0;
+/** dwell after a rider steps on before the deck leaves the bottom */
+const LIFT_START_DELAY = 0.25;
+/** how long the deck waits at the top with nobody calling it */
+const LIFT_TOP_DWELL = 3.5;
+/** a rider off the deck for longer than this mid-ride has fallen, not hopped */
+const LIFT_LOST_GRACE = 0.3;
+
 export class Elevator {
   readonly spec: ElevatorSpec;
   /** current top surface height */
@@ -330,6 +339,9 @@ export class Elevator {
   private beam: THREE.Mesh;
   private beamMat: THREE.MeshBasicMaterial;
   private deckMats: THREE.MeshBasicMaterial[];
+  private railGeo: THREE.BoxGeometry | null = null;
+  /** seconds after arriving at the top during which the side hold still applies */
+  private settle = 0;
   /** vertical movement this frame, for carrying the player */
   dy = 0;
 
@@ -344,6 +356,17 @@ export class Elevator {
     this.deckMats = [side, top];
     this.mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 0.9, 2), [side, side, top, under, side, side]);
     this.group.add(this.mesh);
+    // low hazard rails on the two sides a rider never crosses: they show which
+    // way to step off. Cosmetic — holdRider() is what keeps riders aboard.
+    if (spec.walkAxis) {
+      const alongZ = spec.walkAxis === 'z';
+      this.railGeo = alongZ ? new THREE.BoxGeometry(0.12, 0.5, 2) : new THREE.BoxGeometry(2, 0.5, 0.12);
+      for (const s of [-1, 1]) {
+        const rail = new THREE.Mesh(this.railGeo, [side, side, under, under, side, side]);
+        rail.position.set(alongZ ? s * 0.94 : 0, 0.7, alongZ ? 0 : s * 0.94);
+        this.mesh.add(rail);
+      }
+    }
 
     // beam: from the deck up past the upper floor
     const h = spec.highY - spec.lowY + 1.6;
@@ -368,6 +391,7 @@ export class Elevator {
 
   dispose(): void {
     this.mesh.geometry.dispose();
+    this.railGeo?.dispose();
     this.beam.geometry.dispose();
     const mats = new Set([...(this.mesh.material as THREE.MeshBasicMaterial[]), this.beamMat]);
     for (const m of mats) {
@@ -411,39 +435,96 @@ export class Elevator {
     );
   }
 
-  update(dt: number, playerOn: boolean, audio: AudioMan): void {
+  /** true while the deck travels (clients see it through netSet's dy) */
+  moving(): boolean {
+    return this.state === 'up' || this.state === 'down' || Math.abs(this.dy) > 1e-5;
+  }
+
+  /**
+   * true if this body stands on the lower floor near the lift, i.e. someone
+   * is waiting for it: the deck comes back for them instead of dwelling.
+   */
+  isWaitingBelow(px: number, py: number, pz: number, halfY: number): boolean {
+    return (
+      py - halfY < this.topY - 0.5 &&
+      Math.abs(px - (this.spec.x + 1)) < 4 && Math.abs(pz - (this.spec.z + 1)) < 4
+    );
+  }
+
+  /**
+   * Keep a rider inside the 2×2 footprint while the deck moves. The open deck
+   * used to lose riders to a strafe or joystick drift mid-ride, then they
+   * waited for the lift to finish the climb empty and come back. A deliberate
+   * jump still clears the deck: once the feet leave isOnTop's window the
+   * hold lets go.
+   */
+  holdRider(pos: { x: number; y: number; z: number }, half: { x: number; y: number; z: number }): void {
+    const moving = this.moving();
+    if ((!moving && this.settle <= 0) || !this.isOnTop(pos.x, pos.y, pos.z, half.y)) return;
+    const mx = half.x + 0.02;
+    const mz = half.z + 0.02;
+    // the open sides are always held; the boarding axis only while the deck
+    // moves, so stepping off toward the ledge on arrival is never delayed
+    // (a strafe still carried riders straight off the side at the top)
+    const holdX = moving || this.spec.walkAxis !== 'x';
+    const holdZ = moving || this.spec.walkAxis !== 'z';
+    if (holdX) pos.x = Math.min(this.spec.x + 2 - mx, Math.max(this.spec.x + mx, pos.x));
+    if (holdZ) pos.z = Math.min(this.spec.z + 2 - mz, Math.max(this.spec.z + mz, pos.z));
+  }
+
+  /**
+   * callDown: a player is waiting on the lower floor (isWaitingBelow). The
+   * deck then returns at once instead of dwelling at the top, and a climb that
+   * lost its rider turns back rather than finishing empty.
+   */
+  update(dt: number, playerOn: boolean, audio: AudioMan, callDown = false): void {
     const prev = this.topY;
-    const speed = 2.2;
+    const here = { x: this.spec.x + 1, y: this.topY, z: this.spec.z + 1 };
+    this.settle = Math.max(0, this.settle - dt);
     switch (this.state) {
       case 'bottom':
         if (playerOn) {
           this.timer += dt;
-          if (this.timer > 0.4) {
+          if (this.timer > LIFT_START_DELAY) {
             this.state = 'up';
             this.timer = 0;
-            audio.play('elevator', { x: this.spec.x + 1, y: this.topY, z: this.spec.z + 1 });
+            audio.play('elevator', here);
           }
         } else {
           this.timer = 0;
         }
         break;
       case 'up':
-        this.topY += speed * dt;
+        this.topY += LIFT_SPEED * dt;
+        if (!playerOn && callDown) {
+          // the rider fell off: go back for them (after a grace, so a hop
+          // mid-ride doesn't bounce the lift)
+          this.timer += dt;
+          if (this.timer > LIFT_LOST_GRACE) {
+            this.state = 'down';
+            this.timer = 0;
+            audio.play('elevator', here);
+            break;
+          }
+        } else {
+          this.timer = 0;
+        }
         if (this.topY >= this.spec.highY) {
           this.topY = this.spec.highY;
           this.state = 'top';
           this.timer = 0;
+          this.settle = 0.4;
         }
         break;
       case 'top':
         this.timer += dt;
-        if (this.timer > 3.5 && !playerOn) {
+        if (!playerOn && (this.timer > LIFT_TOP_DWELL || (callDown && this.timer > LIFT_LOST_GRACE))) {
           this.state = 'down';
-          audio.play('elevator', { x: this.spec.x + 1, y: this.topY, z: this.spec.z + 1 });
+          audio.play('elevator', here);
         }
         break;
       case 'down':
-        this.topY -= speed * dt;
+        this.topY -= LIFT_SPEED * dt;
         if (this.topY <= this.spec.lowY) {
           this.topY = this.spec.lowY;
           this.state = 'bottom';

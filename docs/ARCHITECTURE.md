@@ -84,7 +84,8 @@ Every sector entry goes through `Game.enterSector()`:
    materials and entities. Pools (particles, tracers, projectiles) survive.
 2. **Generate** (`levelgen.ts`): the arena room first, then rooms by
    rejection sampling, MST corridors + loops, doors (the exit door is always
-   red-locked), the secret room, exit ledge + lift, then props, lamps,
+   red-locked), the secret room, exit ledge + lift (+ a hazard `Trim` rail
+   along the ledge's open edge, gap where the lift docks), then props, lamps,
    pickups and enemies. A BFS walkability check (key reachable *without* the
    key, exit reachable *with* it) rejects broken layouts and retries with a
    fallback seed. Decoration uses a position hash, not the layout RNG, so
@@ -159,6 +160,18 @@ as a phone stand-in), sector 1 averages ~5–7 ms a frame at 4× slowdown and
   and enemy boxes; husk/brute hits in the top slice are headshots (×2).
 - **Projectiles** (rockets, sentinel bolts) are pooled; rockets carry a
   damage multiplier for Quad.
+- **Enemy attacks** all run prepare → commit → recover (`SCHED` in
+  `enemies.ts`, timings from `reference/enemy-upgrades.md`). The target and
+  the facing are locked part-way through the warning; a melee strike checks
+  reach, same floor, the cone of the locked direction and LOS at impact and
+  deals damage once; committed moves (husk lunge, brute charge, vatborn
+  rush) are swept in substeps so they stop at walls and doors and trample
+  at most one player. Pain only interrupts a warning. Co-op clients derive
+  the pose from state + time with the same table.
+  Husk locomotion has a dedicated `animateHusk` path: actual host/puppet
+  displacement drives hip/knee strides, support-foot height and footfalls;
+  time-based steering holds a 3.2u/s chase without frame-rate-dependent
+  friction. Brute and Vatborn retain the shared walker animation.
 - **Arc caster** chains from the first hit to up to 3 more enemies (LOS
   checked, ×0.7 per hop).
 - **Explosions** go through `queueExplosion` fuses (barrels, ticker corpses),

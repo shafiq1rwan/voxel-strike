@@ -9,7 +9,7 @@ import puppeteer from 'puppeteer-core';
 import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 
 const URL = process.argv[2] ?? `http://localhost:5173/?seed=${Math.floor(Math.random() * 1e9)}`;
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const EDGE = process.env.VOXEL_BROWSER ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 
 const errors = [];
 

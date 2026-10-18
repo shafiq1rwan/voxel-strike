@@ -1631,16 +1631,23 @@ export class Game {
         );
       }
       if (this.elevator) {
-        let onTop = this.elevator.isOnTop(this.player.pos.x, this.player.pos.y, this.player.pos.z, this.player.half.y);
+        const el = this.elevator;
+        const p = this.player;
+        let onTop = el.isOnTop(p.pos.x, p.pos.y, p.pos.z, p.half.y);
+        let callDown = el.isWaitingBelow(p.pos.x, p.pos.y, p.pos.z, p.half.y);
         if (this.net?.connected) {
           const r = this.net.remote;
-          onTop = onTop || this.elevator.isOnTop(r.pos.x, r.pos.y, r.pos.z, r.half.y);
+          onTop = onTop || el.isOnTop(r.pos.x, r.pos.y, r.pos.z, r.half.y);
+          callDown = callDown || el.isWaitingBelow(r.pos.x, r.pos.y, r.pos.z, r.half.y);
         }
-        this.elevator.update(dt, onTop, this.audio);
+        el.update(dt, onTop, this.audio, callDown);
       }
     }
 
     this.player.update(dt, this.input, this, boxes);
+    // a moving lift keeps its rider on the deck (runs for clients too — their
+    // lift moves through snapshots, their movement is local)
+    this.elevator?.holdRider(this.player.pos, this.player.half);
     // safety net: never let the player leave the world
     if (this.player.pos.y < -8) {
       this.player.spawnAt(this.level.spawn.x, this.level.spawn.y, this.level.spawn.z);

@@ -80,17 +80,27 @@ as black silhouettes. For view-model parts, go through `rawColor()` in
 
 ## Enemies
 
-Voxel rigs built from boxes, with jointed husk/brute limbs, a serpentine
-husk chase and per-part gibs on death. Each has one readable silhouette and
-one glowing tell:
+Voxel rigs built from boxes, with jointed limbs, a restrained weaving
+Husk chase and per-part gibs on death. The rigs follow the sheets in
+`reference/enemy-upgrade-*.png` and the budgets in
+`reference/enemy-upgrades.md` (large boxes only, six or seven flat colours
+each, no greebles). Each has one readable silhouette, one glowing tell, and
+a windup pose that reads before the hit lands:
 
 | Enemy | Read |
 |---|---|
-| Husk | Hunched, rust-red, glowing eye slit |
-| Arc Sentinel | Hovering teal drone with rotating fins; glows brighter as it charges |
-| Ticker | Squat, hazard-striped, amber core that beeps faster before it blows |
-| Brute | Bone-plated wall of meat with tusks; the arena boss |
+| Husk | Lean rust-red hunter, 1.64 tall: low forward head with a dark visor and amber eye slit, long thin arms, small dark claw hands, a low back ridge. Walk/run: actual distance drives opposing strides, knee lift and arm swing; stationary feet settle. Compact windup, forward rake at impact, grounded driving lunge and eased recovery |
+| Arc Sentinel | Steel-teal hovering box, one cyan optic between two pale shutters, four thick paddles on corner hinges. Charging spreads and lifts the paddles and slides the shutters out; recovery folds them in |
+| Ticker | Low hazard-yellow crawler, six angled legs, dark front bezel with the amber core. Arming plants the legs and opens the two side lids over an amber battery while it beeps |
+| Brute | Broad rust-red heavy with two pale bone shoulder slabs, a chest slab, brow plate, two tusks, huge dark fists and a hunched back. Windup: arm across the torso (backhand) or reared back, head down (charge). Wall stun: bent forward, fists near the floor |
 | Vatborn *(sector 4 preview only)* | Pale gray-beige hunched specimen. Its right arm is a club: a huge olive-stained shoulder, a thick forearm in a dark restraint cuff with a broken bolt, and an enormous dark fist that hangs to the floor (the silhouette's defining feature — keep it oversized). Thin left arm, dark chest band with a green mark, blunt head pushed forward with an amber eye slot, olive shins, dark boots. Seen from the front, the club is on the viewer's left. Reference: `reference/sector4-vatborn.png` |
+
+The Husk has its own gait (`animateHusk`): hip/knee pivots reuse the same 23
+boxes, the lowest support sole stays at the floor, and the torso tilts
+toward local -Z. Avoid a fixed airborne pose for its grounded lunge. Its
+3.2u/s chase uses time-based steering and faces the travel direction; the
+small weave fades near its 1.55u standoff. Claw timing, damage, collider and
+the other enemies' animation remain independent of these gait changes.
 
 Hits must read on the same frame: white-hot flash, a jolt and scale pop,
 a thwack sound, knockback.

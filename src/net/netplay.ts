@@ -1,6 +1,7 @@
 import { Block } from '../world/blocks';
 import { EnemySpec, PickupKind } from '../types';
 import { RemotePlayer } from '../entities/remoteplayer';
+import { LIFT_SPEED } from '../entities/door';
 import { ProjectilePool } from '../entities/projectiles';
 import { LocalTransport, PeerTransport, Transport, NetMsg } from './transport';
 import type { SoundName } from '../core/audio';
@@ -119,7 +120,7 @@ export class Netplay {
       // smooth the elevator between snapshots at its real travel speed
       const el = g.elevator;
       const d = this.elTarget - el.topY;
-      const step = Math.sign(d) * Math.min(Math.abs(d), 2.6 * dt);
+      const step = Math.sign(d) * Math.min(Math.abs(d), LIFT_SPEED * 1.2 * dt);
       if (step !== 0) el.netSet(el.topY + step);
     }
   }

@@ -14,7 +14,7 @@ import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 import { mkdirSync } from 'node:fs';
 
 const URL = process.argv[2] ?? 'http://localhost:5173/?seed=12345';
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const EDGE = process.env.VOXEL_BROWSER ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 mkdirSync('scripts/shots', { recursive: true });
 
 const errors = [];
@@ -455,6 +455,86 @@ try {
   });
   check(ride.topY >= 3.9, `walk-on: elevator rose (topY=${ride.topY.toFixed(2)})`);
   check(ride.playerY > 4.3, `walk-on: rider carried to the top (y=${ride.playerY.toFixed(2)})`);
+
+  // --- 15. lift: a player waiting below calls it straight back, a strafing
+  // rider stays aboard, and the ledge rail guards the drop. Before: the open
+  // deck lost riders to a sideways nudge, then they waited ~6s for it to
+  // finish the climb empty and dwell at the top.
+  const callDown = await page.evaluate(async () => {
+    const g = window.__voxelstrike;
+    const el = g.elevator;
+    // test 5's rider keeps walking at the top, straight onto the exit pad:
+    // the sector is won and the world is frozen behind the intermission
+    // screen. Pull the run back into play (as checkpoint.mjs does) so the
+    // lift updates again.
+    if (g.state !== 'playing') {
+      g.state = 'playing';
+      g.hud.hideScreen();
+      g.input.locked = true;
+    }
+    for (const e of g.enemies.list) if (e.alive) e.damage(9999, 0, 0, g);
+    // a floor cell beside the lift (walking space at y=1,2 over solid floor)
+    const open = (x, z) => g.world.get(x, 1, z) === 0 && g.world.get(x, 2, z) === 0 && g.world.isSolid(x, 0, z);
+    let cell = null;
+    for (let d = 1; d <= 3 && !cell; d++) {
+      for (const [dx, dz] of [[d, 0], [-d, 0], [0, d], [0, -d]]) {
+        const x = el.spec.x + 1 + dx * 2, z = el.spec.z + 1 + dz * 2;
+        if (open(Math.floor(x), Math.floor(z))) { cell = { x: Math.floor(x) + 0.5, z: Math.floor(z) + 0.5 }; break; }
+      }
+    }
+    if (!cell) return { ok: false };
+    // the lift is still at the top from the walk-on ride: step down beside it
+    g.player.pos.set(cell.x, 1.9, cell.z);
+    g.player.vel.set(0, 0, 0);
+    const t0 = performance.now();
+    while (performance.now() - t0 < 2500 && el.topY > el.spec.lowY + 0.01) await new Promise((r) => setTimeout(r, 50));
+    return { ok: true, ms: Math.round(performance.now() - t0), topY: el.topY, lowY: el.spec.lowY };
+  });
+  check(callDown.ok && callDown.topY <= callDown.lowY + 0.01 && callDown.ms < 2500,
+    `lift: a player waiting below calls it back in ${callDown.ms}ms (topY=${callDown.topY?.toFixed(2)})`);
+  const strafe = await page.evaluate(async () => {
+    const g = window.__voxelstrike;
+    const el = g.elevator;
+    g.player.pos.set(el.spec.x + 1, el.topY + 0.95, el.spec.z + 1);
+    g.player.vel.set(0, 0, 0);
+    g.player.pitch = 0;
+    // face along the boarding axis so A strafes toward an open side
+    g.player.yaw = el.spec.walkAxis === 'z' ? Math.PI : -Math.PI / 2;
+    const t0 = performance.now();
+    while (performance.now() - t0 < 1500 && el.topY < el.spec.lowY + 0.02) await new Promise((r) => setTimeout(r, 30));
+    return { moving: el.topY > el.spec.lowY, walkAxis: el.spec.walkAxis };
+  });
+  check(strafe.moving, `lift: leaves the bottom with a rider aboard (walkAxis=${strafe.walkAxis})`);
+  // strafe for the whole ride and a beat after arrival (the side hold lasts
+  // 0.4s at the top so a drifting thumb doesn't walk straight off the edge)
+  await page.keyboard.down('KeyA');
+  for (let i = 0; i < 50; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+    const up = await page.evaluate(() => window.__voxelstrike.elevator.topY >= window.__voxelstrike.elevator.spec.highY - 0.01);
+    if (up) break;
+  }
+  await new Promise((r) => setTimeout(r, 250));
+  await page.keyboard.up('KeyA');
+  const held = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    const el = g.elevator;
+    const rail = (() => {
+      const room = g.level.rooms.find((r) => r.kind === 'exit');
+      let n = 0;
+      for (let x = room.x; x < room.x + room.w; x++) {
+        for (let z = room.z; z < room.z + room.d; z++) if (g.world.get(x, 4, z) === 6) n++;
+      }
+      return n;
+    })();
+    return {
+      topY: el.topY, y: g.player.pos.y,
+      dx: Math.abs(g.player.pos.x - (el.spec.x + 1)), dz: Math.abs(g.player.pos.z - (el.spec.z + 1)),
+      rail,
+    };
+  });
+  check(held.topY >= 3.9 && held.y > 4.3 && held.dx < 1 && held.dz < 1,
+    `lift: strafing rider held on the deck to the top (y=${held.y.toFixed(2)}, off-center ${held.dx.toFixed(2)}/${held.dz.toFixed(2)})`);
+  check(held.rail >= 2, `lift: hazard rail guards the ledge edge (${held.rail} Trim blocks at y=4)`);
 
   // --- 11. walking into a half-open door never launches the player ------------
   // Regression: with the door's bottom edge just below head height, Y was the

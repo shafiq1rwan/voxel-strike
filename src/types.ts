@@ -69,4 +69,9 @@ export interface ElevatorSpec {
   z: number;
   lowY: number;
   highY: number;
+  /**
+   * axis the rider boards and leaves along (toward the ledge); the deck draws
+   * guard rails on the two other sides. Omitted = plain open deck.
+   */
+  walkAxis?: 'x' | 'z';
 }
