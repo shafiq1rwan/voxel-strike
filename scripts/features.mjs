@@ -713,6 +713,19 @@ try {
     await ph.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
     await ph.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
     await ph.waitForSelector('#title-settings-btn');
+    const phoneTitle = await ph.evaluate(() => {
+      const b = document.querySelector('#new-sector')?.getBoundingClientRect();
+      const start = document.querySelector('#start-btn')?.getBoundingClientRect();
+      return {
+        banner: !!b, inside: !!b && b.left >= 0 && b.right <= innerWidth,
+        noHScroll: document.documentElement.scrollWidth <= innerWidth,
+        startOnScreen: !!start && start.top >= 0 && start.bottom <= innerHeight,
+      };
+    });
+    await ph.screenshot({ path: 'scripts/shots/features-phone-title-banner.png' });
+    check(phoneTitle.banner && phoneTitle.inside && phoneTitle.noHScroll,
+      'phone title: the NEW SECTOR banner fits the width, no sideways scroll');
+    check(phoneTitle.startOnScreen, 'phone title: the start button is still on screen with the banner');
     await ph.tap('#title-settings-btn');
     await ph.waitForSelector('#settings-back');
     await new Promise((r) => setTimeout(r, 300));
@@ -728,7 +741,77 @@ try {
     await new Promise((r) => setTimeout(r, 300));
     check(await ph.evaluate(() => !!document.querySelector('#title-screen') && !document.querySelector('#settings-screen')),
       'phone settings: tapping Back returns to the title');
+    check(await ph.evaluate(() => window.__voxelstrike.settings.resolution === 320), 'touch devices default to 320-line pixelation');
     await ph.close();
+  }
+
+  // --- 16. main screen + pixelation defaults ---------------------------------
+  // Co-op is hidden on the title (like Poki; ?coop shows it for development).
+  // Desktop defaults to 480 lines, touch to 320 (above), still cycled in
+  // Settings; a 240 saved by the old one-size default moves to the device
+  // default once, while a 240 picked under the new settings stays.
+  {
+    const pc = await browser.newPage();
+    pc.on('pageerror', (err) => errors.push(`[pc pageerror] ${err.message}`));
+    await pc.setViewport({ width: 1280, height: 720 });
+    await pc.evaluateOnNewDocument(() => {
+      if (sessionStorage.getItem('seeded')) return;
+      sessionStorage.setItem('seeded', '1');
+      localStorage.removeItem('voxelstrike-settings');
+    });
+    await pc.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await pc.waitForSelector('#start-btn');
+    const fresh = await pc.evaluate(() => ({
+      coop: !!document.querySelector('#coop-btn'),
+      res: window.__voxelstrike.settings.resolution,
+      lines: window.__voxelstrike.rendererSys.renderer.domElement.height,
+    }));
+    check(!fresh.coop, 'the main screen has no co-op button (same as Poki)');
+    const banner = await pc.evaluate(() => {
+      const b = document.querySelector('#new-sector');
+      const menu = document.querySelector('.title-menu');
+      if (!b || !menu) return { shown: false };
+      const r = b.getBoundingClientRect();
+      return { shown: true, text: b.textContent.replace(/\s+/g, ' ').trim(), aboveMenu: r.bottom <= menu.getBoundingClientRect().top + 1, inside: r.left >= 0 && r.right <= innerWidth };
+    });
+    check(banner.shown && /NEW SECTOR/.test(banner.text) && /BIOFOUNDRY/.test(banner.text),
+      `the title shows the NEW SECTOR banner ("${banner.text ?? ''}")`);
+    check(banner.shown && banner.aboveMenu && banner.inside, 'the banner sits above the menu, inside the screen');
+    await pc.screenshot({ path: 'scripts/shots/features-title-banner.png' });
+    check(fresh.res === 480, `desktop defaults to 480-line pixelation (${fresh.res})`);
+    check(fresh.lines >= 470 && fresh.lines <= 490, `the renderer really draws ~480 lines (${fresh.lines})`);
+    // still adjustable: one press on Pixelation cycles to the next step and saves it
+    await pc.click('#title-settings-btn');
+    await pc.waitForSelector('#settings-back');
+    const cycled = await pc.evaluate(() => {
+      document.querySelector('#set-res')?.click();
+      return {
+        res: window.__voxelstrike.settings.resolution,
+        saved: JSON.parse(localStorage.getItem('voxelstrike-settings') || 'null'),
+      };
+    });
+    check(cycled.res !== 480 && cycled.saved?.resolution === cycled.res, `pixelation is still adjustable and saved (480 → ${cycled.res})`);
+    // a 240 left by the old default migrates once; a deliberate 240 stays
+    await pc.evaluate(() => localStorage.setItem('voxelstrike-settings', JSON.stringify({ resolution: 240, fov: 80 })));
+    await pc.reload({ waitUntil: 'networkidle0' });
+    const migrated = await pc.evaluate(() => ({ res: window.__voxelstrike.settings.resolution, fov: window.__voxelstrike.settings.fov }));
+    check(migrated.res === 480 && migrated.fov === 80, `old-default 240 moves to 480, other settings kept (res ${migrated.res}, fov ${migrated.fov})`);
+    await pc.evaluate(() => localStorage.setItem('voxelstrike-settings', JSON.stringify({ resolution: 240, v: 2 })));
+    await pc.reload({ waitUntil: 'networkidle0' });
+    check(await pc.evaluate(() => window.__voxelstrike.settings.resolution === 240), 'a 240 chosen under the new settings stays 240');
+    await pc.goto(URL + '&coop', { waitUntil: 'networkidle0', timeout: 30000 });
+    check(await pc.evaluate(() => !!document.querySelector('#coop-btn')), '?coop still shows the co-op button for development');
+    // once the Biofoundry has been reached, the banner has done its job
+    await pc.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.levelIndex = 4;
+      g.buildLevel();
+    });
+    check(await pc.evaluate(() => localStorage.getItem('voxelstrike-biofoundry-seen') === '1'), 'entering the Biofoundry marks it as seen');
+    await pc.reload({ waitUntil: 'networkidle0' });
+    await pc.waitForSelector('#start-btn');
+    check(await pc.evaluate(() => !document.querySelector('#new-sector')), 'after that, the title shows no NEW SECTOR banner');
+    await pc.close();
   }
 } finally {
   await browser.close();

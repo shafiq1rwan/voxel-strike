@@ -60,6 +60,11 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 /** slot order (keys 1-5); touch.ts maps wheel picks through it */
 export const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
 
+const FOCUSED_SHOTGUN: WeaponDef = {
+  ...WEAPONS.shotgun, name: 'FOCUSED SCATTERGUN',
+  spread: WEAPONS.shotgun.spread * 0.65, rate: WEAPONS.shotgun.rate * 0.85,
+};
+
 /** touch auto-switch preference when the weapon in hand runs dry (rockets last: self-splash) */
 const DRY_SWITCH: WeaponId[] = ['shotgun', 'smg', 'arc', 'pistol', 'rocket'];
 
@@ -449,6 +454,12 @@ export class WeaponSystem {
   readonly viewModel = new THREE.Group();
   private owned = new Set<WeaponId>(['pistol']);
   current: WeaponId = 'pistol';
+  /** One non-stacking Overload sidegrade, retained only for the current run. */
+  focusedShotgun = false;
+
+  definition(id = this.current): WeaponDef {
+    return id === 'shotgun' && this.focusedShotgun ? FOCUSED_SHOTGUN : WEAPONS[id];
+  }
   private pending: WeaponId | null = null;
   private raiseT = 1; // 0 lowered, 1 raised
   private cooldown = 0;
@@ -674,7 +685,7 @@ export class WeaponSystem {
 
     // firing: hold-to-fire at the weapon's rate; a click during cooldown is
     // buffered briefly so spam-clicking never eats shots
-    const def = WEAPONS[this.current];
+    const def = this.definition();
     if (input.consumeFirePress() && !game.player.dead) {
       this.queuedShot = 0.25;
       this.dryFired = false;

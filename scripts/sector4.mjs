@@ -7,7 +7,7 @@ const base = process.argv[2] ?? 'http://127.0.0.1:5174/';
 // --poki: against a Poki-mode server, assert that ?sector4 is ignored
 const normalOnly = process.argv.includes('--poki');
 const browser = await puppeteer.launch({
-  executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  executablePath: process.env.VOXEL_BROWSER ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--mute-audio'],
   defaultViewport: { width: 1280, height: 720 },
 });

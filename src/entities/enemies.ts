@@ -631,6 +631,26 @@ export class Enemy {
     return true;
   }
 
+  /**
+   * Revive / keycard-respawn shockwave: wake, cancel whatever it was doing,
+   * shove it away and daze it briefly so a returning player isn't killed on
+   * the spot. An armed ticker is left to blow — the spawn shield eats it.
+   */
+  repel(x: number, z: number, game: Game): void {
+    if (!this.alive || this.scripted || this.puppet) return;
+    if (this.kind === 'ticker' && this.state === 'attack') return;
+    const dx = this.pos.x - x;
+    const dz = this.pos.z - z;
+    const d = Math.hypot(dx, dz) || 1;
+    this.wake(game);
+    if (this.state === 'attack' || this.state === 'charge') this.cancelAttack();
+    this.stunTime = 0.7;
+    this.setState('pain');
+    const push = (this.kind === 'brute' ? 2 : 6) * (1 - Math.min(1, d / 7)) + 2;
+    this.vel.x += (dx / d) * push;
+    this.vel.z += (dz / d) * push;
+  }
+
   /** a warning was interrupted: drop the attack and wait before trying again */
   private cancelAttack(): void {
     if (this.state === 'charge') {

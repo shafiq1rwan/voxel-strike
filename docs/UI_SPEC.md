@@ -8,11 +8,30 @@ controls), `src/ui/icons.ts` (icons).
 
 ## HUD — desktop
 
+The optional solo Overload terminal adds `#overload-action` near the bottom
+center when in reach: **E · Inspect Overload** (touch: **TAP**). While active
+it shows the wave and remaining enemy count without replacing the campaign
+objective. An explored terminal is a cyan outlined square on both maps.
+Inspecting pauses solo gameplay and shows **OPTIONAL FIGHT / OVERLOAD** with
+**Defeat 2 waves of enemies. Pick one reward: shotgun upgrade, repair or ammo.**
+The actions are **Start fight / Not now**. Reward cards appear after victory under **CHOOSE ONE**:
+an icon, name and one short benefit; the shotgun also shows **Slower firing**.
+No rules paragraphs or reward cards appear before activation. The frame uses
+border-box sizing with decorative corners inset; its inner content scrolls
+only if needed on a small viewport. The Overload class is applied before
+the screen is mounted to avoid a transient default-screen layout. Caps and run
+duration remain in button tooltips. The same terminal offers **Later**;
+Enter/Space or Escape returns without claiming. Claimed terminals close.
+Unavailable rewards are disabled; repair/ammo respect caps and Focus cannot
+stack. Desktop pointer lock is released for these menus and requested again
+on return, with no ad break. Cards wrap/scroll on short phone screens.
+The weapon label becomes **FOCUSED SCATTERGUN** when that sidegrade is active.
+
 Follows the owner's mockup.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ [♥ 100 HP] [⛨ 0 ARMOR]   [▭ Find red keycard]          SECTOR 1 / 3 │
+│ [♥ 100 HP] [⛨ 0 ARMOR]   [▭ Find red keycard]          SECTOR 1 / 5 │
 │ ┌────────┐                  ▲ 79m                       [MAP] [❚❚]  │
 │ │minimap │                                              SCORE 000000 │
 │ └────────┘                                              KILLS  0 / 35│
@@ -32,7 +51,7 @@ Follows the owner's mockup.
 | Minimap | `#minimap` | Desktop only. North-up, 31×31 cells around the player, green arrow; shows only explored cells, doors in lock colour, exit pad green, the untaken keycard blinking |
 | Messages | `#messages` | Pickup and event lines under the minimap, fade after ~3.5 s, max 4 |
 | Objective | `#objective` | Stage icon + text in the stage colour, then a rotating yellow arrow to the target and the distance (`HERE` when close). Flashes when the stage changes |
-| Sector | `#obj-head` | `SECTOR n / 3` |
+| Sector | `#obj-head` | `SECTOR n / 5` (co-op: `/ 3`) |
 | MAP / pause | `#hud-map`, `#hud-pause` | Clickable whenever the mouse isn't captured; same as Tab/M and Esc |
 | Score / kills | `#score`, `#kills` | Score with `×N` combo multiplier; kills turn green when the sector is cleared out. Not in the mockup — kept small under the buttons |
 | Buffs | `#buffs` | QUAD / SHIELD / HASTE chips with seconds left |
@@ -58,7 +77,7 @@ corners belong to the thumbs.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ [♥ 100 HP] [⛨ 0 ARMOR]   [1][2][3][▭]               SECTOR 1 / 3 │
+│ [♥ 100 HP] [⛨ 0 ARMOR]   [1][2][3][▭]               SECTOR 1 / 5 │
 │ messages                [▭ Find red keycard]          [MAP] [❚❚] │
 │                              ▲ 79m                   SCORE  KILLS│
 │                                +                                 │
@@ -99,13 +118,14 @@ matches.
 
 | Screen | Notes |
 |---|---|
-| Title | Voxel wordmark, *Enter the facility* (or *Continue · Sector N* + *New run* when a save exists), Co-op (hidden on Poki), How to play, Settings |
+| Title | Voxel wordmark, *Enter the facility* (or *Continue · Sector N* + *New run* when a save exists), How to play, Settings — the same on web and Poki. Above the menu, a *NEW SECTOR* banner (hazard-yellow tag on a violet strip: *THE BIOFOUNDRY · SECTORS 4–5 · DON'T WAKE THE TANKS*) until the player first reaches the Biofoundry (`voxelstrike-biofoundry-seen`); compact on short screens, fits 667×375. Co-op is hidden everywhere; web builds show it with `?coop` (development) |
 | How to play | Desktop and touch control lists |
-| Settings | Sensitivity, master + music volume, FOV, pixelation, screen shake, aim assist, *New layout*. Saved on the device |
+| Settings | Sensitivity, master + music volume, FOV, pixelation (180 / 240 / 320 / 480 lines; default 480 on desktop, 320 on touch), screen shake, aim assist, *New layout*. Saved on the device |
 | Co-op lobby | Host shows a 4-character code; join types it |
 | Pause | Resume, Settings, and a quit button (*Main menu*, or *Save & quit to menu* from sector 2 on) |
 | Intermission | Sector stats; click to descend. Arms after 0.7 s |
-| Death | *Retry sector* (sector-entry gear, health floored at 60) or *New run* |
+| Facility terminal | After the sector 3 intermission (solo): full-screen void with a steel header bar (*VXS-OS 4.12* / *SERVICE TERMINAL B3-07*) and a scanlined cyan terminal typing the route-out message (hazard-yellow `!` warnings, a bright last line). The box is full height from the first character so it never re-centres. Click / tap / Enter / Space prints the rest; the foot then pulses *CLICK* (*TAP*) *TO DESCEND*; that press glitches, collapses the screen like a CRT switching off and fades violet into sector 4. Fits 667×375 without clipping |
+| Death | Top row, equal size: *Revive* (in place, once per sector attempt; on Poki *Revive · Watch ad* with the clapperboard icon, steel not green, hidden without the SDK, "No video available" if none played) beside the yellow *Retry from keycard* (once the red key was taken: in place, back at the key) or *Retry sector N* (sector-entry gear, health floored at 60). Second row, quiet: *Restart sector N* (only with a keycard checkpoint) and *New run*. Enter / Space = retry, never the ad. Fits 667×375 on one line per button |
 | Results | CAMPAIGN COMPLETE, totals, *Play a new layout* / *Main menu*. Arms after 1.2 s |
 | READY | After an ad break on desktop: one click to recapture the mouse |
 | Graphics lost | Pauses on WebGL context loss; *Reload game* appears after 4 s |

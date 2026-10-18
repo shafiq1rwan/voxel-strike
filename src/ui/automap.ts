@@ -256,6 +256,13 @@ export class Automap {
       }
     }
 
+    const overload = game.overload;
+    if (overload && !game.net && seen(Math.floor(overload.x), Math.floor(overload.z))) {
+      ctx.strokeStyle = overload.status === 'claimed' ? '#566076' : '#34d0ff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(overload.x * S - S, overload.z * S - S, S * 2, S * 2);
+    }
+
     // player arrow
     const p = game.player;
     ctx.save();

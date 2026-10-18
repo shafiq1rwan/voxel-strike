@@ -128,6 +128,34 @@ try {
   }));
   check(programs.after === programs.before, `shader programs stable after level start (${programs.before} -> ${programs.after})`);
 
+  // 5. the Biofoundry at its heaviest (sector 5: most enemies, most full
+  // tanks): tanks, signs, growth and the tank Vatborn stay inside the same
+  // budget, and its scenery compiles at level build
+  await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.levelIndex = 5;
+    g.buildLevel();
+    g.state = 'playing';
+    g.player.health = 99999;
+    g.input.locked = true;
+  });
+  await sleep(600); // first frame spawns the tank occupants
+  await page.evaluate(() => {
+    window.__programs4 = window.__voxelstrike.rendererSys.renderer.info.programs.length;
+    const g = window.__voxelstrike;
+    for (const e of g.enemies.list) e.wake(g);
+  });
+  await sleep(1500);
+  const bio = await drawsOver(30);
+  const bioInfo = await page.evaluate(() => ({
+    theme: window.__voxelstrike.level.theme,
+    before: window.__programs4,
+    after: window.__voxelstrike.rendererSys.renderer.info.programs.length,
+  }));
+  check(bioInfo.theme === 'biofoundry', 'sector 5 is built as the Biofoundry');
+  check(bio.scene < SCENE_MAX_DRAWS, `Biofoundry, all awake: ${bio.scene.toFixed(0)} world draws per frame (< ${SCENE_MAX_DRAWS})`);
+  check(bioInfo.after === bioInfo.before, `Biofoundry: shader programs stable after level start (${bioInfo.before} -> ${bioInfo.after})`);
+
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {
   await browser.close();

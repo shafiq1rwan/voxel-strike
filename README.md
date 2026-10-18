@@ -38,15 +38,16 @@ replay a specific layout — the same seed always produces the same dungeon.
 Add `?sector4` to the game's URL — on the deployed site or a dev server
 (`http://localhost:5173/?sector4`; add `&seed=12345` for repeatable
 decoration). This opens a standalone Sector 4
-preview with seven authored rooms, specimen tanks, purple emergency lighting,
+preview — a fixed, hand-built Biofoundry map (the campaign's sector 4 is
+generated) — with seven authored rooms, specimen tanks, purple emergency lighting,
 organic growth, a red-key route, and an exit lift. All weapons and supplies
 are provided; enemies use the current roster. Spills and organic scenery are
 cosmetic in this first environment preview.
 
 The preview does not change campaign saves or leaderboard scores and has no
-co-op. Normal URLs still play the three-sector campaign, and the preview
-module is lazy-loaded, so ordinary visits never download it. The Poki build
-ignores `?sector4` entirely.
+co-op. Normal URLs play the five-sector campaign, whose sectors 4–5 are
+*generated* Biofoundry levels dressed by the same code (so it ships in the
+main bundle). The Poki build ignores `?sector4` entirely.
 
 With a dev or preview server running, `node scripts/sector4.mjs <url>` checks
 progression, replay/retry, save isolation, and mobile rendering. Against a
@@ -55,11 +56,58 @@ flag is ignored.
 
 ## How to play
 
-**Goal:** the campaign is **3 sectors deep**. In each one, find the **RED
+### Optional Overload room (solo playtest)
+
+Each solo campaign sector places a cyan **OVERLOAD / OPTIONAL** terminal in
+an existing room where there is safe space. Its cyan outlined map marker
+appears after exploration. Approach it and press **E**, or tap the context
+button on touch devices, then choose **Start fight** or **Not now**. The
+offer explains that you defeat two enemy waves to choose a shotgun upgrade,
+repair or ammo; reward cards appear after victory.
+
+Activation starts two bounded waves: two Husks, then a Husk and an Arc
+Sentinel. Incoming enemies wait until you are in the room and spawn on clear,
+supported tiles away from you. Exits remain open; this never gates the
+keycard, elevator or campaign. After clearing both waves, return to the
+terminal and choose **one** reward:
+
+- **Focused Shotgun:** 35% tighter spread, 15% lower fire rate, unchanged
+  pellet count and damage. Requires the shotgun; cannot stack. Lasts this run.
+- **Field Repair:** restore up to 25 health and 15 armor, capped at 100 each.
+- **Ammo Cache:** refill the equipped weapon's ammo: 30 bullets, 8 shells,
+  2 rockets or 8 cells, respecting ammo caps.
+
+A terminal can only be cleared/claimed once per sector attempt. You can
+choose later if supplies are full. Sector retry restores the sector-entry
+loadout and resets that attempt's challenge; sidegrades earned in earlier
+sectors survive retry and save/Continue. New runs remove the sidegrade.
+This first version is solo-only and does not appear in the Sector 4 preview.
+
+For quick testing, run `npm run dev` and open
+`http://localhost:5173/?overload&seed=12345`. After **Enter the facility** you
+start beside the terminal with a shotgun and 24 shells. The shortcut is
+web-only; the Poki build ignores the shortcut but includes the normal solo
+challenge. Ordinary URLs retain the usual spawn and starting equipment.
+
+**Goal:** the campaign is **5 sectors deep**, every one generated fresh
+each run: three facility sectors, then — after a facility terminal tells you
+the only way out — two sectors of the **Biofoundry**, a purple-lit specimen
+lab where gunfire wakes what sleeps in the tanks (the deeper one has more
+full tanks and more enemies). In each one, find the **RED
 keycard**, open the locked vault door, ride the elevator in the exit hall,
 and stand on the glowing green **exit pad** to descend. Your weapons, ammo,
 health, and armor carry over between sectors — keycards don't. Each sector
 is bigger and meaner than the last.
+
+**Dying isn't the end of the attempt.** Once per sector you can **revive**
+where you fell (on Poki by watching a short video). Grabbing the red keycard
+is a **checkpoint**: retry from it and you're back where you took it, still
+holding it, with the rest of the sector as you left it. You can also restart
+the whole sector, or start a new run. From sector 2 on, progress is saved so
+the title offers **Continue**.
+
+**Pixelation** defaults to 480 lines on desktop and 320 on phones; change it
+in Settings (180 / 240 / 320 / 480).
 
 | Input | Action |
 |---|---|
@@ -92,7 +140,9 @@ Settings; never active with a mouse).
 ## Co-op
 
 The campaign is playable **2-player online co-op** — no accounts, no server
-setup. One player clicks **CO-OP → HOST** on the title screen and reads out
+setup. Co-op is hidden from the title screen in every build (as on Poki);
+open the game with `?coop` to show the button. One player clicks
+**CO-OP → HOST** on the title screen and reads out
 the 4-character room code; the other clicks **JOIN** and types it in
 (the connection is peer-to-peer WebRTC via PeerJS's free broker). Then:
 
@@ -170,20 +220,28 @@ turn and bob in step with your footsteps.
 
 ## Bestiary
 
-- **Husk** — a hunched, rust-red melee creature with a glowing eye slit.
-  Fast; closes distance with sudden lunges and bites.
-- **Arc Sentinel** — a hovering teal drone with rotating fins. Keeps its
-  distance, glows brighter as it charges, then fires a slow plasma bolt you
-  can dodge. Strafes when you get close.
-- **Ticker** — a squat hazard-striped crawler with a glowing amber core. It
-  sprints straight at you, stops, beeps faster and faster, and self-destructs.
-  Killing it at range still detonates the corpse — which makes tickers
-  wonderful when they die next to their friends, and terrible when they die
-  next to you.
-- **Brute** — the arena pit boss: a bone-plated wall of meat with tusks. It
-  rears back with a roar, then charges in a straight line faster than you can
-  run, smashing crates and barrels on the way. Sidestep it: a brute that hits
-  the wall is stunned and wide open. It always drops a powerup when it dies.
+Every attack is telegraphed: a windup you can read, a moment where the aim
+locks (dodge after it and the hit misses), then a recovery you can punish.
+
+- **Husk** — a lean, rust-red hunter with a dark visor and a long reach. It
+  weaves in, claws from a step away, and lunges from further out after a
+  crouching growl. A missed claw leaves it bent over and open.
+- **Arc Sentinel** — a hovering teal box with four paddles. Keeps 7–12 units
+  away; its paddles spread and its shutters slide open as it charges, then
+  it fires one plasma bolt along the line it locked. It folds up while it
+  recovers — close in then.
+- **Ticker** — a low hazard-yellow crawler. It sprints at you, plants its
+  legs, opens its lids and beeps four times, then blows. Killing it at range
+  still detonates the corpse — great next to its friends, terrible next to
+  you.
+- **Brute** — the arena pit boss: bone shoulder plates, tusks, huge fists.
+  A backhand up close; from range it rears back, roars and charges in a
+  straight line, smashing crates and barrels. Make it hit a wall and it's
+  stunned for over a second. It always drops a powerup.
+- **Vatborn** *(Biofoundry)* — a pale specimen with one giant club arm,
+  asleep in the specimen tanks. Gunfire nearby (or shooting the glass) wakes
+  it: it pounds the glass, breaks out and hunts you with a slow, crushing
+  overhead swing.
 
 All of them run a full state machine — **idle / patrol / chase / attack / pain /
 death** — wake on line-of-sight or nearby gunfire, alert each other, and
@@ -200,7 +258,7 @@ src/
 ├── game.ts                 orchestrator: state machine, frame loop, sectors, explosions, score
 ├── types.ts                shared plain-data types (no Three.js imports)
 ├── core/
-│   ├── renderer.ts         Three.js setup, 240-line internal res, fog, weapon overlay pass
+│   ├── renderer.ts         Three.js setup, low internal res (480 lines desktop / 320 touch by default), fog, weapon overlay pass
 │   ├── input.ts            keyboard + pointer-lock mouse
 │   ├── touch.ts            touch joystick, look, buttons, weapon button + wheel
 │   ├── physics.ts          AABB-vs-voxel movement, ray/box intersection
@@ -254,7 +312,7 @@ Key design points:
   up to 6 **dynamic lights** (muzzle flashes, rocket trails, explosions) is
   ranked per frame and evaluated per-fragment in the chunk shader. Entities
   sample both grids on the CPU to tint their materials.
-- **Retro rendering** — fixed 240-line internal resolution, CSS-upscaled
+- **Retro rendering** — low internal resolution (480 lines on desktop, 320 on touch by default; 180–480 in Settings), CSS-upscaled
   with `image-rendering: pixelated`, nearest-neighbor textures, dark linear
   fog.
 - **Level generation** — rooms placed by rejection sampling, connected with
@@ -275,23 +333,29 @@ Key design points:
 
 ## Tests
 
-Ten headless-browser suites drive the real game in Edge (`puppeteer-core`,
-no browser download needed) and save screenshots to `scripts/shots/`. Run
+Headless-browser suites drive the real game in Edge (`puppeteer-core`, no
+browser download needed; set `VOXEL_BROWSER` to any Chromium executable to
+use that instead) and save screenshots to `scripts/shots/`. Run
 them with a dev **or** preview server up. What each one covers, the
 fake pointer lock they share, and the gotchas are in
 [docs/TESTING.md](docs/TESTING.md).
 
 ```bash
 node scripts/smoke.mjs      # boot, move, shoot, explode — fails on any console error
-node scripts/e2e.mjs        # plays the whole 3-sector campaign
+node scripts/e2e.mjs        # plays the whole 5-sector campaign
 node scripts/movement.mjs   # W/A/S/D must match the camera's vectors at 5 facing angles
 node scripts/firing.mjs     # spam-click, hold-to-fire and the click buffer
 node scripts/aimassist.mjs  # touch aim assist (magnetism, sticky, rotation); desktop stays raw
-node scripts/features.mjs   # tickers, ambush, powerups, combo, arena, headshots, automap, lift, touch weapon wheel, phone settings
-node scripts/checkpoint.mjs # retry, save + Continue, quit to menu, new run — no page reloads
+node scripts/features.mjs   # tickers, ambush, powerups, combo, arena, headshots, automap, lift, touch weapon wheel, phone settings, title banner, pixelation defaults
+node scripts/checkpoint.mjs # retry, revive, keycard checkpoint, save + Continue, quit to menu, new run — no page reloads
 node scripts/monkey.mjs     # randomized stress run with NaN / out-of-world checks
 node scripts/coop.mjs       # 2-player co-op over BroadcastChannel
-node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ads, measure() events (level 1 start, level complete/fail)
+node scripts/perf.mjs       # 60 fps guard: draw calls, occlusion cull, no shader compiles — facility and Biofoundry
+node scripts/husk.mjs       # husk gait, chase consistency, claw/dodge, pose captures
+node scripts/overload.mjs   # the optional Overload room
+node scripts/breach.mjs     # a dormant Vatborn breaks out of its tank
+node scripts/sector4.mjs <url>  # the hand-built ?sector4 preview (add --poki on a Poki server)
+node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ads, rewarded revive, measure() events (level 1 fresh-start, level complete/fail)
 ```
 
 Each accepts an optional URL argument, e.g.
@@ -309,7 +373,8 @@ Targets 60 FPS on desktop and reaches ~100 FPS even under headless
 SwiftShader (software rendering) in CI. The main costs are kept flat:
 greedy meshing keeps the triangle count low, the whole world is ~64 draw
 calls before frustum culling, particles/projectiles are pooled, and the
-internal render resolution is fixed regardless of window size.
+internal render resolution follows the Pixelation setting (480 lines on
+desktop, 320 on phones by default), never the window size.
 
 ## Docs
 
@@ -319,6 +384,7 @@ internal render resolution is fixed regardless of window size.
 | [docs/ART.md](docs/ART.md) | Art direction: palette, world, enemies, weapon view models, HUD style, the owner's decisions |
 | [docs/UI_SPEC.md](docs/UI_SPEC.md) | HUD layout (desktop + mobile), touch controls, every screen, UI rules |
 | [docs/TESTING.md](docs/TESTING.md) | The browser test suites, how to run and write them, gotchas |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Planned work in priority order and why (driven by the Poki Web Fit Test), plus what's done |
 | [POKI.md](POKI.md) | The Poki build: SDK lifecycle, ad breaks, analytics events, upload |
 | [public/music/README.md](public/music/README.md) | Adding an optional soundtrack |
 | [CLAUDE.md](CLAUDE.md) | Rules and gotchas for AI agents (and humans) changing the code |

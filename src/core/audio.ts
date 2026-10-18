@@ -15,7 +15,7 @@ export type SoundName =
   | 'playerPain' | 'playerDie'
   | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup' | 'secret'
   | 'doorOpen' | 'doorClose' | 'doorLocked' | 'elevator' | 'teleport'
-  | 'step' | 'clank'
+  | 'step' | 'clank' | 'termKey' | 'termOff'
   | 'win';
 
 interface ListenerState {
@@ -444,6 +444,15 @@ export class AudioMan {
       case 'step':
         // soft boot thud
         this.noise(out, 0.13, 0.005, 0.05, 'lowpass', 380, 160);
+        break;
+      case 'termKey':
+        // terminal key tick: a tiny, slightly varied click
+        this.noise(out, 0.06, 0.001, 0.025, 'bandpass', 2600 + Math.random() * 900, 1800);
+        break;
+      case 'termOff':
+        // CRT power-down: a falling whine under a soft thump
+        this.tone(out, 'sine', 0.22, 0.004, 0.42, 1500, 90);
+        this.noise(out, 0.18, 0.003, 0.18, 'lowpass', 900, 120);
         break;
       case 'clank': {
         // distant facility noise, randomized pitch so it never sounds canned

@@ -24,6 +24,9 @@ GPU memory on iOS).
 - `docs/TESTING.md` — every suite, running/writing them, gotchas. Update when
   a suite is added or its coverage changes (and the command list below).
 - `POKI.md` — the Poki build, SDK lifecycle, `measure()` events.
+- `docs/ROADMAP.md` — planned work in priority order with the reasoning
+  (driven by the Poki Web Fit Test numbers). Add decided features there;
+  move them to its Done list when shipped.
 
 ## Commands
 
@@ -41,18 +44,20 @@ save screenshots to `scripts/shots/`):
 
 ```bash
 node scripts/smoke.mjs      # boot, move, shoot, explode; fails on any console error; enemy-bounds watchdog
-node scripts/e2e.mjs        # plays the whole 3-sector campaign: aggro, barrels, key → vault → lift → exit
+node scripts/e2e.mjs        # plays the whole 5-sector campaign: aggro, barrels, key → vault → lift → exit, the facility terminal into the Biofoundry, sector 5 harder than 4
 node scripts/movement.mjs   # WASD displacement must match camera basis vectors at 5 yaw angles
 node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consistency, claw/dodge + rendered poses/motion clip
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
+node scripts/overload.mjs <url> # optional solo two-wave encounter, reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), NEW SECTOR banner, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
-node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start
-node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
-node scripts/breach.mjs     # sector 4 preview: dormant Vatborn in each occupied tank; shoot one → sealed during agitation, real collision gap, liquid gush, it walks out and hunts, releases once
-node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 fresh-start, level complete/fail), hidden co-op, boots with SDK blocked
+node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start; the same budget in the Biofoundry at its heaviest (sector 5)
+node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, free revive in place once per attempt, keycard checkpoint retry (world untouched) + Restart sector, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
+node scripts/sector4.mjs <url> [--poki]  # the hand-built ?sector4 preview: route, key gate, door, lift, completion, replay, retry, save isolation, mobile; --poki: the flag is ignored
+node scripts/breach.mjs     # sector 4 (`?sector4` opens it alone): dormant Vatborn in each occupied tank; shoot one → sealed during agitation, real collision gap, liquid gush, it walks out and hunts, releases once
+node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 fresh-start, level complete/fail), rewarded revive (ad icon, equal-size beside retry, muted, pays only on a watched video, once per attempt, hidden without the SDK), hidden co-op, boots with SDK blocked
 ```
 
 `?seed=N` on the URL reproduces a layout deterministically. `window.__voxelstrike`
@@ -68,11 +73,41 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
 ## Architecture
 
 - `src/game.ts` — orchestrator: state machine (title/playing/paused/dead/
-  intermission/won), 3-sector campaign flow with in-place level teardown.
+  intermission/won), 5-sector campaign flow with in-place level teardown.
+  ALL sectors are generated fresh each run with the same keycard → red door
+  → lift → pad flow: 1–3 in the facility theme, 4–5 in the Biofoundry theme
+  (`generateLevel(seed, n, 'biofoundry')`; sector 5 is slightly harder —
+  6 occupied tanks instead of 4 and +1 enemy in rooms 3+ steps from spawn,
+  the only levelgen bumps past sector 4 since the other curves are capped;
+  4 → 5 is an ordinary intermission, the terminal plays only into sector 4; the scenery + live tank breaches
+  come from `decorateBiofoundry(level)` in `src/preview/biofoundry.ts`,
+  statically bundled, Poki build too). `authoredLevel()` is only the
+  `?sector4` preview's hand-built map. Clearing sector 3 (solo) goes
+  intermission → `descendToBiofoundry()`: the facility terminal
+  (`HUD.showTerminal`, `src/ui/terminal.ts`; text from
+  `biofoundryTerminal()` in biofoundry.ts — its tank line is filled from the
+  generated level with `setTanks()` before the typing reaches it; red access
+  for the lift; no teases past the last sector) types out while sector 4 is built
+  behind it; a click prints the rest, the next click glitches,
+  CRT-collapses the screen and fades violet into sector 4, grabbing pointer
+  lock inside that fresh click (no READY screen). Co-op campaigns stay 3
+  sectors (`totalSectors`): the Biofoundry's tank breach spawns and glass
+  changes are host-local and not replicated.
   Solo restarts NEVER reload the page: every sector start captures a
   `Checkpoint` (seed, score, health/armor/ammo, weapon loadout, run totals);
-  death offers Retry sector (`retrySector` restores it, health floored at 60)
-  or New run; from sector 2 on the checkpoint is also saved to localStorage
+  death (`showDeathScreen`) offers Retry — from the red keycard if it was
+  taken this attempt (`keyCheckpoint`, captured in `onKeyPickup`, solo only:
+  `retryFromKeycard` is IN PLACE, world untouched, back where the key was
+  taken, still holding it, gear never worse than then), else the sector
+  (`retrySector` restores the sector checkpoint, health floored at 60) —
+  plus Restart sector when a keycard checkpoint exists, New run, and a
+  Revive in place once per sector attempt (`reviveUsed`; a retry gives it
+  back): free on web, a Poki `rewardedBreak` that pays out ONLY when the
+  video played and is hidden when an ad blocker removed the SDK. Revive and
+  keycard retry share `bringBack()`: 60 hp floor, 2.5s overshield, nearby
+  enemies `repel()`-ed (woken, attack cancelled, shoved, dazed 0.7s; an
+  armed ticker is left to blow into the shield). The keycard checkpoint is
+  never persisted; from sector 2 on the sector checkpoint is also saved to localStorage
   (`voxelstrike-run`, same key as the old Poki build) so the title offers
   "Continue · Sector N" and the pause menu "Save & quit to menu"
   (`goToTitle` rebuilds a fresh sector 1 behind the title). All sector
@@ -104,10 +139,10 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   blocks are APPEND-ONLY (tests hardcode ids like Barrel=15, ExitPad=13).**
   Deco variants (WallRust/WallVent/WallPipes/WallWorn/CeilPipes/CeilPipesZ/
   CeilVent/Chain) are cosmetic-only: same physics as Wall/Ceil. Ids 24–30
-  (LabFloor…LabCeilGrate, LampViolet, TankGlass) are the sector 4 preview's
-  set (`src/preview/biofoundry.ts`, opened by `?sector4` on web builds,
-  lazy-loaded, ignored on Poki); levelgen never
-  places them. TankGlass is solid and a lamp but the mesher skips it (the
+  (LabFloor…LabCeilGrate, LampViolet, TankGlass) are the Biofoundry's
+  set: levelgen places them ONLY in the `'biofoundry'` theme (sectors 4–5:
+  `reskinLab` + tanks), and the hand-built `?sector4` preview map uses
+  them; facility sectors never do. TankGlass is solid and a lamp but the mesher skips it (the
   tank's smooth glass is decoration geometry). LampViolet is a lamp — a lamp
   block's own faces are lit by its flood, so its emission colour sets how
   bright the block itself looks. `VoxelWorld.bakeLighting(ambient?)` takes
@@ -119,7 +154,18 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   secret-room language.
 - `src/world/levelgen.ts` — rooms + MST corridors, doors (exit door always
   red-locked, forced placement), secret room behind cracked blocks, exit ledge
-  + elevator, barrels/crates/lamps/pickups/enemies. One big `arena` room per
+  + elevator, barrels/crates/lamps/pickups/enemies. A `LevelTheme` changes
+  only the look and dressing, never the structure: `'biofoundry'` (sector 4)
+  makes normal rooms 5–6 tall, lights them violet (key room stays red, exit
+  teal, corridors teal), builds 2×2 ribbed pillars, places up to 12 specimen
+  tanks against west/east walls (`dressBiofoundry`: whole volume + the pane
+  cell + the occupant's standing spot must be air, backed by solid wall so
+  no doorway is plugged; 4 occupied across different rooms, 2 broken),
+  re-skins plain surfaces to the Lab block set (`reskinLab`, last, after the
+  cracked secret wall), bakes with `BIO_AMBIENT`, and returns `level.bio`
+  for the scenery. Bio-only choices use `dhash` — facility sectors keep
+  their exact layouts per seed. Occupied tanks are preallocated in
+  `totalEnemies`. One big `arena` room per
   sector is placed FIRST (while the map is empty, so it always fits) and is
   never spawn/exit/key — it holds the arc caster + cells, brute guard(s), and
   a diagonal pillar ring (axes left clear as charge lanes). Every layout is
@@ -183,7 +229,7 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   backhand at <2.4, telegraph a 9.66u/s charge (0.8s) that smashes
   destructibles, get stunned 1.3s on a wall slam via `stunTime`, and
   always drop a powerup; deaths burst into per-part gibs;
-  `vatborn` is the sector 4 preview's escaped specimen — husk skeleton via
+  `vatborn` is the Biofoundry's (sector 4) escaped specimen — husk skeleton via
   `humanoid()`, 0.65s heavy-swing windup + 1.1s recovery, a 0.3s braced
   rush that can't become a swing, never
   placed by levelgen. Its right arm (+x — the model faces -z) is a giant
@@ -191,7 +237,7 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   in each occupied tank with `dormant = true` (no AI/physics/wake, green
   tint, thrashes with `agitation`) and leaves via `startEmerge()` — a
   scripted 0.8s walk through the gap — so `scripted` enemies are skipped by
-  separation and the out-of-world net. It is released by the preview's
+  separation and the out-of-world net. It is released by the Biofoundry's
   breach sequence: `PreviewArt` hooks in game.ts —
   `tankHit` from `applyVoxelDamage` when a TankGlass voxel is shot, `noise`
   from `Game.noise()` (gunfire), `update` per frame — drive dormant →
@@ -294,7 +340,16 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   background throttling). URL auto-join: `?role=host|join&room=CODE[&mp=local]`.
 - `src/core/settings.ts` — persisted options (sensitivity, master + music
   volume, FOV, resolution, shake, aim assist); `Game.applySettings()` pushes
-  them into systems.
+  them into systems. Defaults depend on the device (`loadSettings(isTouch)`):
+  pixelation 480 lines on desktop, 320 on touch, still cycled in Settings.
+  Saved settings carry `v: 2`; an unversioned save holding the old one-size
+  default (240) is moved to the device default once.
+- Title screen: identical on web and Poki — no Co-op button anywhere. A
+  NEW SECTOR banner (THE BIOFOUNDRY · SECTORS 4–5) shows above the menu
+  until the player first enters a Biofoundry sector (`buildLevel` sets
+  `voxelstrike-biofoundry-seen`; the `?sector4` preview doesn't count). Web
+  builds show it with `?coop` (development; `coop.mjs` uses it), and the
+  `?role=…&room=…` auto-join still works.
 - `src/platform/poki.ts` — Poki web-portal layer (details in POKI.md). Every
   call is gated on the compile-time `POKI` constant (`--mode poki`), so the
   regular build tree-shakes it out, and every call survives a missing SDK
@@ -304,7 +359,12 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   New ad points go through `Game.afterBreak(then(adShown))` (mutes audio,
   releases held keys, eats double clicks); when an ad really played, desktop
   needs a READY "click to continue" before pointer lock (the gesture is
-  spent) — `enterSector`/`resumeGame` handle that. New analytics go through
+  spent) — `enterSector`/`resumeGame` handle that. Rewarded videos go
+  through `poki.rewardedBreak()` (resolves true ONLY when the video played —
+  never reward otherwise) behind a button that says "Watch ad" with the
+  clapperboard icon, is never the green/primary one, and sits beside an
+  equal-size normal button; hide the offer when `poki.adsAvailable()` is
+  false. New analytics go through
   `poki.measure()` (no `/` or `^` in any value — Poki reserves them) plus a
   row in POKI.md and an assert in `poki.mjs`. Poki builds hide co-op and
   skip the SW/manifest/fullscreen.

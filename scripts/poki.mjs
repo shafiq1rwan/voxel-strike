@@ -40,6 +40,14 @@ window.PokiSDK = {
     window.__adPlaying = true;
     return new Promise((r) => setTimeout(() => { window.__adPlaying = false; r(); }, 400));
   },
+  // rewarded video: resolves true (watched) unless the test sets __rewardOk = false
+  rewardedBreak: (onStart) => {
+    log('rewardedBreak');
+    const ok = window.__rewardOk !== false;
+    if (ok && onStart) onStart();
+    window.__adPlaying = ok;
+    return new Promise((r) => setTimeout(() => { window.__adPlaying = false; r(ok); }, 400));
+  },
   measure: (c, w, a) => log('measure', c, w, a),
 };`;
 
@@ -186,7 +194,76 @@ try {
   check(c[c.length - 1] === 'gameplayStart' && (await state(page)) === 'playing', 'retry → gameplay resumed');
   check(!c.slice(2).includes('init'), 'retry did not reload the page (no second SDK init)');
   check(await page.evaluate(() => window.__bootMarker === 'same-page'), 'same page after retry');
-  console.log('  calls:', c.join(' | '));
+
+  // rewarded revive: offered on the death screen with the ad icon, equal in
+  // size to the retry beside it; the video mutes audio, and only a watched
+  // video revives — in place, once per sector attempt
+  const die = () => page.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.player.health = 0;
+    g.player.dead = true;
+    g.onPlayerDeath();
+  });
+  const fellAt = await page.evaluate(() => {
+    const p = window.__voxelstrike.player.pos;
+    return { x: p.x, z: p.z };
+  });
+  await die();
+  await sleep(2200);
+  const offer = await page.evaluate(() => {
+    const rv = document.querySelector('#revive-btn');
+    const rt = document.querySelector('#retry-btn');
+    if (!rv || !rt) return { ok: false };
+    const a = rv.getBoundingClientRect();
+    const b = rt.getBoundingClientRect();
+    return { ok: true, icon: !!rv.querySelector('svg'), text: rv.textContent, dw: Math.abs(a.width - b.width), dh: Math.abs(a.height - b.height), sameRow: Math.abs(a.top - b.top) < 2 };
+  });
+  check(offer.ok && offer.icon && /watch ad/i.test(offer.text), `death screen offers a rewarded revive with the ad icon ("${offer.text}")`);
+  check(offer.ok && offer.dw <= 2 && offer.dh <= 2 && offer.sameRow, `revive and retry are equal-size, side by side (Δw ${offer.dw?.toFixed(1)}, Δh ${offer.dh?.toFixed(1)})`);
+  const rewardedBefore = (await calls(page)).filter((x) => x === 'rewardedBreak').length;
+  const breaksBeforeRevive = (await calls(page)).filter((x) => x === 'commercialBreak').length;
+  await page.evaluate(() => document.querySelector('#revive-btn').click());
+  await sleep(150);
+  const during = await page.evaluate(() => ({
+    ad: window.__adPlaying, state: window.__voxelstrike.state,
+    gain: window.__voxelstrike.audio.masterBus?.gain.value,
+  }));
+  check(during.ad && during.state === 'dead', `revive waits on the rewarded video (state=${during.state})`);
+  check(during.gain === 0, `audio muted during the rewarded video (gain=${during.gain})`);
+  await sleep(600);
+  await page.mouse.click(640, 360); // READY → click to continue
+  await sleep(400);
+  const rev = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    return { state: g.state, dead: g.player.dead, hp: g.player.health, x: g.player.pos.x, z: g.player.pos.z, idx: g.levelIndex };
+  });
+  c = await calls(page);
+  check(c.filter((x) => x === 'rewardedBreak').length === rewardedBefore + 1, 'revive called rewardedBreak once');
+  check(c.filter((x) => x === 'commercialBreak').length === breaksBeforeRevive, 'revive is not also a commercial break');
+  check(rev.state === 'playing' && !rev.dead && rev.hp >= 60 && rev.idx === 2, `watched video → revived and playing (hp=${rev.hp})`);
+  check(Math.hypot(rev.x - fellAt.x, rev.z - fellAt.z) < 0.6, 'revived where it fell, not at the sector start');
+  await die();
+  await sleep(2200);
+  check(await page.evaluate(() => !document.querySelector('#revive-btn') && !!document.querySelector('#retry-btn')),
+    'second death in the same attempt: no revive, retry still there');
+  // a retry is a new attempt: the revive comes back — and an unwatched video pays nothing
+  await page.evaluate(() => document.querySelector('#retry-btn').click());
+  await sleep(700);
+  await page.mouse.click(640, 360);
+  await sleep(400);
+  await die();
+  await sleep(2200);
+  await page.evaluate(() => { window.__rewardOk = false; document.querySelector('#revive-btn').click(); });
+  await sleep(700);
+  const noVideo = await page.evaluate(() => {
+    const b = document.querySelector('#revive-btn');
+    return { state: window.__voxelstrike.state, dead: window.__voxelstrike.player.dead, disabled: !!b?.disabled, text: b?.textContent ?? '' };
+  });
+  check(noVideo.state === 'dead' && noVideo.dead, 'no video watched → no revive (still dead)');
+  check(noVideo.disabled && /no video/i.test(noVideo.text), `the revive button says so and is disabled ("${noVideo.text}")`);
+  const sentNow = (await calls(page)).filter((x) => x.startsWith('measure'));
+  check(sentNow.every((x) => /^measure level [1-5] (fresh-start|complete|fail)$/.test(x)), 'revive adds no game events of its own');
+  console.log('  calls:', (await calls(page)).join(' | '));
   await page.close();
 
   // ---- SDK blocked (ad blocker) ------------------------------------------
@@ -196,6 +273,15 @@ try {
   await sleep(500);
   check((await state(blocked)) === 'playing', 'game still starts without the SDK');
   check((await blocked.$('#coop-btn')) === null, 'co-op still hidden without the SDK');
+  await blocked.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.player.health = 0;
+    g.player.dead = true;
+    g.onPlayerDeath();
+  });
+  await sleep(2200);
+  check(await blocked.evaluate(() => !!document.querySelector('#retry-btn') && !document.querySelector('#revive-btn')),
+    'without the SDK the rewarded revive is not offered (it could never pay out)');
   await blocked.close();
 } finally {
   await browser.close();

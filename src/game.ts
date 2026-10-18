@@ -14,6 +14,7 @@ import { Door, Elevator, ExitBeacon } from './entities/door';
 import { Enemy, EnemyManager } from './entities/enemies';
 import { PickupManager } from './entities/pickups';
 import { ProjectilePool } from './entities/projectiles';
+import { Overload, type OverloadReward } from './entities/overload';
 import { Particles } from './fx/particles';
 import { Tracers } from './fx/tracers';
 import { DynLights } from './fx/dynlights';
@@ -25,8 +26,9 @@ import { Netplay } from './net/netplay';
 import { GameSettings, loadSettings, saveSettings } from './core/settings';
 import { EnemySpec, KeyColor, PickupKind } from './types';
 import { POKI, poki } from './platform/poki';
+import { biofoundryTerminal, decorateBiofoundry } from './preview/biofoundry';
 
-type GameState = 'title' | 'playing' | 'paused' | 'dead' | 'intermission' | 'won';
+type GameState = 'title' | 'playing' | 'paused' | 'overload' | 'dead' | 'intermission' | 'won';
 
 /** Injected by main.ts for `?sector4` (web builds only; lazy-loaded, never on Poki). */
 /** what a preview's decorate() hands back: scenery plus optional live hooks */
@@ -47,7 +49,15 @@ export interface LevelPreview {
   showScreen(onStart: () => void, onLeave: () => void, cleared?: boolean): () => void;
 }
 
-const TOTAL_SECTORS = 3;
+/** facility-themed sectors; co-op campaigns end after these */
+const FACILITY_SECTORS = 3;
+/**
+ * then the Biofoundry theme (solo, behind the facility terminal): generated
+ * fresh every run like the facility, same keycard → red door → lift → pad
+ */
+const BIOFOUNDRY_SECTOR = 4;
+/** sector 5 is the deep Biofoundry: same theme, slightly harder (levelgen) */
+const TOTAL_SECTORS = 5;
 
 /** what enemy AI / explosions / bolts need from "a player" — the local
  *  Player and the co-op partner's RemotePlayer both satisfy this shape */
@@ -92,10 +102,13 @@ interface Checkpoint {
   totalSecretsFound: number;
   totalSecrets: number;
   totalTime: number;
+  focusedShotgun?: boolean;
 }
 
 /** localStorage key of the saved run (same key as the earlier Poki build) */
 const RUN_KEY = 'voxelstrike-run';
+/** set the first time the player enters the Biofoundry: hides the title's NEW SECTOR banner */
+const BIOFOUNDRY_SEEN_KEY = 'voxelstrike-biofoundry-seen';
 
 function storageGet(key: string): string | null {
   try {
@@ -138,8 +151,10 @@ export class Game {
   readonly enemies = new EnemyManager();
   readonly player = new Player();
   readonly weapons = new WeaponSystem();
-  readonly settings: GameSettings = loadSettings();
+  overload: Overload | null = null;
   readonly isTouch = isTouchDevice();
+  /** defaults depend on the device (pixelation: 480 lines desktop, 320 touch) */
+  readonly settings: GameSettings = loadSettings(this.isTouch);
   private automap!: Automap;
   /** co-op session (null in single-player) */
   net: Netplay | null = null;
@@ -222,6 +237,8 @@ export class Game {
 
     this.automap = new Automap(this.hud.container);
     this.input.onToggleMap = () => this.toggleMap();
+    this.input.onInteract = () => this.openOverload();
+    this.hud.onOverloadAction = () => this.openOverload();
     this.hud.onMapClick = () => this.toggleMap();
     this.hud.onPauseClick = () => this.requestPause();
 
@@ -442,6 +459,12 @@ export class Game {
 
   private teardownLevel(): void {
     const scene = this.rendererSys.scene;
+    if (this.overload) {
+      scene.remove(this.overload.group);
+      this.overload.dispose();
+      this.overload = null;
+    }
+    this.hud.setOverloadAction('');
     if (this.previewArt) {
       scene.remove(this.previewArt.group);
       this.previewArt.dispose();
@@ -485,7 +508,9 @@ export class Game {
     this.teardownLevel();
     const seed = this.levelSeed();
     console.log(`[voxelstrike] generating sector ${this.levelIndex}, seed=${seed}`);
-    this.level = (this.preview) ? this.preview.generate(seed) : generateLevel(seed, this.levelIndex);
+    const authored = this.authoredLevel();
+    const theme = this.levelIndex >= BIOFOUNDRY_SECTOR ? 'biofoundry' : 'facility';
+    this.level = authored ? authored.generate(seed) : generateLevel(seed, this.levelIndex, theme);
     this.world = this.level.world;
     const scene = this.rendererSys.scene;
 
@@ -495,8 +520,9 @@ export class Game {
     );
     this.chunks.buildAll();
     scene.add(this.chunks.group);
-    if (this.preview) {
-      this.previewArt = this.preview.decorate(this.level);
+    // Biofoundry scenery + live tanks: the authored ?sector4 map, or a generated sector 4
+    if (authored || this.level.bio) {
+      this.previewArt = authored ? authored.decorate(this.level) : decorateBiofoundry(this.level);
       scene.add(this.previewArt.group);
     }
 
@@ -520,6 +546,11 @@ export class Game {
 
     this.enemies.spawnFromSpecs(this.level.enemies, this.level.rooms, this);
     scene.add(this.enemies.group);
+    // the optional Overload encounter lives in the generated sectors only
+    if (!authored && !this.net) {
+      this.overload = Overload.create(this);
+      if (this.overload) scene.add(this.overload.group);
+    }
     // compile shaders + upload textures now, not on first use mid-fight
     this.rendererSys.warmUp();
 
@@ -529,6 +560,11 @@ export class Game {
     this.secretAnnounced = false;
     this.player.keys.clear();
     this.player.dead = false;
+    // reached the Biofoundry (campaign, not the ?sector4 preview): it's no longer "new"
+    if (this.level.theme === 'biofoundry' && !this.preview) storageSet(BIOFOUNDRY_SEEN_KEY, '1');
+    // a fresh attempt at a sector: no keycard checkpoint yet, revive available
+    this.keyCheckpoint = null;
+    this.reviveUsed = false;
     this.player.spawnAt(this.level.spawn.x, this.level.spawn.y, this.level.spawn.z);
     this.safePos.set(0, 0, 0);
     this.embedTime = 0;
@@ -538,6 +574,13 @@ export class Game {
     const spawnRoom = this.level.rooms.find((r) => r.kind === 'spawn')!;
     const other = this.level.rooms.find((r) => r.dist === 1) ?? this.level.rooms[1];
     this.player.yaw = Math.atan2(-(other.cx - spawnRoom.cx), -(other.cz - spawnRoom.cz));
+    // Web-only shortcut for hands-on testing; ordinary campaign spawns stay intact.
+    if (!POKI && !this.net && this.overload && this.levelIndex === 1 && new URLSearchParams(location.search).has('overload')) {
+      this.player.spawnAt(this.overload.x, 1.88, this.overload.z + 2);
+      this.player.yaw = 0;
+      this.weapons.restoreLoadout(['pistol', 'shotgun'], 'shotgun');
+      this.player.ammo.shells = Math.max(24, this.player.ammo.shells);
+    }
 
     this.hud.updateStats(this.player);
     this.hud.updateWeapon(this.weapons);
@@ -573,6 +616,13 @@ export class Game {
     try {
       this.detachNet();
       this.net = new Netplay(this, role, room, local);
+      // The optional encounter is solo-only for this first playtest.
+      if (this.overload) {
+        this.rendererSys.scene.remove(this.overload.group);
+        this.overload.dispose();
+        this.overload = null;
+        this.hud.setOverloadAction('');
+      }
       await this.net.ready;
       this.net.connected = true;
       if (this.net.isHost) {
@@ -622,7 +672,7 @@ export class Game {
     this.state = 'playing';
     this.levelStartTime = this.time;
     if (!this.isTouch) this.input.requestLock();
-    this.hud.message(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — it gets worse down here.`);
+    this.hud.message(`SECTOR ${this.levelIndex} of ${this.totalSectors} — it gets worse down here.`);
   }
 
   /** an ad break is in flight: swallow repeat clicks, hold pointer-lock resumes */
@@ -631,6 +681,16 @@ export class Game {
   private gfxLost = false;
   /** run state at the current sector's start (retry restores it) */
   private checkpoint: Checkpoint | null = null;
+  /**
+   * Mid-sector checkpoint taken when the red keycard is grabbed (solo only).
+   * Retrying from it is IN PLACE: the world stays as you left it (kills,
+   * opened doors, taken pickups), you stand where you took the key, still
+   * holding it, with gear no worse than you had then. Never persisted —
+   * Continue resumes at the sector start.
+   */
+  private keyCheckpoint: { cp: Checkpoint; x: number; y: number; z: number; yaw: number } | null = null;
+  /** revive spent on this sector attempt (once per attempt; a retry gives it back) */
+  private reviveUsed = false;
   /** first-run control hints: index of the next hint, -1 = off */
   private tipStep = -1;
   /** current objective step; null forces a refresh (new sector) */
@@ -692,6 +752,7 @@ export class Game {
       totalSecretsFound: this.totalSecretsFound,
       totalSecrets: this.totalSecretsSoFar,
       totalTime: this.totalPlayTime,
+      focusedShotgun: this.weapons.focusedShotgun,
     };
   }
 
@@ -730,6 +791,7 @@ export class Game {
     }
     this.player.buffs.quad = this.player.buffs.shield = this.player.buffs.haste = 0;
     this.weapons.restoreLoadout(cp.owned, cp.current);
+    this.weapons.focusedShotgun = cp.focusedShotgun === true;
     this.totalKills = cp.totalKills;
     this.totalEnemiesSoFar = cp.totalEnemies;
     this.totalSecretsFound = cp.totalSecretsFound;
@@ -803,7 +865,131 @@ export class Game {
     else this.resetRun();
     this.buildLevel();
     this.captureCheckpoint();
-    this.enterSector((this.preview) ? 'BIOFOUNDRY PREVIEW: second attempt.' : `SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — second attempt. Follow the arrow.`, adShown);
+    this.enterSector((this.preview) ? 'BIOFOUNDRY PREVIEW: second attempt.' : `SECTOR ${this.levelIndex} of ${this.totalSectors} — second attempt. Follow the arrow.`, adShown);
+  }
+
+  /**
+   * Solo death screen: revive in place (once per sector attempt — a Poki
+   * rewarded video, free elsewhere; hidden when an ad blocker removed the
+   * SDK), retry from the keycard if one was taken, else the sector; restart
+   * the sector; or start a new run.
+   */
+  private showDeathScreen(): void {
+    const revive: 'ad' | 'free' | null = this.reviveUsed ? null : POKI ? (poki.adsAvailable() ? 'ad' : null) : 'free';
+    this.hud.showDeath({
+      stats: `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,
+      sector: this.levelIndex,
+      keycard: this.keyCheckpoint !== null,
+      revive,
+      onRetry: () => {
+        if (this.state !== 'dead') return;
+        if (this.keyCheckpoint) this.afterBreak((ad) => this.retryFromKeycard(ad));
+        else this.afterBreak((ad) => this.retrySector(ad));
+      },
+      onRestart: () => {
+        if (this.state === 'dead') this.afterBreak((ad) => this.retrySector(ad));
+      },
+      onRevive: () => this.requestRevive(),
+      onNewRun: () => {
+        if (this.state === 'dead') this.afterBreak((ad) => this.newRunNow(ad));
+      },
+    });
+  }
+
+  /** the revive button: free outside Poki; on Poki only after the video really played */
+  private requestRevive(): void {
+    if (this.state !== 'dead' || this.reviveUsed || this.breakPending) return;
+    if (!POKI) {
+      this.reviveHere(false);
+      return;
+    }
+    // gameplay is already stopped (state 'dead'); mute while the video plays
+    this.breakPending = true;
+    this.audio.init();
+    void poki
+      .rewardedBreak(() => {
+        this.audio.setMuted(true);
+        this.input.releaseAll();
+      })
+      .then((success) => {
+        // the start callback may not run — always restore audio
+        this.audio.setMuted(false);
+        this.input.releaseAll();
+        this.breakPending = false;
+        if (this.state !== 'dead') return;
+        // a video that played spent the click gesture: desktop gets READY first
+        if (success) this.reviveHere(true);
+        else this.hud.reviveUnavailable(); // no video, no reward (Poki rule)
+      });
+  }
+
+  /** get up where you fell: 60 health, a short spawn shield, nearby enemies shoved back */
+  private reviveHere(adShown: boolean): void {
+    this.reviveUsed = true;
+    const p = this.player.pos;
+    this.bringBack(p.x, p.y, p.z, this.player.yaw, 60, 'Revived — get clear, this one only happens once.', adShown);
+  }
+
+  /**
+   * Retry from the keycard, in place: the world is untouched, you stand where
+   * you took the key (still holding it) with gear no worse than you had then.
+   */
+  private retryFromKeycard(adShown: boolean): void {
+    const k = this.keyCheckpoint;
+    if (!k) {
+      this.retrySector(adShown);
+      return;
+    }
+    const pl = this.player;
+    pl.armor = Math.max(pl.armor, k.cp.armor);
+    for (const key of Object.keys(pl.ammo) as (keyof typeof pl.ammo)[]) {
+      pl.ammo[key] = Math.min(pl.ammoMax[key], Math.max(pl.ammo[key], k.cp.ammo[key] ?? 0));
+    }
+    pl.keys.add('red');
+    // a keycard retry is a fresh attempt at the rest of the sector: revive comes back
+    this.reviveUsed = false;
+    this.bringBack(k.x, k.y, k.z, k.yaw, Math.max(60, k.cp.health), 'Back at the keycard. The red door is still waiting.', adShown);
+  }
+
+  /** shared by revive and keycard retry: alive again at (x, y, z) without rebuilding the level */
+  private bringBack(x: number, y: number, z: number, yaw: number, health: number, message: string, adShown: boolean): void {
+    const pl = this.player;
+    this.hud.hideScreen();
+    this.clearTransientFX();
+    pl.dead = false;
+    pl.health = Math.min(pl.maxHealth, Math.max(health, 1));
+    pl.spawnAt(x, y, z);
+    pl.yaw = yaw;
+    pl.pitch = 0;
+    // 2.5s overshield (the HUD shows the buff chip): nothing lands while you get your bearings
+    pl.buffs.shield = Math.max(pl.buffs.shield, 2.5);
+    pl.shake = 0;
+    this.safePos.set(x, y, z);
+    this.embedTime = 0;
+    for (const e of this.enemies.list) {
+      if (!e.alive) continue;
+      const dx = e.pos.x - x;
+      const dz = e.pos.z - z;
+      if (dx * dx + dz * dz > 7 * 7) continue;
+      if (!this.hasLOS(x, y, z, e.pos.x, e.pos.y, e.pos.z)) continue;
+      e.repel(x, z, this);
+    }
+    this.spawnFX(x, y, z);
+    this.punchFOV(2);
+    this.audio.play('teleport');
+    this.weapons.viewModel.visible = true;
+    this.hud.updateStats(pl);
+    this.hud.updateWeapon(this.weapons);
+    this.input.releaseAll();
+    this.hud.message(message);
+    if (adShown && !this.isTouch) {
+      // the ad used up the click gesture: one more click to capture the mouse
+      this.state = 'paused';
+      this.hud.showClickToResume(() => this.input.requestLock());
+      return;
+    }
+    this.state = 'playing';
+    if (!this.isTouch) this.input.requestLock();
   }
 
   /** abandon the run: new layout, sector 1, no save */
@@ -819,7 +1005,7 @@ export class Game {
     this.buildLevel();
     this.captureCheckpoint();
     poki.measure('level', 1, 'fresh-start'); // a new run = someone played (not sent on retry)
-    this.enterSector(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard.`, adShown);
+    this.enterSector(`SECTOR 1 of ${this.totalSectors} — find the RED keycard.`, adShown);
     this.startTips();
   }
 
@@ -834,7 +1020,7 @@ export class Game {
     this.applyCheckpoint(save);
     this.buildLevel();
     this.captureCheckpoint();
-    this.enterSector(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — welcome back. Find the RED keycard.`, adShown);
+    this.enterSector(`SECTOR ${this.levelIndex} of ${this.totalSectors} — welcome back. Find the RED keycard.`, adShown);
   }
 
   private onContextLost(): void {
@@ -882,7 +1068,7 @@ export class Game {
     }
     this.captureCheckpoint();
     poki.measure('level', 1, 'fresh-start'); // title "Enter the facility": someone played
-    this.enterSector(`SECTOR 1 of ${TOTAL_SECTORS} — find the RED keycard. Reach the exit.`, adShown);
+    this.enterSector(`SECTOR 1 of ${this.totalSectors} — find the RED keycard. Reach the exit.`, adShown);
     this.startTips();
     // if the browser blocked audio despite the gesture, tell the player how to fix it
     window.setTimeout(() => {
@@ -942,12 +1128,67 @@ export class Game {
     this.tipTimer = secs + 1.2;
   }
 
+  /** sectors in this run: the solo campaign ends in the Biofoundry, co-op after the facility */
+  private get totalSectors(): number {
+    return this.net ? FACILITY_SECTORS : TOTAL_SECTORS;
+  }
+
+  /** a hand-built level replaces levelgen only in a preview run (`?sector4`) */
+  private authoredLevel(): LevelPreview | null {
+    return this.preview ?? null;
+  }
+
+  /**
+   * Sector 3 cleared (solo): the facility terminal types out the way down,
+   * then the screen powers off into sector 4. The Biofoundry is built while
+   * the terminal is up. The press that leaves the terminal is a fresh
+   * gesture, so pointer lock is requested right there — no READY screen even
+   * if an ad played before it.
+   */
+  private descendToBiofoundry(adShown: boolean): void {
+    void adShown; // the terminal's own click replaces the READY click
+    this.levelIndex = BIOFOUNDRY_SECTOR;
+    const term = biofoundryTerminal();
+    let built = false;
+    const build = (): void => {
+      if (built) return;
+      built = true;
+      this.buildLevel();
+      this.captureCheckpoint();
+      // the message reports this run's tanks (typing starts after the build)
+      const tanks = this.level.bio?.tanks ?? [];
+      term.setTanks(tanks.filter((t) => t.occupied).length, tanks.length);
+    };
+    this.hud.showTerminal({
+      title: term.title,
+      node: term.node,
+      lines: term.lines,
+      touch: this.isTouch,
+      onChar: () => this.audio.play('termKey'),
+      onContinue: () => {
+        build();
+        if (!this.isTouch) this.input.requestLock();
+      },
+      onPowerOff: () => this.audio.play('termOff'),
+      onDone: () => {
+        if (this.state !== 'intermission') return;
+        build();
+        this.enterSector(`SECTOR ${BIOFOUNDRY_SECTOR} of ${this.totalSectors} — THE BIOFOUNDRY. Find the RED keycard.`, false);
+      },
+    });
+    // meshing the new level stalls a frame: do it once the terminal is painted
+    window.setTimeout(build, 60);
+  }
+
   private nextLevel(adShown = false): void {
     this.levelIndex++;
     this.buildLevel();
     this.captureCheckpoint();
     this.net?.sendNextLevel();
-    this.enterSector(`SECTOR ${this.levelIndex} of ${TOTAL_SECTORS} — it gets worse down here.`, adShown);
+    const deeper = this.levelIndex > BIOFOUNDRY_SECTOR
+      ? 'deeper into the Biofoundry. More tanks are full down here.'
+      : 'it gets worse down here.';
+    this.enterSector(`SECTOR ${this.levelIndex} of ${this.totalSectors} — ${deeper}`, adShown);
   }
 
   /** push the persisted settings into every system they control */
@@ -979,8 +1220,11 @@ export class Game {
         this.afterBreak((ad) => this.startGame(ad));
       },
       onContinue: () => this.afterBreak((ad) => this.continueRun(ad)),
-      onCoop: POKI ? undefined : () => this.openCoop(),
+      // co-op is hidden from players on every build, like Poki; web builds
+      // keep it behind ?coop for development (URL auto-join still works)
+      onCoop: !POKI && new URLSearchParams(location.search).has('coop') ? () => this.openCoop() : undefined,
       onSettings: () => this.openSettings('title'),
+      newSector: storageGet(BIOFOUNDRY_SEEN_KEY) === null,
     });
   }
 
@@ -995,6 +1239,33 @@ export class Game {
     if (this.state !== 'playing') return;
     this.state = 'paused';
     this.showPauseScreen();
+  }
+
+  private openOverload(): void {
+    const o = this.overload;
+    if (this.state !== 'playing' || this.net || !o || !o.near(this) || (o.status !== 'idle' && o.status !== 'ready')) return;
+    this.state = 'overload';
+    this.input.releaseLock();
+    this.input.releaseAll();
+    Object.assign(this.input.touchState, { moveX: 0, moveY: 0, fire: false, jump: false });
+    this.hud.setOverloadAction('');
+    const close = (): void => {
+      if (this.state !== 'overload' || this.gfxLost) return;
+      this.hud.hideScreen();
+      this.input.releaseAll();
+      this.state = 'playing';
+      if (!this.isTouch) this.input.requestLock();
+    };
+    const ammo = { bullets: '+30 bullets', shells: '+8 shells', rockets: '+2 rockets', cells: '+8 cells' }[this.weapons.definition().ammoType];
+    this.hud.showOverload(o.status === 'ready', {
+      focus: o.canClaim('focus', this), repair: o.canClaim('repair', this), ammo: o.canClaim('ammo', this),
+    }, ammo, () => {
+      if (this.state !== 'overload' || this.gfxLost || !o.start()) return;
+      this.hud.message('Overload started. Wave 1 incoming.');
+      close();
+    }, (reward: OverloadReward) => {
+      if (this.state === 'overload' && !this.gfxLost && o.claim(reward, this)) close();
+    }, close);
   }
 
   private resumeGame(): void {
@@ -1017,7 +1288,7 @@ export class Game {
     this.hud.showPause(
       {
         sector: this.levelIndex,
-        totalSectors: (this.preview) ? 4 : TOTAL_SECTORS,
+        totalSectors: this.totalSectors,
         kills: this.kills,
         totalEnemies: this.level.totalEnemies,
         secrets: this.secretsFound,
@@ -1075,6 +1346,7 @@ export class Game {
       if (d.openT < 0.98) this.solidBoxCache.push(d.box());
     }
     if (this.elevator) this.solidBoxCache.push(this.elevator.box());
+    if (this.overload && !this.net) this.solidBoxCache.push(this.overload.box);
     return this.solidBoxCache;
   }
 
@@ -1262,6 +1534,12 @@ export class Game {
   /** grabbing the red keycard springs a security response around the player */
   onKeyPickup(): void {
     if (this.isNetClient) return; // the host owns the ambush
+    // solo: the keycard is a checkpoint (co-op has no death screen to use it)
+    if (!this.net) {
+      const p = this.player.pos;
+      this.keyCheckpoint = { cp: this.makeCheckpoint(this.levelIndex), x: p.x, y: p.y, z: p.z, yaw: this.player.yaw };
+      this.hud.message('Checkpoint — you will retry from the keycard.');
+    }
     const keyRoom = this.level.rooms.find((r) => r.kind === 'key');
     if (!keyRoom) return;
     const specs: EnemySpec[] = [];
@@ -1333,7 +1611,7 @@ export class Game {
       const changed = this.objStage !== null;
       this.objStage = stage;
       const o = OBJECTIVES[stage];
-      this.hud.setObjective(this.levelIndex, (this.preview) ? 4 : TOTAL_SECTORS, o.text, o.color, changed, o.icon);
+      this.hud.setObjective(this.levelIndex, this.totalSectors, o.text, o.color, changed, o.icon);
     }
     const t = this.objectiveTarget(stage);
     if (!t) {
@@ -1444,13 +1722,15 @@ export class Game {
       `Time: ${this.formatTime(levelTime)} &nbsp;·&nbsp; ` +
       `Score: ${this.score.toLocaleString()}`;
 
-    if (this.levelIndex < TOTAL_SECTORS) {
+    if (this.levelIndex < this.totalSectors) {
       this.state = 'intermission';
       // the save points at the NEXT sector: quitting now resumes there
       this.captureCheckpoint(this.levelIndex + 1);
       this.net?.sendWin(false, `SECTOR ${this.levelIndex} CLEARED`, levelStats);
       this.hud.showIntermission(this.levelIndex, levelStats, !this.net, () => {
-        if (this.state === 'intermission') this.afterBreak((ad) => this.nextLevel(ad));
+        if (this.state !== 'intermission') return;
+        if (this.levelIndex === FACILITY_SECTORS) this.afterBreak((ad) => this.descendToBiofoundry(ad));
+        else this.afterBreak((ad) => this.nextLevel(ad));
       });
     } else {
       this.state = 'won';
@@ -1655,6 +1935,10 @@ export class Game {
     this.guardPlayerInWorld(dt);
     this.weapons.update(dt, this.input, this);
     this.enemies.update(dt, this);
+    if (!this.net && this.overload) {
+      if (this.state === 'playing') this.overload.update(dt, this);
+      else this.hud.setOverloadAction('');
+    }
     if (!this.isNetClient) this.previewArt?.update?.(dt, this);
     this.projectiles.update(dt, this);
     this.particles.update(dt, this.world);
@@ -1746,16 +2030,7 @@ export class Game {
       } else if (this.deathTimer > 1.4 && this.deathTimer - dt <= 1.4) {
         // solo: death screen after a beat
         this.input.releaseLock();
-        this.hud.showDeath(
-          `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,
-          this.levelIndex,
-          () => {
-            if (this.state === 'dead') this.afterBreak((ad) => this.retrySector(ad));
-          },
-          () => {
-            if (this.state === 'dead') this.afterBreak((ad) => this.newRunNow(ad));
-          }
-        );
+        this.showDeathScreen();
       }
     }
   }

@@ -1,14 +1,17 @@
 import * as THREE from 'three';
 import type { Game, LevelPreview, PreviewArt } from '../game';
 import type { Enemy } from '../entities/enemies';
-import type { LevelData } from '../world/levelgen';
+import { BIO_AMBIENT, TANK_D, TANK_W, type BioLayout, type LevelData } from '../world/levelgen';
 import { Block } from '../world/blocks';
 import { VoxelWorld } from '../world/world';
 import { RNG } from '../core/rng';
 import type { RoomDef, PickupSpec, EnemySpec } from '../types';
+import type { TerminalLine } from '../ui/terminal';
 
 /**
- * Sector 4 "Biofoundry" — a development-only authored level, styled after
+ * Sector 4 "Biofoundry" — the campaign's authored final sector (it follows
+ * sector 3 behind the facility terminal; `?sector4` on web builds still opens
+ * it alone as a preview). Styled after
  * reference/sector4-biofoundry.png: a purple-lit specimen hall with glowing
  * green tanks, ribbed pillars carrying warm light bands, crimson growth with
  * orange nodes, and slime on the tiles. Collision stays ordinary voxels; the
@@ -43,14 +46,12 @@ const TANKS: Array<[number, number, boolean, boolean]> = [
   [57, 12, false, true],
   [27, 8, false, false], [45, 8, false, false],
 ];
-const TANK_W = 3;
-const TANK_D = 2;
 /** 2×2 structural pillars (x, z of the min corner); a warm light band at y=3 */
-const PILLARS = [[30, 38], [44, 38], [30, 46], [44, 46], [30, 12], [43, 12]];
+const PILLARS: Array<[number, number]> = [[30, 38], [44, 38], [30, 46], [44, 46], [30, 12], [43, 12]];
 /** pillars the growth has claimed: [pillar x, pillar z, side dx, side dz] */
 const GROWN: Array<[number, number, number, number]> = [[30, 38, 1, 0], [44, 46, -1, 0], [30, 12, 1, 0], [43, 12, -1, 0]];
-/** purple emergency-light wash instead of the campaign's near-black ambient */
-const AMBIENT: [number, number, number] = [36, 26, 52];
+/** extra slime spills around the authored map: [x, z, radius] */
+const SPILLS: Array<[number, number, number]> = [[33, 49, 0.9], [47, 36, 0.7], [62, 44, 0.8], [27, 20, 0.9], [8, 44, 0.6]];
 
 // breach timings from the monster notes
 const AGITATE_S = 1.2;
@@ -63,6 +64,40 @@ const GUSH_RATE = 280;
 const MAX_BREACHING = 2;
 /** gunfire this close counts as "nearby loud combat" for a dormant tank */
 const NOISE_RANGE = 9;
+
+/**
+ * The facility terminal shown on the way down from sector 3
+ * (Game.descendToBiofoundry). Facts here must match the sector: the tank
+ * line is filled in from the generated level with `setTanks()` before the
+ * typing reaches it; gunfire near an occupied tank wakes it; the lower
+ * transit lift sits behind red access — the same keycard → red door → lift
+ * flow as every sector. No teases past this sector (docs/ART.md).
+ */
+export function biofoundryTerminal(): { title: string; node: string; lines: TerminalLine[]; setTanks(occupied: number, total: number): void } {
+  const lines: TerminalLine[] = [
+    { kind: 'cmd', text: '> AUTH  OPERATIVE ................ ACCEPTED' },
+    { kind: 'cmd', text: '> SECTOR 3 STATUS ................ CLEARED', pause: 250 },
+    { kind: 'cmd', text: '> LOCATE EXIT ROUTE' },
+    { kind: 'out', text: '    SURFACE LIFT ................. OFFLINE' },
+    { kind: 'out', text: '    SERVICE SHAFT ................ COLLAPSED' },
+    { kind: 'out', text: '    BIOFOUNDRY TRANSIT ........... OPEN', pause: 350 },
+    { kind: 'cmd', text: '> ONLY ROUTE OUT: LEVEL B4 / BIOFOUNDRY' },
+    { kind: 'out', text: '    SPECIMEN PRODUCTION · CONTAINMENT FAILING' },
+    { kind: 'out', text: '    SPECIMEN TANKS OCCUPIED ...... SCANNING', pause: 250 },
+    { kind: 'warn', text: '!   GUNFIRE NEAR AN OCCUPIED TANK WAKES WHAT IS INSIDE.' },
+    { kind: 'warn', text: '!   RED ACCESS REQUIRED FOR THE LOWER TRANSIT LIFT.', pause: 350 },
+    { kind: 'final', text: '> TRANSIT LIFT ARMED. DESCENDING.' },
+  ];
+  const tankLine = lines[8];
+  return {
+    title: 'VXS-OS 4.12',
+    node: 'SERVICE TERMINAL B3-07',
+    lines,
+    setTanks(occupied: number, total: number): void {
+      tankLine.text = `    SPECIMEN TANKS OCCUPIED ...... ${occupied} OF ${total}`;
+    },
+  };
+}
 
 function generate(seed: number): LevelData {
   const world = new VoxelWorld(80, 14, 80);
@@ -129,6 +164,9 @@ function generate(seed: number): LevelData {
   // raised transit ledge: only the standard lift reaches the exit pad
   for (let x = 4; x < 18; x++) for (let z = 6; z < 10; z++) for (let y = 1; y <= 3; y++) world.set(x, y, z, Block.Metal);
   for (let x = 9; x <= 10; x++) for (let z = 8; z <= 9; z++) world.set(x, 3, z, Block.ExitPad);
+  // hazard rail along the ledge's open edge (z = 9), gap where the lift docks
+  // — same as levelgen's exit ledges, so a step off the pad can't drop you
+  for (let x = 4; x < 18; x++) if (x !== 9 && x !== 10) world.set(x, 4, 9, Block.Trim);
 
   const pickups: PickupSpec[] = [];
   const item = (kind: PickupSpec['kind'], x: number, z: number): void => { pickups.push({ kind, x: x + 0.5, y: 1.5, z: z + 0.5 }); };
@@ -148,12 +186,26 @@ function generate(seed: number): LevelData {
   // roster now and spawn from decorate()'s breach sequence later
   const occupied = TANKS.filter((t) => t[3]).length;
 
-  world.bakeLighting(AMBIENT);
+  world.bakeLighting(BIO_AMBIENT);
+  // the same scenery data a generated Biofoundry carries
+  const bio: BioLayout = {
+    tanks: TANKS.map(([x, z, broken, occ]) => ({ x, z, broken, occupied: occ })),
+    pillars: PILLARS,
+    grown: GROWN,
+    spills: SPILLS,
+    signs: [
+      { text: 'BIOFOUNDRY', x: 38, y: 5.15, z: 32.03, w: 7.4, big: true },
+      // the lab (room 1) wears the BIOFOUNDRY sign instead of its name
+      ...rooms.filter((r) => r.id !== 1).map((r) => ({ text: ROOMS[r.id][0], x: r.cx, y: 4.5, z: r.z + 0.03, w: 4.4, big: false })),
+    ],
+    heart: { x: 37.5, z: 6, dir: 1 },
+    labDoor: { x: 38, z: 32 },
+  };
   return {
-    world, rooms, pickups, enemies, seed,
+    world, rooms, pickups, enemies, seed, theme: 'biofoundry', bio,
     doors: [{ x: 20, z: 15, dir: 'x', locked: 'red' }, { x: 37, z: 55, dir: 'z', locked: null }, { x: 65, z: 27, dir: 'z', locked: null }],
     spawn: { x: 38, y: 2.05, z: 64 },
-    elevator: { x: 9, z: 10, lowY: 1, highY: 4 },
+    elevator: { x: 9, z: 10, lowY: 1, highY: 4, walkAxis: 'z' },
     exitPad: { x: 10, y: 4, z: 9 }, secretRect: null, totalEnemies: enemies.length + occupied, totalSecrets: 0,
   };
 }
@@ -227,6 +279,9 @@ function decorate(level: LevelData): PreviewArt {
   const group = new THREE.Group();
   group.name = 'biofoundry-preview-art';
   const world = level.world;
+  // everything placed comes from the level's Biofoundry data (generated
+  // sectors and the authored map fill it the same way)
+  const bio: BioLayout = level.bio ?? { tanks: [], pillars: [], grown: [], spills: [], signs: [], heart: null };
   const batches = new Map<string, { color: number; flat: boolean; alpha: number; items: Inst[] }>();
   const cube = (
     color: number, x: number, y: number, z: number, w: number, h: number, d: number,
@@ -296,7 +351,7 @@ function decorate(level: LevelData): PreviewArt {
     part(0.18, -0.85, -0.05, 0.24, 0.85, 0.24, 2, 0.1);
   };
   const tanks: OccupiedTank[] = [];
-  for (const [x, z, broken, occupied] of TANKS) {
+  for (const { x, z, broken, occupied } of bio.tanks) {
     const cx = x + TANK_W / 2, cz = z + TANK_D / 2;
     // dark base and cap slabs with a lit lip, four corner posts
     cube(FRAME, cx, 1.52, cz, TANK_W + 0.3, 1.05, TANK_D + 0.3);
@@ -373,10 +428,10 @@ function decorate(level: LevelData): PreviewArt {
     }
   }
   // extra spills around the facility
-  for (const [px, pz, r] of [[33, 49, 0.9], [47, 36, 0.7], [62, 44, 0.8], [27, 20, 0.9], [8, 44, 0.6]]) puddle(px, pz, r, 5);
+  for (const [px, pz, r] of bio.spills) puddle(px, pz, r, 5);
 
   // ---- pillars: foot, cap, rust streaks, growth on the claimed ones ------
-  for (const [x, z] of PILLARS) {
+  for (const [x, z] of bio.pillars) {
     const cx = x + 1, cz = z + 1;
     cube(FRAME, cx, 1.18, cz, 2.5, 0.36, 2.5);
     cube(FRAME, cx, 6.82, cz, 2.5, 0.36, 2.5);
@@ -416,7 +471,7 @@ function decorate(level: LevelData): PreviewArt {
       cube(pick(GROWTH), bx + dx * 0.4 + Math.cos(a) * d, 1 + s * 0.3, bz + dz * 0.4 + Math.sin(a) * d, s, s * 0.6, s, { ry: rng.next() });
     }
   };
-  for (const [x, z, dx, dz] of GROWN) {
+  for (const [x, z, dx, dz] of bio.grown) {
     const cx = x + 1, cz = z + 1;
     growthColumn(cx + dx * 1.0, cz + dz * 1.0, dx, dz, 6.6);
   }
@@ -427,26 +482,32 @@ function decorate(level: LevelData): PreviewArt {
       const wx = west ? r.x : r.x + r.w;
       const wz = r.z + 2 + rng.next() * (r.d - 4);
       if (!airAt(west ? r.x : r.x + r.w - 1, 2, Math.floor(wz))) continue;
-      growthColumn(wx, wz, west ? 1 : -1, 0, 3.2 + rng.next() * 3);
+      // never over a tank, a doorway or a pillar: the whole column must be open wall
+      if (!airAt(west ? r.x : r.x + r.w - 1, 1, Math.floor(wz)) || airAt(west ? r.x - 1 : r.x + r.w, 1, Math.floor(wz))) continue;
+      growthColumn(wx, wz, west ? 1 : -1, 0, Math.min(r.h - 0.2, 3.2 + rng.next() * 3));
     }
   }
-  // incubator heart: a mass of growth clinging to the arena's far wall
-  // (face at z=6), widest at the floor and thinning toward the ceiling
-  for (let i = 0; i < 70; i++) {
-    const y = 1.2 + rng.next() * rng.next() * 4.6;
-    const spread = 6 - (y - 1) * 0.8;
-    const x = 37.5 + (rng.next() - 0.5) * spread;
-    const s = 0.45 + rng.next() * 0.55;
-    cube(pick(GROWTH), x, y, 5.95 + rng.next() * 0.35, s, s * 1.1, s, { ry: rng.next() });
-    if (i % 7 === 0) cube(NODE, x, y + 0.2, 6.35 + rng.next() * 0.2, 0.26, 0.26, 0.26, { flat: true });
+  // incubator heart: a mass of growth clinging to an arena end wall, widest
+  // at the floor and thinning toward the ceiling
+  if (bio.heart) {
+    const { x: hx, z: hz, dir } = bio.heart;
+    for (let i = 0; i < 70; i++) {
+      const y = 1.2 + rng.next() * rng.next() * 4.6;
+      const spread = 6 - (y - 1) * 0.8;
+      const x = hx + (rng.next() - 0.5) * spread;
+      const s = 0.45 + rng.next() * 0.55;
+      cube(pick(GROWTH), x, y, hz + dir * (-0.05 + rng.next() * 0.35), s, s * 1.1, s, { ry: rng.next() });
+      if (i % 7 === 0) cube(NODE, x, y + 0.2, hz + dir * (0.35 + rng.next() * 0.2), 0.26, 0.26, 0.26, { flat: true });
+    }
   }
 
-  // ---- the laboratory's north doorway: a sealed-door frame ---------------
-  {
-    const z = 32.0, y0 = 1, y1 = 4;
-    for (const px of [36.8, 39.2]) cube(FRAME, px, (y0 + y1) / 2, z + 0.1, 0.35, y1 - y0, 0.2);
-    cube(FRAME, 38, y1 + 0.12, z + 0.1, 2.9, 0.3, 0.2);
-    cube(FRAME_LIGHT, 38, y1 + 0.3, z + 0.1, 2.9, 0.06, 0.22);
+  // ---- the authored lab's north doorway: a sealed-door frame -------------
+  if (bio.labDoor) {
+    const { x: lx, z } = bio.labDoor;
+    const y0 = 1, y1 = 4;
+    for (const px of [lx - 1.2, lx + 1.2]) cube(FRAME, px, (y0 + y1) / 2, z + 0.1, 0.35, y1 - y0, 0.2);
+    cube(FRAME, lx, y1 + 0.12, z + 0.1, 2.9, 0.3, 0.2);
+    cube(FRAME_LIGHT, lx, y1 + 0.3, z + 0.1, 2.9, 0.06, 0.22);
   }
 
   // ---- build the instanced meshes ----------------------------------------
@@ -496,11 +557,7 @@ function decorate(level: LevelData): PreviewArt {
     plane.position.set(x, y, z);
     group.add(plane);
   };
-  sign('BIOFOUNDRY', 38, 5.15, 32.03, 7.4, true);
-  for (const [id, r] of level.rooms.entries()) {
-    if (id === 1) continue; // the lab wears the BIOFOUNDRY sign instead
-    sign(ROOMS[id][0], r.cx, 4.5, r.z + 0.03, 4.4, false);
-  }
+  for (const sg of bio.signs) sign(sg.text, sg.x, sg.y, sg.z, sg.w, sg.big);
 
   // ---- the breach sequence ------------------------------------------------
   const breachingCount = (): number => tanks.filter((t) => t.phase === 'agitated' || t.phase === 'breaching').length;
@@ -686,4 +743,7 @@ function showScreen(onStart: () => void, onLeave: () => void, cleared = false): 
   return stop;
 }
 
+/** `?sector4`: the authored map alone, with its own preview screens */
 export const biofoundry: LevelPreview = { generate, decorate, showScreen };
+/** campaign sector 4: scenery + tank breaches for a generated Biofoundry level */
+export { decorate as decorateBiofoundry };

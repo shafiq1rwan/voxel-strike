@@ -16,6 +16,8 @@ export class Input {
   onLockChange: ((locked: boolean) => void) | null = null;
   /** Tab / M — automap toggle */
   onToggleMap: (() => void) | null = null;
+  /** Context action at an optional terminal. */
+  onInteract: (() => void) | null = null;
   /** clicked while the pointer isn't locked (mid-game = recapture the mouse) */
   onUnlockedClick: (() => void) | null = null;
   onFirstInteract: (() => void) | null = null;
@@ -35,6 +37,7 @@ export class Input {
       const num = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code);
       if (num >= 0) this.switchRequest = num;
       if (e.code === 'Tab' || e.code === 'KeyM') this.onToggleMap?.();
+      if (e.code === 'KeyE') this.onInteract?.();
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));

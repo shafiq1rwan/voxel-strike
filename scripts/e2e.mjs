@@ -1,7 +1,8 @@
 /**
- * End-to-end campaign test: plays the critical path of all three sectors —
+ * End-to-end campaign test: plays the critical path of all five sectors —
  * key pickup → locked door → elevator → exit pad — through the intermission
- * screens to the campaign-complete screen. Also verifies enemy aggression,
+ * screens (and the facility terminal between sector 3 and the authored
+ * Biofoundry, sector 4) to the campaign-complete screen. Also verifies enemy aggression,
  * the damage direction indicator, and exploding barrels.
  * Usage: node scripts/e2e.mjs [url]
  */
@@ -133,7 +134,7 @@ try {
   }
   await page.screenshot({ path: `${OUT}/e2e-2-barrel.png` });
 
-  // --- play all three sectors ------------------------------------------------
+  // --- play all five sectors -------------------------------------------------
   const completeLevel = async (sector) => {
     // heal + collect key
     const gotKey = await page.evaluate(async () => {
@@ -212,28 +213,144 @@ try {
     return endState;
   };
 
-  for (let sector = 1; sector <= 3; sector++) {
+  let sector4Occupied = 0;
+  for (let sector = 1; sector <= 5; sector++) {
     const endState = await completeLevel(sector);
-    if (sector < 3) {
+    if (sector < 5) {
       check(endState === 'intermission', `sector ${sector}: reached exit → intermission (state=${endState})`);
       await page.screenshot({ path: `${OUT}/e2e-3-sector${sector}-done.png` });
       // click through to the next sector
       await page.mouse.click(640, 360);
-      await new Promise((r) => setTimeout(r, 1500));
+      if (sector === 3) {
+        // sector 3 → 4 goes through the facility terminal: it types, a click
+        // prints the rest, the next click powers the screen off into sector 4
+        await new Promise((r) => setTimeout(r, 1800));
+        const typing = await page.evaluate(() => ({
+          shown: !!document.querySelector('.term-screen'),
+          text: document.querySelector('.term-body')?.textContent ?? '',
+          state: window.__voxelstrike.state,
+          built: window.__voxelstrike.levelIndex,
+        }));
+        check(typing.shown && typing.state === 'intermission', `sector 3 cleared → facility terminal (state=${typing.state})`);
+        check(typing.text.length > 0 && !typing.text.includes('DESCENDING'), 'the terminal is still typing');
+        check(typing.built === 4, 'sector 4 is set up behind the terminal');
+        await page.screenshot({ path: `${OUT}/e2e-3b-terminal.png` });
+        await page.mouse.click(640, 360); // print the rest
+        await new Promise((r) => setTimeout(r, 200));
+        const full = await page.evaluate(() => ({
+          text: document.querySelector('.term-body')?.textContent ?? '',
+          hint: document.querySelector('.term-hint')?.textContent ?? '',
+          still: !!document.querySelector('.term-screen'),
+        }));
+        check(full.still && full.text.includes('BIOFOUNDRY') && full.text.includes('DESCENDING'), 'a click prints the whole message (and does not leave)');
+        check(/to descend/i.test(full.hint), `then it asks to descend ("${full.hint}")`);
+        const tankLine = full.text.match(/TANKS OCCUPIED \.+ (\d+) OF (\d+)/);
+        check(!!tankLine && !full.text.includes('SCANNING'), `the message reports this run's tanks ("${tankLine?.[0] ?? 'missing'}")`);
+        const counted = await page.evaluate(() => {
+          const t = window.__voxelstrike.level.bio?.tanks ?? [];
+          return [t.filter((q) => q.occupied).length, t.length];
+        });
+        check(!!tankLine && Number(tankLine[1]) === counted[0] && Number(tankLine[2]) === counted[1], `…and they match the generated sector (${counted[0]} of ${counted[1]})`);
+        await new Promise((r) => setTimeout(r, 500)); // re-arm after the skip
+        await page.mouse.click(640, 360); // descend
+        await new Promise((r) => setTimeout(r, 300));
+        check(await page.evaluate(() => document.querySelector('.term-screen')?.classList.contains('off') ?? false), 'descending powers the screen off');
+        await new Promise((r) => setTimeout(r, 1300));
+      } else {
+        await new Promise((r) => setTimeout(r, 1500));
+      }
       await forceLock();
       const info = await page.evaluate(() => {
         const g = window.__voxelstrike;
-        return { idx: g.levelIndex, state: g.state, enemies: g.enemies.aliveCount() };
+        return {
+          idx: g.levelIndex, state: g.state, enemies: g.enemies.aliveCount(),
+          terminal: !!document.querySelector('.term-screen'),
+          save: JSON.parse(localStorage.getItem('voxelstrike-run') || 'null'),
+          theme: g.level.theme, tanks: g.level.bio?.tanks.length ?? 0,
+          occupied: g.level.bio?.tanks.filter((t) => t.occupied).length ?? 0,
+          dormant: g.enemies.list.filter((e) => e.kind === 'vatborn' && e.dormant).length,
+          labFloor: g.world.get(Math.floor(g.level.spawn.x), 0, Math.floor(g.level.spawn.z)) === 24,
+          termTanks: [...document.querySelectorAll('.term-line')].map((l) => l.textContent).find((t) => t.includes('TANKS')) ?? '',
+        };
       });
       check(
-        info.idx === sector + 1 && info.state === 'playing' && info.enemies > 0,
+        info.idx === sector + 1 && info.state === 'playing' && info.enemies > 0 && !info.terminal,
         `sector ${sector + 1} loaded (enemies=${info.enemies})`
       );
+      if (sector === 3) {
+        check(info.theme === 'biofoundry' && info.labFloor, `sector 4 is a generated Biofoundry (theme=${info.theme}, lab floor at spawn=${info.labFloor})`);
+        check(info.tanks >= 4 && info.occupied >= 1 && info.dormant === info.occupied,
+          `specimen tanks placed, a dormant Vatborn in each occupied one (${info.occupied}/${info.tanks}, dormant ${info.dormant})`);
+        check(info.save?.sector === 4, `progress saved at sector 4 (${info.save?.sector})`);
+        sector4Occupied = info.occupied;
+        await page.screenshot({ path: `${OUT}/e2e-3c-sector4.png` });
+      }
+      if (sector === 4) {
+        // sector 4 → 5 is an ordinary intermission: still the Biofoundry, a little harder
+        check(info.theme === 'biofoundry', `sector 5 is still the Biofoundry (theme=${info.theme})`);
+        check(info.occupied > sector4Occupied && info.dormant === info.occupied,
+          `sector 5 fills more tanks (${info.occupied} vs ${sector4Occupied} in sector 4, dormant ${info.dormant})`);
+        check(info.save?.sector === 5, `progress saved at sector 5 (${info.save?.sector})`);
+        await page.screenshot({ path: `${OUT}/e2e-3d-sector5.png` });
+      }
     } else {
-      check(endState === 'won', `sector 3: campaign complete (state=${endState})`);
+      check(endState === 'won', `sector 5: campaign complete (state=${endState})`);
       await page.screenshot({ path: `${OUT}/e2e-4-campaign.png` });
     }
   }
+
+  // --- the Biofoundry is generated fresh every run --------------------------
+  const variety = await page.evaluate(async () => {
+    const g = window.__voxelstrike;
+    const out = [];
+    for (const seed of [12345, 777, 4242]) {
+      g.baseSeed = seed;
+      g.levelIndex = 4;
+      g.buildLevel();
+      g.state = 'playing';
+      await new Promise((r) => setTimeout(r, 300)); // first frame spawns the tank occupants
+      const b = g.level.bio;
+      out.push({
+        sig: g.level.rooms.map((r) => `${r.x},${r.z},${r.w},${r.d}`).join('|'),
+        theme: g.level.theme,
+        tanks: b?.tanks.length ?? 0,
+        occupied: b?.tanks.filter((t) => t.occupied).length ?? 0,
+        dormant: g.enemies.list.filter((e) => e.kind === 'vatborn' && e.dormant).length,
+        door: g.doors.some((d) => d.spec.locked === 'red'),
+        key: g.level.pickups.some((p) => p.kind === 'keyRed'),
+        lift: !!g.level.elevator && !!g.level.exitPad,
+      });
+    }
+    return out;
+  });
+  check(new Set(variety.map((v) => v.sig)).size === variety.length, 'three runs → three different Biofoundry layouts');
+  check(variety.every((v) => v.theme === 'biofoundry' && v.key && v.door && v.lift),
+    'every Biofoundry layout has the keycard → red door → lift → pad phases');
+  check(variety.every((v) => v.tanks >= 4 && v.occupied >= 1 && v.dormant === v.occupied),
+    `every layout has tanks with dormant occupants (${variety.map((v) => `${v.occupied}/${v.tanks}`).join(', ')})`);
+
+  // --- sector 5 is the same Biofoundry, slightly harder ---------------------
+  const harder = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    const sum = { 4: { enemies: 0, occupied: 0 }, 5: { enemies: 0, occupied: 0 } };
+    let theme5 = true;
+    for (const seed of [12345, 777, 4242, 90210]) {
+      for (const sector of [4, 5]) {
+        g.baseSeed = seed;
+        g.levelIndex = sector;
+        g.buildLevel();
+        sum[sector].enemies += g.level.totalEnemies;
+        sum[sector].occupied += g.level.bio?.tanks.filter((t) => t.occupied).length ?? 0;
+        if (sector === 5 && g.level.theme !== 'biofoundry') theme5 = false;
+      }
+    }
+    return { sum, theme5 };
+  });
+  check(harder.theme5, 'sector 5 is always the Biofoundry theme');
+  check(harder.sum[5].occupied > harder.sum[4].occupied,
+    `sector 5 fills more tanks (${harder.sum[5].occupied} vs ${harder.sum[4].occupied} over 4 seeds)`);
+  check(harder.sum[5].enemies > harder.sum[4].enemies,
+    `sector 5 fields more enemies (${harder.sum[5].enemies} vs ${harder.sum[4].enemies} over 4 seeds)`);
 } finally {
   await browser.close();
 }

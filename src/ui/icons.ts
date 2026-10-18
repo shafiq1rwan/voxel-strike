@@ -18,6 +18,7 @@ import { faFlagCheckered } from '@fortawesome/free-solid-svg-icons/faFlagChecker
 import { faRocket } from '@fortawesome/free-solid-svg-icons/faRocket';
 import { faBatteryFull } from '@fortawesome/free-solid-svg-icons/faBatteryFull';
 import { faRightLeft } from '@fortawesome/free-solid-svg-icons/faRightLeft';
+import { faClapperboard } from '@fortawesome/free-solid-svg-icons/faClapperboard';
 
 const C = 'currentColor';
 
@@ -67,6 +68,8 @@ export const ICONS = {
   pad: (size = 18) => fa(faFlagCheckered, C, size),
   /** touch weapon button: tap to cycle */
   swap: (size = 10) => fa(faRightLeft, C, size),
+  /** marks a button that plays a video ad (Poki rewarded revive) */
+  ad: (size = 16) => fa(faClapperboard, C, size),
 };
 
 export type AmmoIcon = 'bullets' | 'shells' | 'rockets' | 'cells';

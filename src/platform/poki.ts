@@ -14,6 +14,7 @@ interface PokiSDKApi {
   gameplayStart(): void;
   gameplayStop(): void;
   commercialBreak(onStart?: () => void): Promise<void>;
+  rewardedBreak(onStart?: () => void): Promise<boolean>;
   measure(category: string, what: string, action: string): void;
 }
 
@@ -75,6 +76,31 @@ export const poki = {
       await s.commercialBreak(onStart);
     } catch {
       // treat a failed ad like no ad
+    }
+  },
+
+  /**
+   * Is a rewarded video possible at all? False outside Poki builds and when an
+   * ad blocker dropped the SDK — hide rewarded offers then rather than show a
+   * button that can never pay out.
+   */
+  adsAvailable(): boolean {
+    return typeof sdk()?.rewardedBreak === 'function';
+  },
+
+  /**
+   * Rewarded video the player chose to watch. `onStart` fires only if an ad
+   * actually plays (mute audio there). Resolves true ONLY when the video was
+   * shown — Poki's rule is no reward otherwise, so a failure, a missing SDK or
+   * a thrown error all resolve false.
+   */
+  async rewardedBreak(onStart: () => void): Promise<boolean> {
+    const s = sdk();
+    if (!s || typeof s.rewardedBreak !== 'function') return false;
+    try {
+      return (await s.rewardedBreak(onStart)) === true;
+    } catch {
+      return false;
     }
   },
 

@@ -85,6 +85,100 @@ try {
   check(await samePage(), 'retry happened without a page reload');
   check((await save()) === null, 'sector 1 is not saved to storage');
 
+  // --- 2b. revive in place (free outside Poki), once per sector attempt -------
+  const fell = await g(() => {
+    const game = window.__voxelstrike;
+    return { x: game.player.pos.x, z: game.player.pos.z, n: game.enemies.list.length };
+  });
+  await die();
+  await waitDeathScreen();
+  const offer = await g(() => {
+    const b = document.querySelector('#revive-btn');
+    return { has: !!b, ad: !!b?.querySelector('svg'), text: b?.textContent ?? '' };
+  });
+  check(offer.has && !offer.ad, `web build offers a free revive, no ad icon ("${offer.text}")`);
+  await clickBtn('#revive-btn');
+  await sleep(300);
+  const rv = await g(() => {
+    const game = window.__voxelstrike;
+    return {
+      state: game.state, dead: game.player.dead, hp: game.player.health, shield: game.player.buffs.shield,
+      x: game.player.pos.x, z: game.player.pos.z, n: game.enemies.list.length, idx: game.levelIndex,
+    };
+  });
+  check(rv.state === 'playing' && !rv.dead && rv.hp === 60 && rv.idx === 1, `revive → playing with 60 hp (hp=${rv.hp})`);
+  check(Math.hypot(rv.x - fell.x, rv.z - fell.z) < 0.6, 'revived where it fell');
+  check(rv.shield > 1.5, `a short spawn shield covers the revive (${rv.shield.toFixed(2)}s)`);
+  check(rv.n === fell.n, 'revive did not rebuild the level');
+  await die();
+  await waitDeathScreen();
+  check(await g(() => !document.querySelector('#revive-btn')), 'second death in the same attempt: no revive');
+
+  // --- 2c. the red keycard is a checkpoint: retry from it, in place -------------
+  await clickBtn('#retry-btn'); // no keycard yet → plain sector retry (gives the revive back)
+  await sleep(400);
+  const atKey = await g(async () => {
+    const game = window.__voxelstrike;
+    // park the welcome party: this checks the respawn, not a fight
+    for (const e of game.enemies.list) if (e.alive) { e.pos.set(4, e.pos.y, 4); e.awake = false; e.state = 'idle'; e.vel.set(0, 0, 0); }
+    game.player.health = 150;
+    game.player.ammo.bullets = 90;
+    const p = game.player.pos;
+    game.pickups.add({ kind: 'keyRed', x: p.x, y: p.y, z: p.z }, game.world);
+    await new Promise((r) => setTimeout(r, 400));
+    // one enemy dies after the key: it must stay dead after the keycard retry
+    const victim = game.enemies.list.findIndex((e) => e.alive);
+    game.enemies.list[victim].damage(9999, 0, 0, game);
+    return {
+      key: game.player.hasKey('red'), x: p.x, z: p.z, victim, n: game.enemies.list.length,
+      msg: document.querySelector('#messages')?.textContent ?? '',
+    };
+  });
+  check(atKey.key && /checkpoint/i.test(atKey.msg), 'taking the red keycard announces a checkpoint');
+  await g(() => {
+    const game = window.__voxelstrike;
+    game.player.spawnAt(game.level.spawn.x, game.level.spawn.y, game.level.spawn.z); // wander off
+    game.player.ammo.bullets = 3; // and burn through the ammo
+  });
+  await die();
+  await waitDeathScreen();
+  const ks = await g(() => ({
+    retry: document.querySelector('#retry-btn')?.textContent ?? '',
+    restart: document.querySelector('#restart-btn')?.textContent ?? '',
+    revive: !!document.querySelector('#revive-btn'),
+  }));
+  check(/keycard/i.test(ks.retry) && /restart sector 1/i.test(ks.restart), `death after the keycard: "${ks.retry}" + "${ks.restart}"`);
+  check(ks.revive, 'the revive is back after the sector retry');
+  await page.screenshot({ path: `${OUT}/checkpoint-keycard-death.png` });
+  await clickBtn('#retry-btn');
+  await sleep(400);
+  const kr = await g((victim) => {
+    const game = window.__voxelstrike;
+    return {
+      state: game.state, dead: game.player.dead, hp: game.player.health, key: game.player.hasKey('red'),
+      x: game.player.pos.x, z: game.player.pos.z, bullets: game.player.ammo.bullets,
+      victimDead: !game.enemies.list[victim].alive, n: game.enemies.list.length, idx: game.levelIndex, seed: game.baseSeed,
+    };
+  }, atKey.victim);
+  check(kr.state === 'playing' && !kr.dead && kr.idx === 1 && kr.seed === s1.seed, `retry from keycard → playing sector 1 (state=${kr.state})`);
+  check(Math.hypot(kr.x - atKey.x, kr.z - atKey.z) < 0.6, 'back where the keycard was taken');
+  check(kr.key, 'still holding the red keycard');
+  check(kr.hp >= 60 && kr.bullets >= 90, `gear no worse than at the keycard (hp=${kr.hp}, bullets=${kr.bullets})`);
+  check(kr.victimDead && kr.n === atKey.n, 'in place: an enemy killed after the key stays dead (no rebuild)');
+  check(await samePage(), 'keycard retry happened without a page reload');
+  // Restart sector throws the keycard checkpoint away
+  await die();
+  await waitDeathScreen();
+  await clickBtn('#restart-btn');
+  await sleep(400);
+  const rs = await g(() => ({ state: window.__voxelstrike.state, key: window.__voxelstrike.player.hasKey('red'), score: window.__voxelstrike.score }));
+  check(rs.state === 'playing' && !rs.key && rs.score === 0, 'Restart sector → the whole sector again, keycard gone');
+  await die();
+  await waitDeathScreen();
+  check(await g(() => /retry sector 1/i.test(document.querySelector('#retry-btn')?.textContent ?? '')), 'after a restart the retry is the sector again');
+  await clickBtn('#retry-btn');
+  await sleep(400);
+
   // --- 3. clear sector 1 → intermission saves sector 2 -------------------------
   await g(() => window.__voxelstrike.win());
   await sleep(200);
@@ -148,7 +242,7 @@ try {
   check(!restored.overlay && restored.pause, 'context restored → overlay gone, pause menu shown');
 
   // --- 8. finish the campaign → save cleared → new layout in place ------------
-  await g(() => { const game = window.__voxelstrike; game.state = 'playing'; game.hud.hideScreen(); game.levelIndex = 3; game.win(); });
+  await g(() => { const game = window.__voxelstrike; game.state = 'playing'; game.hud.hideScreen(); game.levelIndex = 5; game.win(); });
   await sleep(200);
   check((await save()) === null, 'campaign complete clears the save');
   await sleep(1300); // win screen arms after 1.2s

@@ -1,6 +1,6 @@
 # Sector 4: Biofoundry monster behavior
 
-Status: design proposal, not implemented. The `?sector4` development preview still uses the existing enemies. These reference images and mechanics do not change the campaign or Poki build. All timings, health values, and damage below are starting points for playtesting, not measured balance results.
+Status: design proposal, not implemented. The Biofoundry is campaign sector 4 (2026-10-18), generated fresh each run, and uses the existing enemies plus the tank Vatborn; the Spitter, Carapace and Broodkeeper below are still proposals and are not in the campaign or the Poki build. All timings, health values, and damage below are starting points for playtesting, not measured balance results.
 
 ## Roster and references
 

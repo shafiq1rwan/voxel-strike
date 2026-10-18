@@ -3,10 +3,31 @@ import { WeaponSystem, WEAPONS } from '../weapons/weapons';
 import { WeaponId } from '../types';
 import { GameSettings, RESOLUTIONS } from '../core/settings';
 import { ICONS, AmmoIcon } from './icons';
+import type { OverloadReward } from '../entities/overload';
+import { typeLines, type TerminalLine, type TerminalRun } from './terminal';
 
 const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
 
 const CSS = `
+#overload-action { position:absolute; left:50%; bottom:22%; transform:translateX(-50%); max-width:65vw; padding:10px 16px; border:1px solid #34d0ff; color:#8ee8ff; background:rgba(5,10,18,.9); font-weight:bold; font-size:13px; pointer-events:auto; touch-action:manipulation; z-index:7; }
+#overload-action[hidden] { display:none; }
+#overload-action:disabled { pointer-events:none; opacity:.9; }
+.screen.overload-screen { box-sizing:border-box; padding:16px; overflow:hidden; }
+.overload-screen .panel { box-sizing:border-box; display:flex; flex-direction:column; width:min(700px,100%); max-width:100%; max-height:100%; min-height:0; padding:28px; overflow:hidden; }
+.overload-screen.offer-mode .panel { width:min(520px,100%); }
+.overload-screen .panel::before { top:0; left:0; }
+.overload-screen .panel::after { bottom:0; right:0; }
+.overload-content { min-height:0; overflow-x:hidden; overflow-y:auto; scrollbar-gutter:stable both-edges; overscroll-behavior:contain; touch-action:pan-y; }
+.screen.overload-screen .offer-label { color:#8a94a8; font-size:11px; letter-spacing:.15em; margin:0 0 8px; }
+.screen.overload-screen h1 { font-size:30px; letter-spacing:3px; color:#65e5ff; }
+.overload-screen .screen-btns { flex-direction:row; flex-wrap:wrap; justify-content:center; align-items:stretch; gap:10px; margin-top:16px; }
+.overload-screen .reward { flex:1 1 150px; max-width:190px; min-width:0; padding:18px 12px; letter-spacing:.03em; white-space:normal; }
+.overload-screen .reward-icon { display:flex; align-items:center; justify-content:center; gap:8px; height:32px; margin-bottom:12px; }
+.overload-screen small { display:block; margin-top:8px; font-size:12px; line-height:1.5; font-weight:normal; color:#cfd6e4; }
+.overload-screen .tradeoff { color:#ffd028; }
+.screen.overload-screen .offer-summary { font-size:16px; line-height:1.6; color:#cfd6e4; margin:16px 0 24px; }
+.overload-screen button:disabled { opacity:.4; cursor:default; }
+@media(max-height:450px) { .overload-screen .panel { padding:14px; } .screen.overload-screen h1 { font-size:22px; } .overload-screen p { font-size:12px; } .overload-screen .reward { width:170px; padding:8px; font-size:12px; } .overload-screen small { margin-top:4px; } }
 #hud, #hud * { box-sizing: border-box; font-family: 'Courier New', Courier, monospace; }
 #hud {
   position: fixed; inset: 0; pointer-events: none; color: #cfd6e4;
@@ -29,6 +50,75 @@ const CSS = `
 .hpanel { background: rgba(8,10,16,.74); border: 1px solid #262c38; box-shadow: 0 2px 0 rgba(0,0,0,.35); }
 .ico { display: block; filter: drop-shadow(1px 1px 0 rgba(0,0,0,.75)); }
 @keyframes pulse { from { opacity: 1; } to { opacity: .45; } }
+/* ---------------- facility terminal (sector 3 -> 4 descent) ---------------- */
+.term-screen {
+  position: fixed; inset: 0; z-index: 12; background: #05060a; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  font-family: 'Courier New', Courier, monospace;
+}
+.term {
+  position: relative; width: min(860px, 100%); max-height: 100%;
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid #262c38; background: #070a10;
+  box-shadow: inset 0 0 60px rgba(52,208,255,.07);
+}
+.term::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.28) 0 1px, transparent 1px 3px);
+  animation: termflicker 3.2s infinite steps(1);
+}
+.term-head {
+  display: flex; justify-content: space-between; gap: 16px; padding: 7px 14px;
+  font-size: 11px; font-weight: bold; letter-spacing: .2em; color: #05060a; background: #566076;
+}
+.term-body {
+  padding: 16px 18px 6px; min-height: 0; overflow: hidden; text-align: left;
+  font-size: 15px; line-height: 1.5; letter-spacing: .04em; white-space: pre-wrap;
+  text-shadow: 0 0 6px rgba(124,224,255,.3);
+  /* the whole message's height up front: the box never grows (and re-centres) while it types */
+  min-height: calc(var(--term-lines, 12) * 1.5em + 22px);
+}
+.term-line { min-height: 1.5em; }
+.term-line.cmd { color: #8ee8ff; }
+.term-line.out { color: #a9b3c6; }
+.term-line.warn { color: #ffd028; text-shadow: 0 0 6px rgba(255,208,40,.35); }
+.term-line.final { color: #f0f2f6; font-weight: bold; }
+.term-caret {
+  display: inline-block; width: .6em; height: 1.05em; margin-left: 2px; vertical-align: -.15em;
+  background: #8ee8ff; animation: termcaret .8s steps(1) infinite;
+}
+.term-foot { display: flex; justify-content: flex-end; padding: 6px 14px 10px; font-size: 11px; letter-spacing: .22em; color: #566076; }
+.term-hint.ready { color: #ffd028; animation: pulse .7s infinite alternate; }
+.term-screen.glitch .term { animation: termglitch .22s steps(2) 1; }
+.term-screen.off { background: #000; }
+.term-screen.off .term { animation: crtoff .48s cubic-bezier(.6,0,.9,.4) forwards; }
+.transit-fade {
+  position: fixed; inset: 0; z-index: 12; pointer-events: none; background: #000;
+  animation: transitfade .9s ease-out forwards;
+}
+@keyframes termcaret { 0% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes termflicker { 0% { opacity: .9; } 50% { opacity: 1; } 97% { opacity: .7; } }
+@keyframes termglitch {
+  0% { transform: translate(-6px, 2px) skewX(-4deg); filter: hue-rotate(60deg) saturate(2); }
+  50% { transform: translate(5px, -1px) skewX(3deg); filter: hue-rotate(-40deg); }
+  100% { transform: none; filter: none; }
+}
+@keyframes crtoff {
+  0% { transform: scale(1, 1); filter: brightness(1); }
+  55% { transform: scale(1, .006); filter: brightness(3); }
+  100% { transform: scale(0, .006); filter: brightness(6); }
+}
+@keyframes transitfade {
+  0% { opacity: 1; background: #000; }
+  15% { opacity: 1; background: rgba(120,70,190,.55); }
+  100% { opacity: 0; background: rgba(40,20,70,0); }
+}
+@media (max-height: 460px) {
+  .term-screen { padding: 8px; }
+  .term-head { font-size: 9px; padding: 4px 10px; letter-spacing: .14em; }
+  .term-body { font-size: 11.5px; line-height: 1.32; padding: 8px 12px 2px; min-height: calc(var(--term-lines, 12) * 1.32em + 10px); }
+  .term-foot { font-size: 9px; padding: 3px 10px 6px; }
+}
 /* top-left: vitals */
 #vitals { position: absolute; top: 12px; left: 14px; display: flex; gap: 8px; }
 .pill { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 10px; }
@@ -191,6 +281,20 @@ const CSS = `
 .screen-btns { margin-top: 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .tbtn-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 .screen .keyhint { margin-top: 12px; font-size: 11px; letter-spacing: .14em; color: #566076; }
+/* death screen: revive + retry share one row at the same size (Poki: a
+   rewarded button needs an equal-size normal button beside it, and is never
+   the green one — it wears plain steel with a white label) */
+.death-main.pair { align-items: stretch; }
+.death-main.pair .tbtn { flex: 1 1 0; min-width: 230px; font-size: 14px; padding: 14px 20px; }
+.tbtn-revive {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  color: #f0f2f6; border-color: #8a94a8;
+}
+.tbtn-revive:hover { border-color: #f0f2f6; background: rgba(240,242,246,.08); }
+.tbtn-revive .ico { flex: none; }
+.death-main .tbtn { white-space: nowrap; }
+.tbtn-revive.spent { color: #566076; border-color: #262c38; cursor: default; }
+.tbtn-revive.spent:hover { background: rgba(10,13,20,.72); }
 .screen.arming { cursor: default; }
 .screen.arming .tbtn, .screen.arming .prompt { opacity: .35; }
 .panel {
@@ -313,6 +417,7 @@ body.touch-mode #hint { bottom: 12px; max-width: 46vw; font-size: 11px; padding:
 
 /* ---------------- small screens ---------------- */
 @media (max-width: 760px) {
+  .death-main.pair .tbtn { min-width: 0; font-size: 12px; padding: 11px 12px; letter-spacing: .12em; }
   #weaponname { font-size: 11px; letter-spacing: 2px; }
   #ammo .value { font-size: 26px; }
   #objective { max-width: 40vw; }
@@ -358,6 +463,24 @@ body.touch-mode #hint { bottom: 12px; max-width: 46vw; font-size: 11px; padding:
   color: #8a94a8; text-transform: uppercase;
 }
 .title-mission { margin-top: 14px; font-size: 15px; color: #cfd6e4; letter-spacing: .06em; }
+/* "NEW SECTOR" banner: a hazard tag on a violet strip — the Biofoundry's light */
+.new-sector {
+  margin-top: 16px; display: inline-flex; align-items: stretch; max-width: 100%;
+  border: 1px solid #8a4fc4; background: linear-gradient(90deg, rgba(120,60,180,.38), rgba(40,20,70,.55));
+  box-shadow: 0 0 22px rgba(205,90,255,.22), inset 0 0 12px rgba(205,90,255,.12);
+}
+.ns-tag {
+  flex: none; display: flex; align-items: center; padding: 6px 12px;
+  background: #ffd028; color: #0a0c12; font-weight: bold; font-size: 12px; letter-spacing: .22em;
+  animation: nsglow 1.4s ease-in-out infinite alternate;
+}
+.ns-text {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0 9px; padding: 6px 14px;
+  font-size: 12px; letter-spacing: .16em; color: #e6d6ff; text-shadow: 0 0 8px rgba(205,90,255,.45);
+}
+.ns-text b { color: #f0f2f6; }
+.ns-text i { font-style: normal; color: #b68ae6; }
+@keyframes nsglow { from { box-shadow: 0 0 0 rgba(255,208,40,0); } to { box-shadow: 0 0 14px rgba(255,208,40,.55); } }
 #pause-logo {
   width: min(58vw, 400px); image-rendering: pixelated;
   filter: drop-shadow(0 5px 0 rgba(0,0,0,.55));
@@ -464,6 +587,9 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   font-size: 11px; letter-spacing: .12em; color: #566076;
 }
 @media (max-height: 560px) {
+  .new-sector { margin-top: 9px; }
+  .ns-tag { font-size: 10px; padding: 4px 9px; letter-spacing: .16em; }
+  .ns-text { font-size: 10px; padding: 4px 10px; letter-spacing: .1em; }
   .title-brief, .howto { margin-top: 16px; }
   .title-menu { margin-top: 18px; }
   .tscreen { padding: 4px 0 7px; }
@@ -489,11 +615,13 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   #settings-screen .sethint { font-size: 9px; letter-spacing: .04em; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .screen .prompt, #hp.low .value, #obj-main.flash { animation: none; }
+  .screen .prompt, #hp.low .value, #obj-main.flash, .ns-tag { animation: none; }
 }
 `;
 
 export class HUD {
+  onOverloadAction: (() => void) | null = null;
+  private overloadAction!: HTMLButtonElement;
   private root: HTMLElement;
   private hpEl!: HTMLElement;
   private hpBox!: HTMLElement;
@@ -533,6 +661,8 @@ export class HUD {
   private hitTimer: number | null = null;
   private logoStop: (() => void) | null = null;
   private titleKey: ((ev: KeyboardEvent) => void) | null = null;
+  /** the facility terminal's typing run, if one is on screen */
+  private termRun: TerminalRun | null = null;
 
   constructor(parent: HTMLElement) {
     const style = document.createElement('style');
@@ -651,12 +781,12 @@ export class HUD {
   }
 
   updateWeapon(w: WeaponSystem): void {
-    this.weaponNameEl.textContent = WEAPONS[w.current].name;
+    this.weaponNameEl.textContent = w.definition().name;
     // touch weapon button (mounted by TouchControls in touch mode)
     const tNum = this.root.querySelector('#tweapon-num');
     const tName = this.root.querySelector('#tweapon-name');
     if (tNum) tNum.textContent = String(ORDER.indexOf(w.current) + 1);
-    if (tName) tName.textContent = WEAPONS[w.current].name;
+    if (tName) tName.textContent = w.focusedShotgun && w.current === 'shotgun' ? 'FOCUSED' : WEAPONS[w.current].name;
     const slots = this.slotsEl.querySelectorAll('.slot');
     ORDER.forEach((id, i) => {
       slots[i].classList.toggle('owned', w.has(id));
@@ -670,6 +800,46 @@ export class HUD {
     this.messagesEl.appendChild(div);
     while (this.messagesEl.children.length > 4) this.messagesEl.firstChild?.remove();
     setTimeout(() => div.remove(), 3600);
+  }
+
+  setOverloadAction(text: string, enabled = false): void {
+    if (!this.overloadAction) {
+      this.overloadAction = document.createElement('button');
+      this.overloadAction.id = 'overload-action';
+      this.overloadAction.addEventListener('mousedown', (e) => e.stopPropagation());
+      this.overloadAction.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+      this.overloadAction.addEventListener('click', (e) => { e.stopPropagation(); this.onOverloadAction?.(); });
+      this.root.appendChild(this.overloadAction);
+    }
+    this.overloadAction.hidden = !text;
+    this.overloadAction.disabled = !enabled;
+    if (this.overloadAction.textContent !== text) this.overloadAction.textContent = text;
+  }
+
+  showOverload(ready: boolean, availability: Record<OverloadReward, boolean>, ammo: string,
+    onStart: () => void, onReward: (reward: OverloadReward) => void, onBack: () => void): void {
+    const rewards = `
+      <button id="overload-focus" class="tbtn reward" ${availability.focus ? '' : 'disabled'} title="Shotgun modification for this run. Requires the shotgun; cannot stack."><span class="reward-icon">${ICONS.shells(28)}</span>FOCUSED SHOTGUN<small>${availability.focus ? 'Tighter spread<br><span class="tradeoff">Slower firing</span>' : 'Unavailable'}</small></button>
+      <button id="overload-repair" class="tbtn reward" ${availability.repair ? '' : 'disabled'} title="One-time refill, capped at 100 health and armor."><span class="reward-icon">${ICONS.health(26)}${ICONS.armor(26)}</span>FIELD REPAIR<small>${availability.repair ? '+25 HP · +15 armor' : 'Full'}</small></button>
+      <button id="overload-ammo" class="tbtn reward" ${availability.ammo ? '' : 'disabled'} title="One-time refill for your equipped weapon, up to its ammo cap."><span class="reward-icon">${ammo.includes('shells') ? ICONS.shells(28) : ammo.includes('rockets') ? ICONS.rockets(28) : ammo.includes('cells') ? ICONS.cells(28) : ICONS.bullets(28)}</span>AMMO CACHE<small>${availability.ammo ? ammo : 'Full'}</small></button>`;
+    const handlers: Record<string, () => void> = { '#overload-back': onBack };
+    if (ready) {
+      handlers['#overload-focus'] = () => onReward('focus');
+      handlers['#overload-repair'] = () => onReward('repair');
+      handlers['#overload-ammo'] = () => onReward('ammo');
+    } else handlers['#overload-start'] = onStart;
+    this.showButtonScreen(`
+      <div class="overload-content">
+        ${ready ? '' : '<p class="offer-label">OPTIONAL FIGHT</p>'}
+        <h1>${ready ? 'CHOOSE ONE' : 'OVERLOAD'}</h1>
+        ${ready ? `<div class="screen-btns">${rewards}</div>` : '<p class="offer-summary">Defeat <b>2 waves of enemies.</b><br>Pick one reward: shotgun upgrade, repair or ammo.</p>'}
+        <div class="screen-btns">${ready ? '' : '<button id="overload-start" class="tbtn tbtn-primary">Start fight</button>'}<button id="overload-back" class="tbtn">${ready ? 'Later' : 'Not now'}</button></div>
+      </div>
+    `, handlers, onBack, 250, `overload-screen ${ready ? 'reward-mode' : 'offer-mode'}`);
+    const keys = this.titleKey;
+    if (keys) window.removeEventListener('keydown', keys);
+    this.titleKey = (e) => { if (e.code === 'Escape') onBack(); else keys?.(e); };
+    window.addEventListener('keydown', this.titleKey);
   }
 
   /** objective tracker: step icon + text in its color; `flash` pops it on a change */
@@ -832,6 +1002,8 @@ export class HUD {
     onContinue?: () => void;
     /** omitted on platforms without co-op (Poki build) */
     onCoop?: () => void;
+    /** "NEW SECTOR" banner for the Biofoundry (until the player has reached it) */
+    newSector?: boolean;
     onSettings: () => void;
   }): void {
     this.hideScreen();
@@ -857,7 +1029,11 @@ export class HUD {
       <div class="title-center">
         <canvas id="title-logo"></canvas>
         <div class="title-tag">A Retro Voxel Shooter</div>
-        <div class="title-mission">Three sectors down. One way out.</div>
+        <div class="title-mission">Five sectors down. One way out.</div>
+        ${opts.newSector ? `<div id="new-sector" class="new-sector" role="note">
+          <span class="ns-tag">NEW SECTOR</span>
+          <span class="ns-text"><b>THE BIOFOUNDRY</b><i>&middot;</i>SECTORS 4&ndash;5<i>&middot;</i>DON'T WAKE THE TANKS</span>
+        </div>` : ''}
         <div class="title-menu">
           ${cont
             ? `<button id="continue-btn" class="tbtn tbtn-primary">Continue &middot; Sector ${cont}</button>`
@@ -1006,17 +1182,62 @@ export class HUD {
     this.screenEl = el;
   }
 
-  /** solo death: retry the sector from its checkpoint, or start over */
-  showDeath(stats: string, sector: number, onRetry: () => void, onNewRun: () => void): void {
+  /**
+   * Solo death. The main retry is from the keycard when one was taken this
+   * sector (in place, the world as you left it), else from the sector start.
+   * `revive` offers getting up where you fell, once per sector attempt:
+   * 'ad' = a Poki rewarded video (clapperboard icon, says so up front),
+   * 'free' = other builds. Poki's rule for rewarded buttons: never the green
+   * one, and an equal-size normal button beside it — that is the retry.
+   * Enter/Space always means retry, never the ad.
+   */
+  showDeath(o: {
+    stats: string;
+    sector: number;
+    keycard: boolean;
+    revive: 'ad' | 'free' | null;
+    onRetry: () => void;
+    onRestart: () => void;
+    onRevive: () => void;
+    onNewRun: () => void;
+  }): void {
+    const retryLabel = o.keycard ? 'Retry from keycard' : `Retry sector ${o.sector}`;
+    const revive = o.revive
+      ? `<button id="revive-btn" class="tbtn tbtn-revive">${o.revive === 'ad' ? `${ICONS.ad(15)}<span>Revive &middot; Watch ad</span>` : '<span>Revive here</span>'}</button>`
+      : '';
+    const hints: string[] = [];
+    if (o.revive) hints.push(o.revive === 'ad' ? 'Revive: watch a video, get up where you fell (once per sector)' : 'Revive: get up where you fell (once per sector)');
+    hints.push(o.keycard ? 'Retry: back at the keycard with the gear you had' : 'Retry: the sector restarts with the gear you brought in');
+    hints.push('ENTER / SPACE to retry');
     this.showButtonScreen(`
       <h1>YOU DIED</h1>
-      <p>${stats}</p>
+      <p>${o.stats}</p>
       <div class="screen-btns">
-        <button id="retry-btn" class="tbtn tbtn-primary">Retry sector ${sector}</button>
-        <div class="tbtn-row"><button id="newrun-btn" class="tbtn tbtn-quiet">New run</button></div>
+        <div class="tbtn-row death-main${o.revive ? ' pair' : ''}">
+          ${revive}
+          <button id="retry-btn" class="tbtn tbtn-primary">${retryLabel}</button>
+        </div>
+        <div class="tbtn-row">
+          ${o.keycard ? `<button id="restart-btn" class="tbtn tbtn-quiet">Restart sector ${o.sector}</button>` : ''}
+          <button id="newrun-btn" class="tbtn tbtn-quiet">New run</button>
+        </div>
       </div>
-      <div class="keyhint">You restart with the gear you entered the sector with &middot; ENTER / SPACE to retry</div>
-    `, { '#retry-btn': onRetry, '#newrun-btn': onNewRun }, onRetry);
+      <div class="keyhint">${hints.join(' &middot; ')}</div>
+    `, {
+      '#retry-btn': o.onRetry,
+      '#restart-btn': o.onRestart,
+      '#revive-btn': o.onRevive,
+      '#newrun-btn': o.onNewRun,
+    }, o.onRetry);
+  }
+
+  /** the rewarded video didn't play: say so and take the offer off the screen */
+  reviveUnavailable(): void {
+    const btn = this.screenEl?.querySelector('#revive-btn') as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span>No video available</span>';
+    btn.classList.add('spent');
   }
 
   /** after an ad the desktop needs a fresh click to re-capture the mouse */
@@ -1275,8 +1496,89 @@ export class HUD {
     window.addEventListener('keydown', this.titleKey);
   }
 
+  /**
+   * Facility terminal between sectors: the lines type out (any click / Enter /
+   * Space prints the rest at once), then one more press descends — a short
+   * glitch, the screen collapses like a CRT switching off, and a violet-tinted
+   * fade reveals the new sector, which `onDone` starts underneath it.
+   * `onContinue` runs inside that click, a fresh gesture, so the game can
+   * grab pointer lock there even right after an ad.
+   */
+  showTerminal(o: {
+    title: string;
+    node: string;
+    lines: TerminalLine[];
+    touch: boolean;
+    onChar: () => void;
+    onContinue: () => void;
+    onPowerOff: () => void;
+    onDone: () => void;
+  }): void {
+    this.hideScreen();
+    const el = document.createElement('div');
+    el.className = 'term-screen';
+    el.innerHTML = `
+      <div class="term">
+        <div class="term-head"><span>${o.title}</span><span>${o.node}</span></div>
+        <div class="term-body" style="--term-lines:${o.lines.length}"></div>
+        <div class="term-foot"><span class="term-hint">${o.touch ? 'TAP' : 'CLICK'} TO SKIP</span></div>
+      </div>`;
+    document.body.appendChild(el);
+    this.screenEl = el;
+    this.root.style.visibility = 'hidden';
+    const hint = el.querySelector('.term-hint') as HTMLElement;
+    let armed = false;
+    let leaving = false;
+    // the click that opened this screen can't also skip it
+    window.setTimeout(() => (armed = true), 400);
+    const run = typeLines(el.querySelector('.term-body') as HTMLElement, o.lines, {
+      msPerChar: 14,
+      startDelay: 450,
+      onChar: o.onChar,
+      onDone: () => {
+        hint.textContent = `${o.touch ? 'TAP' : 'CLICK'} TO DESCEND`;
+        hint.classList.add('ready');
+        // a skip click must not also descend
+        armed = false;
+        window.setTimeout(() => (armed = true), 350);
+      },
+    });
+    this.termRun = run;
+    const press = (): void => {
+      if (!armed || leaving) return;
+      if (!run.done) {
+        run.finish();
+        return;
+      }
+      leaving = true;
+      o.onContinue();
+      el.classList.add('glitch');
+      window.setTimeout(() => {
+        el.classList.add('off');
+        o.onPowerOff();
+      }, 220);
+      window.setTimeout(() => {
+        if (this.screenEl !== el) return; // something else took the screen over
+        this.hideScreen();
+        const fade = document.createElement('div');
+        fade.className = 'transit-fade';
+        document.body.appendChild(fade);
+        fade.addEventListener('animationend', () => fade.remove());
+        window.setTimeout(() => fade.remove(), 1500);
+        o.onDone();
+      }, 220 + 480);
+    };
+    el.addEventListener('click', press);
+    this.titleKey = (ev: KeyboardEvent) => {
+      if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') press();
+    };
+    window.addEventListener('keydown', this.titleKey);
+  }
+
   hideScreen(): void {
     this.root.style.visibility = 'visible';
+    this.termRun?.stop();
+    this.termRun = null;
     this.logoStop?.();
     this.logoStop = null;
     if (this.titleKey) {
@@ -1316,11 +1618,12 @@ export class HUD {
     html: string,
     handlers: Record<string, () => void>,
     onEnter: () => void,
-    armMs = 700
+    armMs = 700,
+    screenClass = ''
   ): void {
     this.hideScreen();
     const el = document.createElement('div');
-    el.className = 'screen arming';
+    el.className = `screen arming ${screenClass}`.trim();
     el.style.cursor = 'default';
     el.innerHTML = `<div class="panel">${html}</div>`;
     document.body.appendChild(el);

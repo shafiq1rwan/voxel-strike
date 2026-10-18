@@ -2,7 +2,7 @@
 
 Status: **implemented 2026-10-18** in [enemies.ts](../src/entities/enemies.ts) (rigs, `SCHED` phases, target/facing lock, `meleeStrike`, swept `sweepCommitted` moves, `painAllowed`, planted separation). The snapshot format in `netplay.ts` was not extended: clients derive phase from state + time with the same `SCHED` table, which covers every cue except a charge that ends early (that arrives as a state change). Browser validation from the list at the end is still to be run. Design created 2026-10-18 from the implemented enemy rigs and AI in [enemies.ts](../src/entities/enemies.ts), projectile handling in [projectiles.ts](../src/entities/projectiles.ts), and the Sector 4 tank controller in [biofoundry.ts](../src/preview/biofoundry.ts).
 
-Scope: improve the existing **Husk, Arc Sentinel, Ticker and Brute** used in the three-sector campaign and Biofoundry preview. Include **Vatborn**, which is implemented only in the Sector 4 preview. The earlier Spitter, Carapace and Broodkeeper concepts are separate proposals, not the current implemented roster. Sector 5 remains an environment concept; these designs do not assume it is playable.
+Scope: improve the existing **Husk, Arc Sentinel, Ticker and Brute** used in the campaign (now five sectors) and the Biofoundry. Include **Vatborn**, the tank specimen of the Biofoundry sectors (4–5, generated) and the `?sector4` preview map. The earlier Spitter, Carapace and Broodkeeper concepts are separate proposals, not the current implemented roster. Sector 5 remains an environment concept; these designs do not assume it is playable.
 
 ## Roster and visual references
 
@@ -39,7 +39,7 @@ Rig layout:
 - Ticker retains six alternating leg motions. Add two lid pivots with hazard-band parts attached to their lids.
 - Models face local **-Z**. Vatborn's anatomical right is local **+X**, viewer-left in a front view. Preserve that side in every animation.
 - Use six or seven colors per enemy. Amber identifies warm attack cues, cyan identifies the Sentinel, and the Vatborn retains its small green specimen mark. Bone plates are ordinary damageable decoration.
-- Use existing full-bright faces for eyes/cores. Model glow does not require an additional persistent dynamic light per enemy. Check silhouettes and cues at the game's actual 240-line render height.
+- Use existing full-bright faces for eyes/cores. Model glow does not require an additional persistent dynamic light per enemy. Check silhouettes and cues at the chunkiest common render height, 240 lines (defaults are 480 on desktop and 320 on touch).
 
 ## Baseline and proposed tuning
 
@@ -178,7 +178,7 @@ superseded by a compact brace and a forward rake aligned with impact.
 
 **Art simplification:** omit separate finger and knuckle plates in the image. Use one box per fist. Do not give the Brute the Vatborn's restraint cuff/bolt.
 
-## Vatborn — Sector 4 preview only
+## Vatborn — Biofoundry sectors (4–5) and the `?sector4` preview
 
 ![Vatborn upgrade](enemy-upgrade-vatborn.png)
 

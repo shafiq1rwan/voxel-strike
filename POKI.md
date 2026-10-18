@@ -34,12 +34,12 @@ bundle works from Poki's CDN path as-is.
 | | Regular build | Poki build |
 |---|---|---|
 | Poki SDK | not loaded | `<script src="https://game-cdn.poki.com/scripts/v2/poki-sdk.js">` in `<head>` |
-| Co-op | title button + `?role=…&room=…` auto-join | button removed, URL auto-join ignored |
+| Co-op | hidden from the title like Poki (`?coop` shows the button for development) + `?role=…&room=…` auto-join | button removed, URL auto-join ignored |
 | PWA | web manifest + service worker | both stripped (`sw.js` and `manifest.webmanifest` are deleted from the output) |
 | Touch fullscreen / orientation lock | requested on start | skipped (Poki's page owns fullscreen around the iframe) |
 | Arrow keys / space / wheel | normal | `preventDefault` so they can't scroll the Poki page |
 | Leaving co-op (partner disconnect, co-op campaign end) | navigates to the bare path (drops `?role`/`?room`) | `location.reload()` (keeps Poki's iframe query params; co-op is hidden on Poki anyway) |
-| `public/marketing/` (if present) | copied (unused) | deleted from the output (store art goes to the Poki dashboard, not the game bundle; the folder isn't in the repo today) |
+| `public/marketing/` | copied (unused) | deleted from the output (store art goes to the Poki dashboard, not the game bundle; holds the thumbnail candidates and their prompt notes) |
 | `THIRD-PARTY-NOTICES.txt` | shipped | shipped (Font Awesome CC BY 4.0 credit for the HUD icons — keep it) |
 
 The vite plugin `pokiPlugin` in [`vite.config.ts`](vite.config.ts) handles the
@@ -52,6 +52,7 @@ SDK tag and the stripped files.
 | `PokiSDK.init()` | First thing in `main.ts`, before the game is constructed. The game continues whether init resolves or rejects. |
 | `PokiSDK.gameLoadingFinished()` | Right after `new Game()`: the level is generated, meshed, and the title screen is up. |
 | `PokiSDK.gameplayStart()` / `gameplayStop()` | Driven from `Game.frame()` with `poki.setPlaying(state === 'playing')`. Only transitions reach the SDK, so pause menu, pointer-lock loss, WebGL context loss, death, and intermission all stop gameplay, and every route back into play starts it. |
+| `PokiSDK.rewardedBreak()` | Only when the player presses **Revive · Watch ad** on the death screen (`Game.requestRevive()`). Gameplay is already stopped (state `dead`); audio is muted while the video plays and always restored after. The player revives in place **only if it resolves `true`** — otherwise the button turns into a disabled "No video available" and nothing is granted. Once per sector attempt (a retry gives it back). The offer is hidden when `poki.adsAvailable()` is false (ad blocker), so it never shows a button that can't pay out. The button carries the clapperboard icon, says "Watch ad" before the call, is steel-grey (never the green/primary style) and sits beside the equal-size yellow retry. After a watched video desktop shows READY — click to continue. It is not also a `commercialBreak`. |
 | `PokiSDK.commercialBreak()` | At every natural break, via `Game.afterBreak()`: starting or continuing a run from the title, each new sector (intermission click), retrying a sector or starting a new run after death, *Play a new layout* after the campaign, and resuming from the pause menu. Audio is muted and held keys are released while an ad plays. Extra clicks during the ad are ignored. If an ad actually played, desktop shows **READY — click to continue**, because the ad used up the click that pointer lock needs. |
 
 Restarts (retry, new run, quit to menu, continue) all happen **in place**. The
@@ -74,6 +75,12 @@ wrapper call is then a no-op and the game plays normally without ads.
 
 ## Game events (`PokiSDK.measure`)
 
+The optional solo Overload challenge is included. Its offer/reward screens
+use the `overload` state, so the existing per-frame SDK bridge stops gameplay
+while a choice is open and starts it again on return. These menus do not
+request ad breaks or add measure events. The web-only `?overload` spawn/equipment
+shortcut is ignored in the Poki build; players find the terminal normally.
+
 Deliberately small: the game sends **7 events**, enough to answer "how many
 started playing", "who passed each level" and "how many times players died". Everything else (loads, plays,
 ads, playtime) Poki already tracks on its own. None of the values may contain
@@ -82,14 +89,16 @@ ads, playtime) Poki already tracks on its own. None of the values may contain
 | category | what | action | Fired when |
 |---|---|---|---|
 | `level` | `1` | `fresh-start` | A new run begins: title *Enter the facility*, *New run* (title or death screen), or *Play a new layout*. Not sent on *Retry sector* or *Continue* |
-| `level` | `1` / `2` / `3` | `complete` | That sector's exit pad is reached |
-| `level` | `1` / `2` / `3` | `fail` | The player dies in that sector (solo) |
+| `level` | `1` – `5` | `complete` | That sector's exit pad is reached |
+| `level` | `1` – `5` | `fail` | The player dies in that sector (solo) |
 
-In the Game Events tab they group as `level` → `1` / `2` / `3` →
+In the Game Events tab they group as `level` → `1` … `5` →
 `fresh-start` / `complete` / `fail`, which reads as a funnel:
 
 **level 1 fresh-start** (played) → **level 1 complete** → **level 2 complete** →
-**level 3 complete** (finished the game)
+**level 3 complete** (reached the Biofoundry) → **level 4 complete** →
+**level 5 complete** (finished the game). Sectors 4–5 are the generated Biofoundry and ships in the Poki build;
+only the standalone `?sector4` hand-built preview stays web-only.
 
 - **Played** = `level 1 fresh-start` — players who pressed *Enter the facility*
   (or started another run). Poki's own load count includes people who left
@@ -127,7 +136,8 @@ the suites in [docs/TESTING.md](docs/TESTING.md).
 
 `scripts/poki.mjs` intercepts the CDN script and serves a recording stub, so
 the run is deterministic and needs no network. The stub's `commercialBreak`
-plays a fake 400 ms ad. The test checks:
+plays a fake 400 ms ad, and its `rewardedBreak` plays one that resolves
+`true` unless the test sets `window.__rewardOk = false`. The test checks:
 
 - `init` → `gameLoadingFinished` order, and no gameplay on the title screen
 - the co-op button is gone and settings is still there
@@ -142,7 +152,13 @@ plays a fake 400 ms ad. The test checks:
 - one ad per break even on a double click, advancing exactly one sector
 - retry after death: an ad break, a second `level 2 start`, and no page reload
   (no second `init`)
-- with the SDK **blocked**, the game still boots and plays
+- rewarded revive: offered with the ad icon, equal in size and in line with
+  the retry; audio muted during the video; revives in place only after a
+  watched video (not also a `commercialBreak`); once per sector attempt;
+  an unwatched video grants nothing and disables the button; no extra
+  `measure()` events
+- with the SDK **blocked**, the game still boots and plays, and the death
+  screen offers no rewarded revive
 
 The run flow itself (checkpoints, retry, save/continue, quit to menu, graphics
 lost) is covered by `scripts/checkpoint.mjs` against the regular dev server.
@@ -153,6 +169,7 @@ the console. Then upload to the Poki Inspector and play one full run there.
 
 ## Known limitations
 
-- No rewarded ads yet. A natural fit would be "watch an ad to respawn at the
-  sector start" on the death screen, using `PokiSDK.rewardedBreak()` with
-  `measure('rewarded', 'respawn', 'visible' | 'interact')`.
+- Rewarded revive sends no `measure()` event of its own; Poki's dashboard
+  already counts rewarded impressions. If uptake per death matters later,
+  add `measure('rewarded', 'revive', 'interact')` with a row above and an
+  assert in `poki.mjs`.

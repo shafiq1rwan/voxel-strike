@@ -5,8 +5,40 @@ import {
   DoorSpec, ElevatorSpec, EnemySpec, PickupSpec, Rect, RoomDef,
 } from '../types';
 
+/** which look a generated sector wears; the layout rules are the same */
+export type LevelTheme = 'facility' | 'biofoundry';
+
+/** specimen tank footprint: 3 (x) × 2 (z) on a metal base, glass y = 2..4, cap y = 5 */
+export const TANK_W = 3;
+export const TANK_D = 2;
+/** the Biofoundry's purple emergency-light wash (the facility keeps the default) */
+export const BIO_AMBIENT: [number, number, number] = [36, 26, 52];
+
+/**
+ * Biofoundry sectors only: what the scenery pass (`decorate` in
+ * src/preview/biofoundry.ts) dresses. Generated levels and the authored
+ * `?sector4` map both fill it.
+ */
+export interface BioLayout {
+  /** front faces into the room along x; occupied tanks hold a dormant Vatborn */
+  tanks: Array<{ x: number; z: number; broken: boolean; occupied: boolean }>;
+  /** 2×2 ribbed pillars (min corner), warm light band at y = 3 */
+  pillars: Array<[number, number]>;
+  /** pillars the growth has claimed: [pillar x, pillar z, side dx, side dz] */
+  grown: Array<[number, number, number, number]>;
+  /** slime puddles: [x, z, radius] */
+  spills: Array<[number, number, number]>;
+  signs: Array<{ text: string; x: number; y: number; z: number; w: number; big: boolean }>;
+  /** the incubator mass on an arena wall: centre x, wall plane z, growth direction (+1 = toward +z) */
+  heart: { x: number; z: number; dir: number } | null;
+  /** authored map only: the sealed-door frame over the lab's north doorway */
+  labDoor?: { x: number; z: number };
+}
+
 export interface LevelData {
   world: VoxelWorld;
+  theme?: LevelTheme;
+  bio?: BioLayout;
   spawn: { x: number; y: number; z: number };
   rooms: RoomDef[];
   doors: DoorSpec[];
@@ -42,22 +74,38 @@ interface Edge {
 /**
  * Generate a level, retrying with nearby seeds until it validates as beatable.
  * difficulty (1-based sector number) scales room count and enemy pressure.
+ * `theme` only changes the look and the set dressing (Biofoundry: lab tiles,
+ * violet light, specimen tanks with dormant Vatborn, 2×2 pillars, signs) —
+ * the keycard → red door → lift → pad structure is the same. Biofoundry-only
+ * draws use the position hash, never the layout RNG, so facility sectors
+ * keep their exact layouts for a given seed.
  */
-export function generateLevel(seed: number, difficulty = 1): LevelData {
+export function generateLevel(seed: number, difficulty = 1, theme: LevelTheme = 'facility'): LevelData {
   for (let attempt = 0; attempt < 10; attempt++) {
     const s = (seed + attempt * 7919) >>> 0;
-    const data = generateLevelOnce(s, difficulty);
+    const data = generateLevelOnce(s, difficulty, theme);
     if (validateLevel(data)) {
       if (attempt > 0) console.warn(`[levelgen] used fallback seed ${s} after ${attempt} invalid layouts`);
       return data;
     }
   }
   console.error('[levelgen] no valid layout found, returning last attempt');
-  return generateLevelOnce(seed, difficulty);
+  return generateLevelOnce(seed, difficulty, theme);
 }
 
-function generateLevelOnce(seed: number, difficulty: number): LevelData {
+/** room signs in the Biofoundry (normal rooms take these in order) */
+const BIO_ROOM_NAMES = [
+  'SPECIMEN LABORATORY', 'WASTE PROCESSING', 'CONTAINMENT WING', 'CULTURE STORAGE',
+  'GROWTH MEDIA', 'SAMPLE ARCHIVE', 'COLD STORAGE', 'GENE SEQUENCING', 'NUTRIENT FEED',
+  'ISOLATION WARD', 'AUTOPSY', 'FILTRATION',
+];
+const BIO_TANKS_MAX = 12;
+/** occupied tanks: 4 in the first Biofoundry sector, 6 from sector 5 on */
+const bioOccupied = (difficulty: number): number => (difficulty >= 5 ? 6 : 4);
+
+function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme): LevelData {
   const rng = new RNG(seed);
+  const isBio = theme === 'biofoundry';
   const world = new VoxelWorld(WORLD_X, WORLD_Y, WORLD_Z);
   const pickups: PickupSpec[] = [];
   const enemies: EnemySpec[] = [];
@@ -99,7 +147,8 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     }
     if (!ok) continue;
     rooms.push({
-      id: rooms.length, x, z, w, d, h: rng.int(4, 5),
+      // Biofoundry rooms are taller (tanks stand y = 1..5); same single draw
+      id: rooms.length, x, z, w, d, h: isBio ? rng.int(5, 6) : rng.int(4, 5),
       cx: x + Math.floor(w / 2), cz: z + Math.floor(d / 2),
       kind: 'normal', dist: 0,
     });
@@ -557,7 +606,10 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
   // -- lamps ----------------------------------------------------------------
   for (const r of rooms) {
     let lamp: Block;
-    if (r.kind === 'key') lamp = Block.LampRed;
+    // the Biofoundry: violet emergency panels; the key room keeps its red,
+    // the exit hall its teal (signal colours keep their meaning)
+    if (isBio) lamp = r.kind === 'key' ? Block.LampRed : r.kind === 'exit' ? Block.LampTeal : Block.LampViolet;
+    else if (r.kind === 'key') lamp = Block.LampRed;
     else if (r.kind === 'exit') lamp = Block.LampTeal;
     else if (r.kind === 'arena') lamp = rng.chance(0.5) ? Block.LampTeal : Block.LampRed;
     else lamp = rng.chance(0.28) ? Block.LampTeal : rng.chance(0.14) ? Block.LampRed : Block.LampWarm;
@@ -598,7 +650,7 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     for (let i = 3; i < e.stations.length; i += 6) {
       const s = e.stations[i];
       if (world.isSolid(s.x, CORRIDOR_H + 1, s.z) && world.get(s.x, CORRIDOR_H + 1, s.z) === Block.Ceil) {
-        world.set(s.x, CORRIDOR_H + 1, s.z, Block.LampWarm);
+        world.set(s.x, CORRIDOR_H + 1, s.z, isBio ? Block.LampTeal : Block.LampWarm);
       }
     }
   }
@@ -607,8 +659,30 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
   }
 
   // -- pillars in large rooms ----------------------------------------------
+  // the Biofoundry's are 2×2 and ribbed, with a warm band at y = 3
+  const bioPillars: Array<[number, number]> = [];
+  const pillar2 = (px: number, pz: number, h: number): void => {
+    for (let xx = px; xx < px + 2; xx++) for (let zz = pz; zz < pz + 2; zz++) {
+      for (let y = 1; y <= h; y++) world.set(xx, y, zz, y === 3 ? Block.LampWarm : Block.Pillar);
+    }
+    bioPillars.push([px, pz]);
+  };
   for (const r of rooms) {
     if (r.kind === 'exit' || r.w < 11 || r.d < 11) continue;
+    if (isBio) {
+      for (const [px, pz] of [
+        [r.x + 3, r.z + 3], [r.x + r.w - 5, r.z + 3],
+        [r.x + 3, r.z + r.d - 5], [r.x + r.w - 5, r.z + r.d - 5],
+      ]) pillar2(px, pz, r.h);
+      // arena ring stays off the axes: the brute's charge lanes
+      if (r.kind === 'arena') {
+        for (const [px, pz] of [
+          [r.cx - 6, r.cz - 6], [r.cx + 5, r.cz - 6],
+          [r.cx - 6, r.cz + 5], [r.cx + 5, r.cz + 5],
+        ]) pillar2(px, pz, r.h);
+      }
+      continue;
+    }
     for (const [px, pz] of [
       [r.x + 3, r.z + 3], [r.x + r.w - 4, r.z + 3],
       [r.x + 3, r.z + r.d - 4], [r.x + r.w - 4, r.z + r.d - 4],
@@ -666,6 +740,18 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
         if (world.get(nx, 1, z) === Block.Air) world.set(nx, 1, z, Block.Barrel);
       }
     }
+  }
+
+  // -- Biofoundry: specimen tanks + dressing data ---------------------------
+  // After props and before pickups/enemies, so a tank only goes where its
+  // whole volume, the cell in front of the glass and the standing spot the
+  // occupant walks out to are open air — and nothing lands there later
+  // (pickups and enemies only use air cells).
+  let bio: BioLayout | undefined;
+  let occupiedTanks = 0;
+  if (isBio) {
+    bio = dressBiofoundry(world, rooms, bioPillars, dhash, bioOccupied(difficulty));
+    occupiedTanks = bio.tanks.filter((t) => t.occupied).length;
   }
 
   // -- pickups --------------------------------------------------------------
@@ -750,6 +836,9 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     // later sectors push harder
     if (difficulty >= 2 && r.dist >= 2) count += 1;
     if (difficulty >= 3 && r.kind !== 'normal') count += 1;
+    // the deep Biofoundry (sector 5): the other curves are capped by now, so
+    // the far rooms get one more body (sectors 1–4 are untouched)
+    if (difficulty >= 5 && r.dist >= 3) count += 1;
     for (let i = 0; i < count; i++) {
       // farther rooms and later sectors skew ranged
       const rangedP = Math.min(0.75, (r.dist >= 2 ? 0.5 : 0.25) + (difficulty - 1) * 0.08);
@@ -785,8 +874,13 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     }
   }
 
+  // -- Biofoundry surfaces: lab tiles over the facility paint ---------------
+  // (after the deco pass, the cracked secret wall and every lamp, so only the
+  // plain surfaces change; vents, pipe columns, trim and metal stay)
+  if (isBio) reskinLab(world, dhash);
+
   // -- bake lights & finish -------------------------------------------------
-  world.bakeLighting();
+  world.bakeLighting(isBio ? BIO_AMBIENT : undefined);
 
   return {
     world,
@@ -799,9 +893,145 @@ function generateLevelOnce(seed: number, difficulty: number): LevelData {
     exitPad,
     secretRect,
     seed,
-    totalEnemies: enemies.length,
+    // occupied tanks' Vatborn are preallocated: the scenery spawns them
+    totalEnemies: enemies.length + occupiedTanks,
     totalSecrets: secretRect ? 1 : 0,
+    theme,
+    bio,
   };
+}
+
+type Hash = (x: number, y: number, z: number) => number;
+
+/**
+ * Specimen tanks along room walls, which of them hold a Vatborn or are broken
+ * open, claimed pillars, puddles, room signs and the incubator mass. Uses
+ * only the position hash (never the layout RNG).
+ */
+function dressBiofoundry(
+  world: VoxelWorld, rooms: RoomDef[], pillars: Array<[number, number]>, dhash: Hash, occupiedWant: number,
+): BioLayout {
+  const air = (x: number, y: number, z: number): boolean => world.get(x, y, z) === Block.Air;
+  const tanks: BioLayout['tanks'] = [];
+  const tankFits = (x: number, z: number, front: number): boolean => {
+    for (let xx = x; xx < x + TANK_W; xx++) for (let zz = z; zz < z + TANK_D; zz++) {
+      for (let y = 1; y <= 5; y++) if (!air(xx, y, zz)) return false;
+    }
+    // backs onto solid wall, so it never plugs a doorway…
+    const back = front > 0 ? x - 1 : x + TANK_W;
+    for (let zz = z - 1; zz <= z + TANK_D; zz++) for (let y = 1; y <= 3; y++) if (air(back, y, zz)) return false;
+    // …and opens onto air: the pane's cell and the occupant's standing spot
+    for (const fx of front > 0 ? [x + TANK_W, x + TANK_W + 1] : [x - 1, x - 2]) {
+      for (let zz = z; zz < z + TANK_D; zz++) for (let y = 1; y <= 2; y++) if (!air(fx, y, zz)) return false;
+    }
+    return true;
+  };
+  for (const r of rooms) {
+    if (r.kind === 'spawn' || r.kind === 'exit' || r.h < 5) continue;
+    for (const front of [1, -1]) {
+      const x = front > 0 ? r.x : r.x + r.w - TANK_W;
+      for (let z = r.z + 1; z + TANK_D <= r.z + r.d - 1 && tanks.length < BIO_TANKS_MAX; z += TANK_D + 1) {
+        if (dhash(x, 41, z) > 0.55 || !tankFits(x, z, front)) continue;
+        for (let xx = x; xx < x + TANK_W; xx++) for (let zz = z; zz < z + TANK_D; zz++) {
+          world.set(xx, 1, zz, Block.Metal);
+          for (let y = 2; y <= 4; y++) world.set(xx, y, zz, Block.TankGlass);
+          world.set(xx, 5, zz, Block.Metal);
+        }
+        tanks.push({ x, z, broken: false, occupied: false });
+      }
+    }
+  }
+  // occupants spread over different rooms first (always leaving one empty
+  // tank); a couple of +x-facing empties are broken open (the cracked-pane
+  // art faces +x)
+  const roomOf = (x: number, z: number): number =>
+    rooms.find((r) => x >= r.x && x < r.x + r.w && z >= r.z && z < r.z + r.d)?.id ?? -1;
+  const order = [...tanks].sort((a, b) => dhash(a.x, 43, a.z) - dhash(b.x, 43, b.z));
+  const want = Math.min(occupiedWant, tanks.length - 1);
+  const usedRooms = new Set<number>();
+  let occupied = 0;
+  for (const pass of [0, 1]) {
+    for (const t of order) {
+      if (occupied >= want) break;
+      if (t.occupied) continue;
+      const rid = roomOf(t.x, t.z);
+      if (pass === 0 && usedRooms.has(rid)) continue;
+      t.occupied = true;
+      usedRooms.add(rid);
+      occupied++;
+    }
+  }
+  let broken = 0;
+  for (const t of order) {
+    if (broken >= 2) break;
+    if (!t.occupied && air(t.x + TANK_W, 3, t.z)) {
+      t.broken = true;
+      broken++;
+    }
+  }
+  // claimed pillars grow on the face toward the room centre
+  const grown: BioLayout['grown'] = [];
+  for (const [px, pz] of pillars) {
+    if (dhash(px, 47, pz) > 0.5) continue;
+    const r = rooms[roomOf(px, pz)];
+    if (r) grown.push([px, pz, px + 1 < r.cx ? 1 : -1, 0]);
+  }
+  // puddles in the rooms between spawn and exit
+  const spills: BioLayout['spills'] = [];
+  for (const r of rooms) {
+    if (r.kind === 'exit' || r.kind === 'spawn') continue;
+    for (let i = 0; i < 2; i++) {
+      const x = r.x + 2 + Math.floor(dhash(r.id, 51 + i, 9) * (r.w - 4));
+      const z = r.z + 2 + Math.floor(dhash(r.id, 53 + i, 9) * (r.d - 4));
+      if (air(x, 1, z)) spills.push([x + 0.5, z + 0.5, 0.6 + dhash(x, 55, z) * 0.4]);
+    }
+  }
+  // a sign on each room's north wall; the spawn room wears BIOFOUNDRY
+  const signs: BioLayout['signs'] = [];
+  let named = 0;
+  for (const r of rooms) {
+    const y = Math.min(4.6, r.h - 0.5);
+    if (r.kind === 'spawn') {
+      signs.push({ text: 'BIOFOUNDRY', x: r.cx + 0.5, y, z: r.z + 0.03, w: 6, big: true });
+      continue;
+    }
+    const text = r.kind === 'key' ? 'SECURITY / RED ACCESS'
+      : r.kind === 'arena' ? 'INCUBATION CHAMBER'
+      : r.kind === 'exit' ? 'LOWER TRANSIT LIFT'
+      : BIO_ROOM_NAMES[named++ % BIO_ROOM_NAMES.length];
+    signs.push({ text, x: r.cx + 0.5, y, z: r.z + 0.03, w: 4.4, big: false });
+  }
+  // the incubator mass: on whichever arena end wall has no doorway behind it
+  let heart: BioLayout['heart'] = null;
+  const arena = rooms.find((r) => r.kind === 'arena');
+  if (arena) {
+    const walls: Array<[number, number, number]> = [[arena.z, arena.z - 1, 1], [arena.z + arena.d, arena.z + arena.d, -1]];
+    for (const [wallZ, outZ, dir] of walls) {
+      let solid = true;
+      for (let x = arena.cx - 4; x <= arena.cx + 4 && solid; x++) if (air(x, 1, outZ)) solid = false;
+      if (solid) {
+        heart = { x: arena.cx + 0.5, z: wallZ, dir };
+        break;
+      }
+    }
+  }
+  return { tanks, pillars, grown, spills, signs, heart };
+}
+
+/** lab tiles over the facility's plain surfaces (vents, pipes, trim, metal stay) */
+function reskinLab(world: VoxelWorld, dhash: Hash): void {
+  for (let y = 0; y < world.sy; y++) for (let z = 0; z < world.sz; z++) for (let x = 0; x < world.sx; x++) {
+    switch (world.get(x, y, z)) {
+      case Block.Floor: world.set(x, y, z, Block.LabFloor); break;
+      case Block.Ceil:
+      case Block.CeilPipes:
+      case Block.CeilPipesZ: world.set(x, y, z, dhash(x, y + 60, z) < 0.06 ? Block.LabCeilGrate : Block.LabCeil); break;
+      case Block.CeilVent: world.set(x, y, z, Block.LabCeilGrate); break;
+      case Block.Wall:
+      case Block.WallWorn: world.set(x, y, z, Block.LabWall); break;
+      case Block.WallRust: world.set(x, y, z, Block.LabWallRust); break;
+    }
+  }
 }
 
 /**

@@ -24,11 +24,11 @@ off the core. The per-file rules and known gotchas live in
 
 | Area | Files | Owns |
 |---|---|---|
-| Entry | `main.ts` | Poki init (Poki builds), constructs `Game`, registers the service worker (web builds); web builds route `?sector4` (Biofoundry preview) and `?operative` (character viewer) to lazy-loaded modules |
-| Previews | `preview/biofoundry.ts`, `preview/operative-viewer.ts` | Sector 4 preview level + its live scenery; the Facility Operative viewer (sheet / orbit / compare), standalone, no `Game` |
+| Entry | `main.ts` | Poki init (Poki builds), constructs `Game`, registers the service worker (web builds); web builds route `?sector4` (the hand-built Biofoundry preview map; its module is in the main bundle because sectors 4–5 use its scenery) and `?operative` (character viewer, lazy-loaded) |
+| Biofoundry + previews | `preview/biofoundry.ts`, `preview/operative-viewer.ts` | The Biofoundry's scenery and live tank breaches for the generated sector 4 (`decorateBiofoundry`, driven by `level.bio`), the facility terminal text, and the hand-built `?sector4` preview map; the Facility Operative viewer (sheet / orbit / compare), standalone, no `Game` |
 | Orchestration | `game.ts` | State machine, frame loop, sector lifecycle + checkpoints, explosions queue, score/combo, objective tracker, co-op routing |
 | Shared types | `types.ts` | Plain-data types (no Three.js imports) |
-| Rendering | `core/renderer.ts` | WebGL renderer at a fixed 240-line internal resolution, fog, the world pass + the weapon overlay pass |
+| Rendering | `core/renderer.ts` | WebGL renderer at a low internal resolution (Settings → Pixelation: 480 lines default on desktop, 320 on touch), fog, the world pass + the weapon overlay pass |
 | Input | `core/input.ts`, `core/touch.ts` | Keyboard + pointer-lock mouse; touch joystick/look/buttons/weapon wheel feeding the same `Input` |
 | Physics | `core/physics.ts` | Axis-by-axis AABB vs voxels + dynamic boxes (doors, lift), ray/box tests |
 | Audio | `core/audio.ts`, `core/music.ts` | Every sound synthesized with WebAudio; optional crossfading music loops |
@@ -49,12 +49,16 @@ off the core. The per-file rules and known gotchas live in
             ▼                                            │
  title ──► playing ◄──► paused (Esc, pause button, pointer lock lost, graphics lost)
             │  │
-            │  └──► dead ──► Retry sector ──► playing   (solo; co-op respawns instead)
-            │               └► New run ─────► playing
+            │  └──► dead ──► Revive here ─────────► playing   (in place, once per attempt)
+            │               ├► Retry from keycard ─► playing   (in place, if the key was taken)
+            │               ├► Retry / Restart sector ► playing (sector rebuilt)
+            │               └► New run ────────────► playing   (solo only; co-op respawns instead)
             │
             ├──► intermission (sector 1, 2 cleared) ──► playing (next sector)
+            ├──► intermission (sector 3 cleared) ──► facility terminal ──► playing (sector 4, Biofoundry)
+            ├──► intermission (sector 4 cleared) ──► playing (sector 5, deep Biofoundry)
             │
-            └──► won (sector 3 cleared) ──► results ──► Play a new layout / Main menu
+            └──► won (sector 5 cleared; co-op: sector 3) ──► results ──► Play a new layout / Main menu
 ```
 
 `Game.frame()` calls `poki.setPlaying(state === 'playing')` every frame;
@@ -99,14 +103,18 @@ Every sector entry goes through `Game.enterSector()`:
    texture, so nothing compiles on first use mid-fight.
 6. **Checkpoint**: score, health, armor, ammo and loadout at sector entry,
    so *Retry sector* can restore it; from sector 2 on it's also saved to
-   localStorage for *Continue*.
+   localStorage for *Continue*. A second, in-memory checkpoint is taken when
+   the red keycard is grabbed (solo): *Retry from keycard* and *Revive* don't
+   rebuild anything — `bringBack()` stands the player up in the live world
+   with a 60 hp floor, a 2.5 s overshield and nearby enemies repelled.
 
 ## Rendering
 
 - **World pass:** the chunk `ShaderMaterial` tiles the texture atlas across
   merged quads with `fract()` in block space, applies the baked light as
   vertex color, and adds up to 6 dynamic lights per fragment. Fog is dark
-  and linear. The canvas is a fixed 240 lines tall, CSS-upscaled with
+  and linear. The canvas is the Pixelation setting's height in lines (480
+  desktop / 320 touch by default), CSS-upscaled with
   `image-rendering: pixelated`.
 - **Entities are CPU-lit:** enemies, pickups and props sample the baked
   light grid plus `DynLights` and tint their materials (on a ~0.08 s tick;
@@ -155,6 +163,21 @@ as a phone stand-in), sector 1 averages ~5–7 ms a frame at 4× slowdown and
 ~9–12 ms at 6×, against the 16.7 ms budget.
 
 ## Combat
+
+Optional solo challenges live in `entities/overload.ts`. After ordinary level
+generation, `Overload.create` chooses a clear supported position in a normal
+room without moving campaign rooms, pickups or enemies. Its console and
+collision box are owned by the sector; one controller advances idle → active
+→ ready → claimed, with two bounded waves and one reward. Spawn totals enter
+`level.totalEnemies` only when each enemy is actually created. Room departure
+delays pending spawns; no doors lock. Co-op and Biofoundry omit the controller.
+The `overload` game state pauses the simulation for offer/reward menus.
+Focused Shotgun uses a per-WeaponSystem flag and an immutable alternate
+definition (spread ×0.65, rate ×0.85), leaving global weapon definitions intact.
+The optional `focusedShotgun` checkpoint field defaults false for older saves;
+sector retry rolls back to sector-entry inventory and resets its encounter.
+The web-only `?overload` shortcut starts sector 1 by the terminal with a
+shotgun; it is ignored in Poki and co-op.
 
 - **Hitscan** (pistol, shotgun pellets, SMG) raycasts voxels, closed doors
   and enemy boxes; husk/brute hits in the top slice are headshots (×2).

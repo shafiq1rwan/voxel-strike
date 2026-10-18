@@ -290,7 +290,7 @@ try {
 
   // --- lobby UX: WASD is typeable in the code field, code shows beside HOST --
   const lobby = await browser.newPage();
-  await lobby.goto(`${BASE}/?seed=1`, { waitUntil: 'networkidle0', timeout: 30000 });
+  await lobby.goto(`${BASE}/?seed=1&coop`, { waitUntil: 'networkidle0', timeout: 30000 });
   await lobby.waitForSelector('#coop-btn');
   await lobby.click('#coop-btn');
   await lobby.waitForSelector('#coop-code');

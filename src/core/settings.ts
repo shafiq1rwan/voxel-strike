@@ -16,47 +16,66 @@ export interface GameSettings {
   aimAssist: boolean;
 }
 
-export const DEFAULT_SETTINGS: GameSettings = {
-  sensitivity: 1,
-  volume: 0.7,
-  musicVolume: 0.55,
-  fov: 75,
-  resolution: 240,
-  shake: true,
-  aimAssist: true,
-};
-
 export const RESOLUTIONS = [180, 240, 320, 480];
 
+/**
+ * Default pixelation by device: 480 lines on desktop, 320 on touch devices
+ * (phones keep a lighter render). Still cycled in Settings.
+ */
+export function defaultResolution(touch: boolean): number {
+  return touch ? 320 : 480;
+}
+
+export function defaultSettings(touch: boolean): GameSettings {
+  return {
+    sensitivity: 1,
+    volume: 0.7,
+    musicVolume: 0.55,
+    fov: 75,
+    resolution: defaultResolution(touch),
+    shake: true,
+    aimAssist: true,
+  };
+}
+
 const KEY = 'voxelstrike-settings';
+/**
+ * Stored with the settings. Version 1 (no field) had a 240-line default for
+ * everyone; a saved 240 from then is moved to the new device default once.
+ */
+const VERSION = 2;
+const OLD_DEFAULT_RESOLUTION = 240;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-export function loadSettings(): GameSettings {
+export function loadSettings(touch: boolean): GameSettings {
+  const d = defaultSettings(touch);
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
-    const p = JSON.parse(raw) as Partial<GameSettings>;
+    if (!raw) return d;
+    const p = JSON.parse(raw) as Partial<GameSettings> & { v?: number };
+    let resolution = RESOLUTIONS.includes(Number(p.resolution)) ? Number(p.resolution) : d.resolution;
+    if ((p.v ?? 1) < VERSION && resolution === OLD_DEFAULT_RESOLUTION) resolution = d.resolution;
     return {
-      sensitivity: clamp(Number(p.sensitivity) || DEFAULT_SETTINGS.sensitivity, 0.3, 2.5),
-      volume: clamp(Number.isFinite(Number(p.volume)) ? Number(p.volume) : DEFAULT_SETTINGS.volume, 0, 1),
+      sensitivity: clamp(Number(p.sensitivity) || d.sensitivity, 0.3, 2.5),
+      volume: clamp(Number.isFinite(Number(p.volume)) ? Number(p.volume) : d.volume, 0, 1),
       musicVolume: clamp(
-        Number.isFinite(Number(p.musicVolume)) ? Number(p.musicVolume) : DEFAULT_SETTINGS.musicVolume,
+        Number.isFinite(Number(p.musicVolume)) ? Number(p.musicVolume) : d.musicVolume,
         0, 1
       ),
-      fov: clamp(Number(p.fov) || DEFAULT_SETTINGS.fov, 60, 100),
-      resolution: RESOLUTIONS.includes(Number(p.resolution)) ? Number(p.resolution) : DEFAULT_SETTINGS.resolution,
-      shake: typeof p.shake === 'boolean' ? p.shake : DEFAULT_SETTINGS.shake,
-      aimAssist: typeof p.aimAssist === 'boolean' ? p.aimAssist : DEFAULT_SETTINGS.aimAssist,
+      fov: clamp(Number(p.fov) || d.fov, 60, 100),
+      resolution,
+      shake: typeof p.shake === 'boolean' ? p.shake : d.shake,
+      aimAssist: typeof p.aimAssist === 'boolean' ? p.aimAssist : d.aimAssist,
     };
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return d;
   }
 }
 
 export function saveSettings(s: GameSettings): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    localStorage.setItem(KEY, JSON.stringify({ ...s, v: VERSION }));
   } catch {
     // storage unavailable (private mode etc.) — settings just won't persist
   }
