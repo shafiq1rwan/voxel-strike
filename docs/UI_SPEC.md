@@ -8,7 +8,7 @@ controls), `src/ui/icons.ts` (icons).
 
 ## HUD — desktop
 
-The optional solo Overload terminal adds `#overload-action` near the bottom
+The optional solo Overload terminal (hidden from players: web builds with `?overload` only) adds `#overload-action` near the bottom
 center when in reach: **E · Inspect Overload** (touch: **TAP**). While active
 it shows the wave and remaining enemy count without replacing the campaign
 objective. An explored terminal is a cyan outlined square on both maps.
@@ -50,8 +50,9 @@ Follows the owner's mockup.
 | Armor pill | `#armor` | Blue shield icon + value |
 | Minimap | `#minimap` | Desktop only. North-up, 31×31 cells around the player, green arrow; shows only explored cells, doors in lock colour, exit pad green, the untaken keycard blinking |
 | Messages | `#messages` | Pickup and event lines under the minimap, fade after ~3.5 s, max 4 |
-| Objective | `#objective` | Stage icon + text in the stage colour, then a rotating yellow arrow to the target and the distance (`HERE` when close). Flashes when the stage changes |
-| Sector | `#obj-head` | `SECTOR n / 5` (co-op: `/ 3`) |
+| Objective | `#objective` | A panel with a 4px accent bar in the stage colour, the stage icon (20px, glowing in that colour), the step in caps (*FIND THE RED KEYCARD*) and three step pips (keycard / door / lift + pad: done grey, current lit). Below it the navigator: a notched yellow arrow (a navigation dart, never a plain triangle: that read the same from every side once rotated) in a small round dial, turned toward the target, plus the distance (`HERE` when close, and the dial lights up). Flashes when the stage changes |
+| Sector | `#obj-head` | `SECTOR n / 5` (co-op: `/ 3`); `DEPTH n` with no total past sector 5 |
+| Boss bar | `#bossbar` | Inside `#objective`, under the objective line, only while a boss is awake. Skull + `BROODKEEPER`, a burgundy fill with a pale chip that drains behind it, and *CORE EXPOSED* in orange (bar border turns orange too) while the chest is open. Hidden on defeat. Narrower on touch |
 | MAP / pause | `#hud-map`, `#hud-pause` | Clickable whenever the mouse isn't captured; same as Tab/M and Esc |
 | Score / kills | `#score`, `#kills` | Score with `×N` combo multiplier; kills turn green when the sector is cleared out. Not in the mockup — kept small under the buttons |
 | Buffs | `#buffs` | QUAD / SHIELD / HASTE chips with seconds left |
@@ -62,9 +63,11 @@ Follows the owner's mockup.
 | Hint strip | `#hint` | First-run control hints (3 steps, sector 1 of the first solo run) |
 | FPS | `#fps` | Bottom-left, small and dim |
 
-Objective stages, in order: **Find red keycard** (keycard icon, red) →
+Objective stages, in order: **Find the red keycard** (keycard icon, red) →
 **Open the red door** (door, red) → **Ride the lift up** (lift, yellow) →
 **Step on the exit pad** (flag, green). Driven by `Game.objectiveStage()`.
+On a boss level, **Kill the Broodkeeper** (skull, orange) comes first and the
+arrow points at the boss.
 
 Also: a red wedge around the crosshair points at whatever hurt you, a big
 yellow streak popup on multi-kills, and full-screen flashes for damage,
@@ -118,15 +121,14 @@ matches.
 
 | Screen | Notes |
 |---|---|
-| Title | Voxel wordmark, *Enter the facility* (or *Continue · Sector N* + *New run* when a save exists), How to play, Settings — the same on web and Poki. Above the menu, a *NEW SECTOR* banner (hazard-yellow tag on a violet strip: *THE BIOFOUNDRY · SECTORS 4–5 · DON'T WAKE THE TANKS*) until the player first reaches the Biofoundry (`voxelstrike-biofoundry-seen`); compact on short screens, fits 667×375. Co-op is hidden everywhere; web builds show it with `?coop` (development) |
-| How to play | Desktop and touch control lists |
+| Title | Kept deliberately bare so the goal and the button are all a first visitor reads: voxel wordmark, *ESCAPE THE FACILITY*, three numbered step tiles with the in-game objective icons and colours (1 *Find the red keycard*, 2 *Open the red door*, 3 *Ride the lift out*), one big *PLAY* (or *Continue · Sector N* / *Continue · Depth N* with a quiet *New run* when a save exists), one line of controls (*WASD move · MOUSE aim · CLICK shoot*; touch: thumbs + FIRE), and a Settings gear in the top-right corner. Footer: best score / deepest depth when there is one, and the version. No tagline, no How to play panel (the first run's hint strip teaches controls). The *NEW SECTOR* banner (hazard-yellow tag on a violet strip: *THE BIOFOUNDRY · SECTORS 4–5 · DON'T WAKE THE TANKS*) shows only to RETURNING players (`voxelstrike-tutorial-done` set) until they reach the Biofoundry (`voxelstrike-biofoundry-seen`). Same on web and Poki; fits 667×375 without scrolling. Co-op is hidden everywhere; web builds show it with `?coop` (development) |
 | Settings | Sensitivity, master + music volume, FOV, pixelation (180 / 240 / 320 / 480 lines; default 480 on desktop, 320 on touch), screen shake, aim assist, *New layout*. Saved on the device |
 | Co-op lobby | Host shows a 4-character code; join types it |
 | Pause | Resume, Settings, and a quit button (*Main menu*, or *Save & quit to menu* from sector 2 on) |
 | Sector clear (solo) | `#sector-clear`. Heading centred on the panel with the rank stamp pinned right on its midline. Tally rows land one by one (kills with their points, secrets, time vs par, sector clear, rank bonus), the score counts up, then the S/A/B/C stamp lands (gold / cyan / light / grey) with *NEW BEST RANK!* flashing when it beats that sector number's best (else *SECTOR n BEST: X*). Then *CHOOSE A PERK*: three button-like cards — the perk's icon (Font Awesome, in the perk's accent colour, glowing ring), its name, a few words (`PerkDef.short`), and a *PICK* bar showing the key (1–3) on desktop. The full rule is the hover tooltip. Cards are dimmed until they arm 0.5 s after appearing, pulse once when they do, lift with a solid-yellow PICK bar on hover; picking one descends. Landscape phones: horizontal rows (icon · name + words · PICK). Any click / Enter / Space during the tally skips to the end. Landscape phones: tally left, perk cards stacked right. Co-op keeps the old click-to-descend intermission |
 | Facility terminal | After the sector 3 intermission (solo): full-screen void with a steel header bar (*VXS-OS 4.12* / *SERVICE TERMINAL B3-07*) and a scanlined cyan terminal typing the route-out message (hazard-yellow `!` warnings, a bright last line). The box is full height from the first character so it never re-centres. Click / tap / Enter / Space prints the rest; the foot then pulses *CLICK* (*TAP*) *TO DESCEND*; that press glitches, collapses the screen like a CRT switching off and fades violet into sector 4. Fits 667×375 without clipping |
-| Death | Top row, equal size: *Revive* (in place, once per sector attempt; on Poki *Revive · Watch ad* with the clapperboard icon, steel not green, hidden without the SDK, "No video available" if none played) beside the yellow *Retry from keycard* (once the red key was taken: in place, back at the key) or *Retry sector N* (sector-entry gear, health floored at 60). Second row, quiet: *Restart sector N* (only with a keycard checkpoint) and *New run*. Enter / Space = retry, never the ad. Fits 667×375 on one line per button |
-| Results | The last sector's clear screen headed CAMPAIGN COMPLETE: the same tally + rank stamp, then campaign totals, the layout record line, and *Play a new layout* / *Main menu* (disabled until the tally ends, then armed after 0.5 s). Co-op keeps the old results screen |
+| Death | Top row, equal size: *Revive* (in place, once per sector attempt; on Poki *Revive · Watch ad* with the clapperboard icon, steel not green, hidden without the SDK, "No video available" if none played) beside the yellow *Retry from keycard* (once the red key was taken: in place, back at the key) or *Retry sector N* / *Retry depth N* (sector-entry gear, health floored at 60). Second row, quiet: *Restart sector N* (only with a keycard checkpoint) and *New run*. Enter / Space = retry, never the ad. Fits 667×375 on one line per button |
+| Results | The last sector's clear screen headed CAMPAIGN COMPLETE: the same tally + rank stamp, then campaign totals, the layout record line, a primary *Keep descending · Depth 6* (solo; Enter picks it) and quiet *Play a new layout* / *Main menu* (all disabled until the tally ends, then armed after 0.5 s). Endless depth clears use the normal sector-clear screen with a perk offer; when fewer than three perks are left, the offer is filled with one-off rewards (*Patch Up* full health, *Resupply* +50% ammo, *Reinforce* +75 armor). Co-op keeps the old results screen |
 | READY | After an ad break on desktop: one click to recapture the mouse |
 | Graphics lost | Pauses on WebGL context loss; *Reload game* appears after 4 s |
 

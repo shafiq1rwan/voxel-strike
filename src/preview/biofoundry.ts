@@ -488,8 +488,10 @@ function decorate(level: LevelData): PreviewArt {
     }
   }
   // incubator heart: a mass of growth clinging to an arena end wall, widest
-  // at the floor and thinning toward the ceiling
-  if (bio.heart) {
+  // at the floor and thinning toward the ceiling. Not on a boss level: the
+  // Broodkeeper sits against that wall, and crimson cubes behind a
+  // brick-red boss swallow its silhouette (the reference shows a clean wall)
+  if (bio.heart && !level.boss) {
     const { x: hx, z: hz, dir } = bio.heart;
     for (let i = 0; i < 70; i++) {
       const y = 1.2 + rng.next() * rng.next() * 4.6;

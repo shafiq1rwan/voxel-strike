@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import type { Game } from '../game';
 import { rayBox } from '../core/physics';
 
-type ProjKind = 'rocket' | 'bolt';
+type ProjKind = 'rocket' | 'bolt' | 'acid';
+
+/** what an enemy shot does to a player it hits */
+const ENEMY_SHOT_DAMAGE: Record<'bolt' | 'acid', number> = { bolt: 10, acid: 14 };
 
 class Projectile {
   alive = false;
@@ -36,13 +39,16 @@ class Projectile {
       flame.position.z = 0.35;
       this.mesh.add(body, nose, flame);
     } else {
+      // bolt: sentinel plasma (cyan); acid: the Broodkeeper's globs (lime, bigger)
+      const acid = kind === 'acid';
+      const s = acid ? 1.35 : 1;
       const core = new THREE.Mesh(
-        new THREE.BoxGeometry(0.22, 0.22, 0.22),
-        new THREE.MeshBasicMaterial({ color: 0x66e0ff, fog: false })
+        new THREE.BoxGeometry(0.22 * s, 0.22 * s, 0.22 * s),
+        new THREE.MeshBasicMaterial({ color: acid ? 0xb8ff4a : 0x66e0ff, fog: false })
       );
       const halo = new THREE.Mesh(
-        new THREE.BoxGeometry(0.34, 0.34, 0.34),
-        new THREE.MeshBasicMaterial({ color: 0x2288cc, transparent: true, opacity: 0.4, fog: false })
+        new THREE.BoxGeometry(0.34 * s, 0.34 * s, 0.34 * s),
+        new THREE.MeshBasicMaterial({ color: acid ? 0x5aa020 : 0x2288cc, transparent: true, opacity: 0.4, fog: false })
       );
       this.mesh.add(core, halo);
     }
@@ -55,6 +61,7 @@ export class ProjectilePool {
   readonly group = new THREE.Group();
   private rockets: Projectile[] = [];
   private bolts: Projectile[] = [];
+  private acids: Projectile[] = [];
 
   constructor() {
     for (let i = 0; i < 12; i++) {
@@ -67,10 +74,24 @@ export class ProjectilePool {
       this.bolts.push(p);
       this.group.add(p.mesh);
     }
+    for (let i = 0; i < 12; i++) {
+      const p = new Projectile('acid');
+      this.acids.push(p);
+      this.group.add(p.mesh);
+    }
+  }
+
+  private poolOf(kind: ProjKind): Projectile[] {
+    return kind === 'rocket' ? this.rockets : kind === 'acid' ? this.acids : this.bolts;
+  }
+
+  /** the Broodkeeper died: its acid in flight goes with it */
+  clearAcid(): void {
+    for (const p of this.acids) this.kill(p);
   }
 
   spawn(kind: ProjKind, x: number, y: number, z: number, dx: number, dy: number, dz: number, speed: number, fromPlayer: boolean, dmgMult = 1): void {
-    const pool = kind === 'rocket' ? this.rockets : this.bolts;
+    const pool = this.poolOf(kind);
     const p = pool.find((q) => !q.alive) ?? pool[0];
     p.alive = true;
     p.x = x; p.y = y; p.z = z;
@@ -91,7 +112,7 @@ export class ProjectilePool {
 
   /** deactivate everything (level teardown) — the pool itself is reused */
   reset(): void {
-    for (const pool of [this.rockets, this.bolts]) {
+    for (const pool of [this.rockets, this.bolts, this.acids]) {
       for (const p of pool) this.kill(p);
     }
   }
@@ -105,19 +126,23 @@ export class ProjectilePool {
     for (const p of this.bolts) {
       if (p.alive) out.push([1, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)]);
     }
+    for (const p of this.acids) {
+      if (p.alive) out.push([2, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)]);
+    }
     return out;
   }
 
   /** co-op client: display the host's projectiles as position-driven puppets */
   syncRemote(list: Array<[number, number, number, number]>): void {
-    for (const pool of [this.rockets, this.bolts]) {
+    for (const pool of [this.rockets, this.bolts, this.acids]) {
       for (const p of pool) p.mesh.visible = false;
     }
     let ri = 0;
     let bi = 0;
+    let ai = 0;
     for (const [kind, x, y, z] of list) {
-      const pool = kind === 0 ? this.rockets : this.bolts;
-      const idx = kind === 0 ? ri++ : bi++;
+      const pool = kind === 0 ? this.rockets : kind === 2 ? this.acids : this.bolts;
+      const idx = kind === 0 ? ri++ : kind === 2 ? ai++ : bi++;
       if (idx >= pool.length) continue;
       const p = pool[idx];
       p.mesh.visible = true;
@@ -126,7 +151,7 @@ export class ProjectilePool {
   }
 
   update(dt: number, game: Game): void {
-    for (const pool of [this.rockets, this.bolts]) {
+    for (const pool of [this.rockets, this.bolts, this.acids]) {
       for (const p of pool) {
         if (!p.alive) continue;
         p.life -= dt;
@@ -175,8 +200,9 @@ export class ProjectilePool {
               minZ: pl.pos.z - pl.half.z, maxZ: pl.pos.z + pl.half.z,
             });
             if (t !== null) {
-              pl.damage(10, game, { x: p.x - p.dx * 2, z: p.z - p.dz * 2 });
-              game.particles.impact(p.x, p.y, p.z, -p.dx, -p.dy, -p.dz, 0.4, 0.8, 1);
+              pl.damage(ENEMY_SHOT_DAMAGE[p.kind === 'acid' ? 'acid' : 'bolt'], game, { x: p.x - p.dx * 2, z: p.z - p.dz * 2 });
+              if (p.kind === 'acid') game.particles.impact(p.x, p.y, p.z, -p.dx, -p.dy, -p.dz, 0.6, 1, 0.25);
+              else game.particles.impact(p.x, p.y, p.z, -p.dx, -p.dy, -p.dz, 0.4, 0.8, 1);
               game.audio.play('boltHit', { x: p.x, y: p.y, z: p.z });
               struck = true;
               break;
@@ -194,6 +220,9 @@ export class ProjectilePool {
           const hz = p.z + p.dz * hitT;
           if (p.kind === 'rocket') {
             game.detonate(hx - p.dx * 0.1, hy - p.dy * 0.1, hz - p.dz * 0.1, 90 * p.dmgMult, game.blastRadius(3.5));
+          } else if (p.kind === 'acid') {
+            game.particles.impact(hx, hy, hz, -p.dx, -p.dy, -p.dz, 0.6, 1, 0.25);
+            game.audio.play('boltHit', { x: hx, y: hy, z: hz });
           } else {
             game.particles.impact(hx, hy, hz, -p.dx, -p.dy, -p.dz, 0.4, 0.8, 1);
             game.audio.play('boltHit', { x: hx, y: hy, z: hz });
@@ -207,6 +236,11 @@ export class ProjectilePool {
         if (p.kind === 'rocket') {
           game.particles.trail(nx - p.dx * 0.4, ny - p.dy * 0.4, nz - p.dz * 0.4, 0.6, 0.6, 0.6, 0.05);
           game.dynLights.submit(nx, ny, nz, 1, 0.7, 0.3, 0.9, 6);
+        } else if (p.kind === 'acid') {
+          game.particles.trail(nx, ny, nz, 0.55, 1, 0.2, 0.05);
+          game.dynLights.submit(nx, ny, nz, 0.5, 1, 0.2, 0.7, 4);
+          p.mesh.rotation.x += dt * 6;
+          p.mesh.rotation.z += dt * 5;
         } else {
           game.particles.trail(nx, ny, nz, 0.3, 0.8, 1, 0.04);
           game.dynLights.submit(nx, ny, nz, 0.3, 0.8, 1, 0.6, 4);

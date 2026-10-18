@@ -5,7 +5,7 @@ import { GameSettings, RESOLUTIONS } from '../core/settings';
 import { ICONS, AmmoIcon, perkColor, perkIcon } from './icons';
 import type { OverloadReward } from '../entities/overload';
 import { typeLines, type TerminalLine, type TerminalRun } from './terminal';
-import type { PerkId } from '../core/perks';
+import type { OfferId } from '../core/perks';
 
 const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
 
@@ -294,25 +294,62 @@ const CSS = `
 #hud-map { width: 58px; }
 #hud-pause { width: 36px; letter-spacing: 0; text-indent: 0; }
 /* top-center: objective tracker */
+#bossbar { width: min(380px, 44vw); margin-top: 4px; }
+#bossbar[hidden] { display: none; }
+#boss-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: bold; letter-spacing: .26em; color: #f0f2f6; text-shadow: 0 1px 0 #000; }
+#boss-core { font-size: 10px; letter-spacing: .2em; color: #ff8a2a; opacity: 0; }
+#bossbar.core #boss-core { opacity: 1; animation: pulse .35s infinite alternate; }
+#boss-track {
+  position: relative; height: 10px; margin-top: 3px; background: rgba(8,10,16,.82);
+  border: 1px solid #39404f; box-shadow: 0 0 0 1px rgba(0,0,0,.5);
+}
+#boss-chip, #boss-fill { position: absolute; left: 0; top: 0; bottom: 0; }
+#boss-chip { background: #f0d8b0; opacity: .75; }
+#boss-fill { background: linear-gradient(180deg, #ff5a48, #b8231a); transition: width .08s linear; }
+#bossbar.core #boss-track { border-color: #ff8a2a; box-shadow: 0 0 10px rgba(255,138,42,.6); }
+#bossbar.core #boss-fill { background: linear-gradient(180deg, #ffb060, #e8602a); }
+body.touch-mode #bossbar { width: min(300px, 40vw); }
+body.touch-mode #boss-head { font-size: 10px; }
 #objective {
   position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   max-width: 46vw; text-align: center;
 }
+/* the step: an accent bar + icon in the stage colour, the words in caps, and
+   three pips for keycard → door → lift (the title screen's numbered tiles) */
 #obj-main {
-  display: flex; align-items: center; gap: 10px; padding: 6px 14px;
-  font-size: 15px; font-weight: bold; letter-spacing: 1px; color: #f0f2f6; white-space: nowrap;
+  --obj-c: #ff3428;
+  display: flex; align-items: center; gap: 10px; padding: 7px 12px 7px 10px;
+  border-left: 4px solid var(--obj-c);
+  font-size: 15px; font-weight: bold; letter-spacing: .12em; text-transform: uppercase;
+  color: #f0f2f6; white-space: nowrap; text-shadow: 1px 1px 0 #000;
 }
+#obj-icon { display: flex; color: var(--obj-c); filter: drop-shadow(0 0 6px var(--obj-c)); }
+#obj-steps { display: flex; gap: 4px; margin-left: 4px; }
+#obj-steps i { width: 7px; height: 7px; border: 1px solid #4a5262; }
+#obj-steps i.done { background: #8a94a8; border-color: #8a94a8; }
+#obj-steps i.now { background: var(--obj-c); border-color: var(--obj-c); box-shadow: 0 0 6px var(--obj-c); }
 #obj-main.flash { animation: objflash .9s ease-out; }
 @keyframes objflash {
   0% { border-color: #ffd028; background: rgba(255,208,40,.35); transform: scale(1.12); }
   100% { border-color: #262c38; background: rgba(8,10,16,.74); transform: scale(1); }
 }
-#obj-nav { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ffd028; height: 22px; }
-#obj-arrow {
-  width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent;
-  border-bottom: 16px solid #ffd028; filter: drop-shadow(1px 1px 0 #000) drop-shadow(0 0 5px rgba(255,208,40,.6));
+/* navigator: a notched arrow in a dial (an isosceles triangle read the same
+   from every side once it rotated), the distance beside it */
+#obj-nav {
+  display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: bold;
+  color: #ffd028; text-shadow: 1px 1px 0 #000; letter-spacing: .06em;
 }
+#obj-dial {
+  width: 34px; height: 34px; border-radius: 50%; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8,10,16,.74); border: 1px solid #39404f;
+}
+#obj-arrow {
+  width: 24px; height: 24px; fill: #ffd028;
+  filter: drop-shadow(1px 1px 0 #000) drop-shadow(0 0 4px rgba(255,208,40,.55));
+}
+#obj-nav.here #obj-dial { border-color: #ffd028; box-shadow: 0 0 10px rgba(255,208,40,.5); }
 /* bottom-center: weapon slots + keycards */
 #weaponbar {
   position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
@@ -553,8 +590,10 @@ body.touch-mode .slot:not(.owned) { display: none; }
 body.touch-mode .slot.active::after { bottom: -6px; height: 2px; }
 body.touch-mode .key { width: 34px; height: 28px; }
 body.touch-mode #objective { top: 50px; max-width: 40vw; }
-body.touch-mode #obj-main { font-size: 12px; padding: 4px 10px; gap: 8px; }
+body.touch-mode #obj-main { font-size: 12px; padding: 4px 9px 4px 8px; gap: 7px; letter-spacing: .06em; }
 body.touch-mode #obj-nav { font-size: 12px; }
+body.touch-mode #obj-dial { width: 28px; height: 28px; }
+body.touch-mode #obj-arrow { width: 20px; height: 20px; }
 body.touch-mode #ammo-block { display: none; }
 body.touch-mode #messages { top: 52px; left: 10px; font-size: 11px; max-width: 30vw; gap: 2px; }
 body.touch-mode #fps { display: none; }
@@ -571,14 +610,13 @@ body.touch-mode #hint { bottom: 12px; max-width: 46vw; font-size: 11px; padding:
   #weaponname { font-size: 11px; letter-spacing: 2px; }
   #ammo .value { font-size: 26px; }
   #objective { max-width: 40vw; }
-  #obj-main { font-size: 12px; letter-spacing: 0; padding: 4px 10px; }
+  #obj-main { font-size: 12px; letter-spacing: .04em; padding: 4px 9px 4px 8px; }
   .screen h1 { font-size: 32px; letter-spacing: 4px; }
   .panel { padding: 20px 22px 18px; max-width: 92vw; }
   .title-menu-row { flex-wrap: wrap; justify-content: center; }
   .setlist { width: 94vw; }
   .setrow { font-size: 10px; gap: 10px; }
   input[type=range].tslider { width: 110px; }
-  .howto { font-size: 11px; }
   .title-foot { font-size: 9px; }
 }
 
@@ -612,7 +650,6 @@ body.touch-mode #hint { bottom: 12px; max-width: 46vw; font-size: 11px; padding:
   margin-top: 10px; font-size: 12px; letter-spacing: .48em; text-indent: .48em;
   color: #8a94a8; text-transform: uppercase;
 }
-.title-mission { margin-top: 14px; font-size: 15px; color: #cfd6e4; letter-spacing: .06em; }
 /* "NEW SECTOR" banner: a hazard tag on a violet strip — the Biofoundry's light */
 .new-sector {
   margin-top: 16px; display: inline-flex; align-items: stretch; max-width: 100%;
@@ -710,26 +747,40 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
 .title-menu-row { display: flex; gap: 12px; }
 .tbtn-quiet { font-size: 12px; padding: 9px 18px; color: #8a94a8; }
 .tbtn-quiet:hover { color: #cfd6e4; border-color: #6a7488; }
-.title-brief, .howto { margin-top: 34px; min-height: 58px; }
-.title-brief {
-  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
-  gap: 10px 14px; font-size: 11.5px; letter-spacing: .14em; color: #8a94a8;
+.tbtn-play { font-size: 22px; padding: 18px 76px; letter-spacing: .3em; text-indent: .3em; }
+/* title: the goal in three steps (same icons + colours as the in-game objective) */
+.title-goal {
+  margin-top: 14px; font-size: 15px; font-weight: bold; letter-spacing: .34em; text-indent: .34em;
+  color: #cfd6e4; text-transform: uppercase;
 }
-.title-brief .chip { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
-.title-brief .sq {
-  display: inline-block; width: 10px; height: 10px; border: 1px solid #000;
-  box-shadow: 0 0 8px currentColor;
+.tsteps { margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.tstep {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  width: 150px; padding: 14px 8px 12px; box-sizing: border-box;
+  border: 1px solid #2c3240; border-top: 2px solid var(--c); background: rgba(8,10,16,.74);
+  color: var(--c);
 }
-.title-brief .sep { color: #566076; }
-.howto[hidden] { display: none; }
-.howto {
-  display: grid; grid-template-columns: auto auto; gap: 5px 22px;
-  font-size: 12.5px; text-align: left; color: #8a94a8;
-  border: 1px solid #232833; background: rgba(8,10,16,.7); padding: 16px 22px;
+.tstep-n {
+  position: absolute; top: 5px; left: 7px; font-size: 11px; font-weight: bold; color: #566076;
 }
-.howto b { color: #cfd6e4; font-weight: bold; letter-spacing: .1em; }
-.howto .tip { grid-column: 1 / -1; color: #6f7a90; }
-.howto .tip:first-of-type { margin-top: 8px; }
+.tstep-icon { display: flex; filter: drop-shadow(0 0 8px var(--c)); }
+.tstep-text {
+  font-size: 12px; line-height: 1.35; letter-spacing: .14em; text-transform: uppercase;
+  text-align: center; color: #cfd6e4;
+}
+.tstep-sep { color: #566076; font-size: 14px; }
+.title-controls {
+  margin-top: 18px; font-size: 11px; letter-spacing: .14em; color: #6f7a90; text-transform: uppercase;
+}
+.title-controls b { color: #aab3c4; }
+.title-controls i { font-style: normal; margin: 0 10px; color: #3a4150; }
+.title-gear {
+  position: fixed; top: 14px; right: 16px; z-index: 11; width: 42px; height: 42px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  background: rgba(10,13,20,.72); color: #8a94a8; border: 1px solid #39404f;
+}
+.title-gear:hover { color: #ffd028; border-color: #ffd028; }
+.title-gear:focus-visible { outline: 2px solid #ffd028; outline-offset: 3px; }
 /* in the flow (last flex item), so a tall menu scrolls past it instead of under it */
 .title-foot {
   align-self: stretch; flex-shrink: 0; margin: 10px 18px 0;
@@ -740,7 +791,14 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   .new-sector { margin-top: 9px; }
   .ns-tag { font-size: 10px; padding: 4px 9px; letter-spacing: .16em; }
   .ns-text { font-size: 10px; padding: 4px 10px; letter-spacing: .1em; }
-  .title-brief, .howto { margin-top: 16px; }
+  #title-logo { width: min(62vw, 440px); }
+  .title-goal { margin-top: 6px; font-size: 12px; }
+  .tsteps { margin-top: 8px; gap: 6px; }
+  .tstep { width: 126px; padding: 9px 6px 8px; gap: 5px; }
+  .tstep-text { font-size: 10px; letter-spacing: .1em; }
+  .tbtn-play { font-size: 18px; padding: 12px 60px; }
+  .title-controls { margin-top: 10px; font-size: 10px; }
+  .title-gear { top: 8px; right: 10px; width: 36px; height: 36px; }
   .title-menu { margin-top: 18px; }
   .tscreen { padding: 4px 0 7px; }
   .title-foot { margin-top: 4px; }
@@ -804,6 +862,8 @@ export class HUD {
   private objArrowEl!: HTMLElement;
   private objDistEl!: HTMLElement;
   private objDistCache = '';
+  private objStepEls: HTMLElement[] = [];
+  private objNavEl!: HTMLElement;
   private killsEl!: HTMLElement;
   private killsNumEl!: HTMLElement;
   private killsCache = '';
@@ -844,7 +904,7 @@ export class HUD {
         <div class="pill hpanel" id="armor">${ICONS.armor()}<span class="value">0</span><span class="unit">ARMOR</span></div>
       </div>
       <div id="topright">
-        <div id="obj-head">SECTOR <b id="obj-sector">1</b> / <span id="obj-total">3</span></div>
+        <div id="obj-head"><span id="obj-label">SECTOR</span> <b id="obj-sector">1</b><span id="obj-of"> / <span id="obj-total">3</span></span></div>
         <div id="sysbtns">
           <button id="hud-map" class="sysbtn" title="Map (Tab / M)">MAP</button>
           <button id="hud-pause" class="sysbtn" title="Pause (Esc)">&#10073;&#10073;</button>
@@ -854,8 +914,15 @@ export class HUD {
         <div id="buffs"></div>
       </div>
       <div id="objective">
-        <div id="obj-main" class="hpanel"><i id="obj-icon"></i><span id="obj-text"></span></div>
-        <div id="obj-nav"><div id="obj-arrow"></div><span id="obj-dist"></span></div>
+        <div id="obj-main" class="hpanel"><i id="obj-icon"></i><span id="obj-text"></span><span id="obj-steps"><i></i><i></i><i></i></span></div>
+        <div id="obj-nav">
+          <div id="obj-dial"><svg id="obj-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5 L21 21.5 L12 16 L3 21.5 Z"/></svg></div>
+          <span id="obj-dist"></span>
+        </div>
+        <div id="bossbar" hidden>
+          <div id="boss-head"><span id="boss-name"></span><span id="boss-core">CORE EXPOSED</span></div>
+          <div id="boss-track"><div id="boss-chip"></div><div id="boss-fill"></div></div>
+        </div>
       </div>
       <div id="hint"></div>
       <div id="weaponbar">
@@ -903,6 +970,8 @@ export class HUD {
     this.objTextEl = this.root.querySelector('#obj-text')!;
     this.objArrowEl = this.root.querySelector('#obj-arrow')!;
     this.objDistEl = this.root.querySelector('#obj-dist')!;
+    this.objStepEls = [...this.root.querySelectorAll<HTMLElement>('#obj-steps i')];
+    this.objNavEl = this.root.querySelector('#obj-nav')!;
     this.killsEl = this.root.querySelector('#kills')!;
     this.killsNumEl = this.root.querySelector('#kills-num')!;
     for (let i = 0; i < ORDER.length; i++) {
@@ -1006,21 +1075,60 @@ export class HUD {
   /** objective tracker: step icon + text in its color; `flash` pops it on a change */
   setObjective(
     sector: number, total: number, text: string, color: string, flash: boolean,
-    icon: 'keycard' | 'door' | 'lift' | 'pad' = 'keycard',
+    icon: 'keycard' | 'door' | 'lift' | 'pad' | 'boss' = 'keycard',
   ): void {
+    // past the campaign it's endless: DEPTH n, no "of N"
+    const endless = sector > total;
+    (this.root.querySelector('#obj-label') as HTMLElement).textContent = endless ? 'DEPTH' : 'SECTOR';
     (this.root.querySelector('#obj-sector') as HTMLElement).textContent = String(sector);
     (this.root.querySelector('#obj-total') as HTMLElement).textContent = String(total);
+    (this.root.querySelector('#obj-of') as HTMLElement).style.display = endless ? 'none' : '';
     this.objTextEl.textContent = text;
     if (icon !== this.objIconCache) {
       this.objIconCache = icon;
-      this.objIconEl.innerHTML = ICONS[icon](16);
+      this.objIconEl.innerHTML = ICONS[icon](20);
     }
-    this.objIconEl.style.color = color;
+    this.objMainEl.style.setProperty('--obj-c', color);
+    // keycard (a boss guards it) → door → lift / pad
+    const step = icon === 'door' ? 1 : icon === 'lift' || icon === 'pad' ? 2 : 0;
+    this.objStepEls.forEach((el, i) => {
+      el.classList.toggle('done', i < step);
+      el.classList.toggle('now', i === step);
+    });
     if (flash) {
       this.objMainEl.classList.remove('flash');
       void this.objMainEl.offsetWidth; // restart the animation
       this.objMainEl.classList.add('flash');
     }
+  }
+
+  private bossShown = false;
+  private bossChip = 1;
+  /**
+   * Boss health bar under the objective: the name, a red fill, and a pale
+   * chip that trails behind it so each hit reads. Orange with CORE EXPOSED
+   * while the core is open. `name` null hides it.
+   */
+  setBoss(name: string | null, frac = 1, coreOpen = false): void {
+    const bar = this.root.querySelector('#bossbar') as HTMLElement;
+    if (!name) {
+      if (this.bossShown) {
+        bar.hidden = true;
+        this.bossShown = false;
+      }
+      return;
+    }
+    if (!this.bossShown) {
+      bar.hidden = false;
+      this.bossShown = true;
+      this.bossChip = frac;
+      (bar.querySelector('#boss-name') as HTMLElement).textContent = name;
+    }
+    const f = Math.max(0, Math.min(1, frac));
+    this.bossChip = Math.max(f, this.bossChip - 0.006); // the chip drains after the hit
+    (bar.querySelector('#boss-fill') as HTMLElement).style.width = `${(f * 100).toFixed(1)}%`;
+    (bar.querySelector('#boss-chip') as HTMLElement).style.width = `${(this.bossChip * 100).toFixed(1)}%`;
+    bar.classList.toggle('core', coreOpen);
   }
 
   /** arrow relative to view (0° = straight ahead) + distance; null hides it */
@@ -1033,7 +1141,10 @@ export class HUD {
     this.objArrowEl.style.opacity = '1';
     this.objArrowEl.style.transform = `rotate(${angleDeg.toFixed(0)}deg)`;
     const d = dist < 2.5 ? 'HERE' : `${Math.round(dist)}m`;
-    if (d !== this.objDistCache) this.objDistEl.textContent = this.objDistCache = d;
+    if (d !== this.objDistCache) {
+      this.objDistEl.textContent = this.objDistCache = d;
+      this.objNavEl.classList.toggle('here', d === 'HERE');
+    }
   }
 
   setKills(kills: number, total: number): void {
@@ -1154,15 +1265,19 @@ export class HUD {
   showTitle(opts: {
     seed: number;
     best?: number;
-    /** touch device: the how-to panel lists the on-screen controls */
+    /** touch device: the controls line names the thumbs instead of WASD / mouse */
     touch?: boolean;
     /** saved run: shows "Continue · Sector N" as the primary button */
     continueSector?: number;
+    /** "Sector 3" / "Depth 7" for the Continue button */
+    continueLabel?: string;
+    /** deepest endless depth reached on this device (0 = never) */
+    bestDepth?: number;
     onStart: () => void;
     onContinue?: () => void;
     /** omitted on platforms without co-op (Poki build) */
     onCoop?: () => void;
-    /** "NEW SECTOR" banner for the Biofoundry (until the player has reached it) */
+    /** "NEW SECTOR" banner for the Biofoundry: returning players only, until they reach it */
     newSector?: boolean;
     onSettings: () => void;
   }): void {
@@ -1170,59 +1285,48 @@ export class HUD {
     const el = document.createElement('div');
     el.id = 'title-screen';
     el.className = 'tscreen';
-    const seedHex = (opts.seed >>> 0).toString(16).toUpperCase().padStart(8, '0');
     const cont = opts.continueSector && opts.onContinue ? opts.continueSector : 0;
+    // one line of controls instead of a how-to panel (the first run's hint strip teaches the rest)
     const controls = opts.touch
-      ? `<b>LEFT THUMB</b><span>Move (drag anywhere on the left)</span>
-          <b>RIGHT THUMB</b><span>Aim (drag anywhere on the right)</span>
-          <b>FIRE / JUMP</b><span>Buttons on the right</span>
-          <b>1&ndash;5</b><span>Tap a weapon slot to switch</span>
-          <b>MAP</b><span>Top-right button &mdash; shows where you've been</span>`
-      : `<b>WASD / ARROWS</b><span>Move</span>
-          <b>MOUSE</b><span>Aim</span>
-          <b>LEFT CLICK</b><span>Fire (hold to keep firing)</span>
-          <b>SPACE</b><span>Jump</span>
-          <b>1&ndash;5 / WHEEL</b><span>Switch weapon</span>
-          <b>TAB / M</b><span>Map</span>
-          <b>ESC</b><span>Pause</span>`;
+      ? '<b>LEFT THUMB</b> move<i>&middot;</i><b>RIGHT THUMB</b> aim<i>&middot;</i><b>FIRE</b> shoot'
+      : '<b>WASD</b> move<i>&middot;</i><b>MOUSE</b> aim<i>&middot;</i><b>CLICK</b> shoot';
+    // the goal, as the three steps the in-game objective tracker walks through
+    const step = (n: number, icon: string, color: string, text: string): string =>
+      `<div class="tstep" style="--c:${color}"><span class="tstep-n">${n}</span><span class="tstep-icon">${icon}</span><span class="tstep-text">${text}</span></div>`;
+    const foot = [
+      opts.best ? `BEST SCORE ${opts.best.toLocaleString()}` : '',
+      opts.bestDepth ? `DEEPEST: DEPTH ${opts.bestDepth}` : '',
+    ].filter(Boolean).join(' &middot; ');
     el.innerHTML = `
+      <button id="title-settings-btn" class="title-gear" aria-label="Settings" title="Settings">${ICONS.gear(20)}</button>
       <div class="title-center">
         <canvas id="title-logo"></canvas>
-        <div class="title-tag">A Retro Voxel Shooter</div>
-        <div class="title-mission">Five sectors down. One way out.</div>
+        <div class="title-goal">Escape the facility</div>
+        <div id="title-steps" class="tsteps">
+          ${step(1, ICONS.keycard(28), '#ff3428', 'Find the<br>red keycard')}
+          <span class="tstep-sep">&#9656;</span>
+          ${step(2, ICONS.door(28), '#ff3428', 'Open the<br>red door')}
+          <span class="tstep-sep">&#9656;</span>
+          ${step(3, ICONS.lift(28), '#4cc26a', 'Ride the<br>lift out')}
+        </div>
         ${opts.newSector ? `<div id="new-sector" class="new-sector" role="note">
           <span class="ns-tag">NEW SECTOR</span>
           <span class="ns-text"><b>THE BIOFOUNDRY</b><i>&middot;</i>SECTORS 4&ndash;5<i>&middot;</i>DON'T WAKE THE TANKS</span>
         </div>` : ''}
         <div class="title-menu">
           ${cont
-            ? `<button id="continue-btn" class="tbtn tbtn-primary">Continue &middot; Sector ${cont}</button>`
-            : '<button id="start-btn" class="tbtn tbtn-primary">Enter the facility</button>'}
-          <div class="title-menu-row">
+            ? `<button id="continue-btn" class="tbtn tbtn-primary tbtn-play">Continue &middot; ${opts.continueLabel ?? `Sector ${cont}`}</button>`
+            : '<button id="start-btn" class="tbtn tbtn-primary tbtn-play">Play</button>'}
+          ${cont || opts.onCoop ? `<div class="title-menu-row">
             ${cont ? '<button id="start-btn" class="tbtn tbtn-quiet">New run</button>' : ''}
             ${opts.onCoop ? '<button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button>' : ''}
-            <button id="howto-btn" class="tbtn tbtn-quiet">How to play</button>
-            <button id="title-settings-btn" class="tbtn tbtn-quiet">Settings</button>
-          </div>
+          </div>` : ''}
         </div>
-        <div id="title-brief" class="title-brief">
-          <span class="chip"><i class="sq" style="background:#ff3428;color:#ff3428"></i>FIND THE RED KEYCARD</span>
-          <span class="sep">&#9656;</span>
-          <span class="chip"><i class="sq" style="background:#ff3428;color:#ff3428"></i>OPEN THE RED DOOR</span>
-          <span class="sep">&#9656;</span>
-          <span class="chip"><i class="sq" style="background:#4cc26a;color:#4cc26a"></i>RIDE THE LIFT TO THE EXIT PAD</span>
-        </div>
-        <div id="howto-panel" class="howto" hidden>
-          ${controls}
-          <span class="tip">Follow the yellow arrow at the top of the screen to your next objective.</span>
-          <span class="tip">Green barrels explode and chain. Crates break open.</span>
-          <span class="tip">A cracked wall hides a secret in every sector.</span>
-          <span class="tip">Die and you restart the sector with the gear you brought in.</span>
-        </div>
+        <div class="title-controls">${controls}</div>
       </div>
       <div class="title-foot">
-        <span>LAYOUT ${seedHex}${opts.best ? ` &middot; BEST SCORE ${opts.best.toLocaleString()}` : ' &middot; GENERATED FRESH EVERY RUN'}</span>
-        <span>VOXELSTRIKE 0.3</span>
+        <span>${foot}</span>
+        <span>VOXELSTRIKE ${__APP_VERSION__}</span>
       </div>
     `;
     document.body.appendChild(el);
@@ -1236,13 +1340,6 @@ export class HUD {
     el.querySelector('#continue-btn')?.addEventListener('click', () => opts.onContinue?.());
     el.querySelector('#title-settings-btn')!.addEventListener('click', () => opts.onSettings());
     el.querySelector('#coop-btn')?.addEventListener('click', () => opts.onCoop?.());
-    const howto = el.querySelector('#howto-panel') as HTMLElement;
-    const brief = el.querySelector('#title-brief') as HTMLElement;
-    el.querySelector('#howto-btn')!.addEventListener('click', () => {
-      const show = howto.hidden;
-      howto.hidden = !show;
-      brief.style.display = show ? 'none' : 'flex';
-    });
     this.titleKey = (ev: KeyboardEvent) => {
       if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') {
         if (cont) opts.onContinue?.();
@@ -1285,7 +1382,7 @@ export class HUD {
       </div>
       <div class="title-foot">
         <span>CO-OP CAMPAIGN &middot; KEYS ARE SHARED &middot; NO FRIENDLY FIRE</span>
-        <span>VOXELSTRIKE 0.2</span>
+        <span>VOXELSTRIKE ${__APP_VERSION__}</span>
       </div>
     `;
     document.body.appendChild(el);
@@ -1354,6 +1451,8 @@ export class HUD {
   showDeath(o: {
     stats: string;
     sector: number;
+    /** 'depth' past the campaign */
+    unit?: 'sector' | 'depth';
     keycard: boolean;
     revive: 'ad' | 'free' | null;
     onRetry: () => void;
@@ -1361,7 +1460,8 @@ export class HUD {
     onRevive: () => void;
     onNewRun: () => void;
   }): void {
-    const retryLabel = o.keycard ? 'Retry from keycard' : `Retry sector ${o.sector}`;
+    const unit = o.unit ?? 'sector';
+    const retryLabel = o.keycard ? 'Retry from keycard' : `Retry ${unit} ${o.sector}`;
     const revive = o.revive
       ? `<button id="revive-btn" class="tbtn tbtn-revive">${o.revive === 'ad' ? `${ICONS.ad(15)}<span>Revive &middot; Watch ad</span>` : '<span>Revive here</span>'}</button>`
       : '';
@@ -1378,7 +1478,7 @@ export class HUD {
           <button id="retry-btn" class="tbtn tbtn-primary">${retryLabel}</button>
         </div>
         <div class="tbtn-row">
-          ${o.keycard ? `<button id="restart-btn" class="tbtn tbtn-quiet">Restart sector ${o.sector}</button>` : ''}
+          ${o.keycard ? `<button id="restart-btn" class="tbtn tbtn-quiet">Restart ${unit} ${o.sector}</button>` : ''}
           <button id="newrun-btn" class="tbtn tbtn-quiet">New run</button>
         </div>
       </div>
@@ -1528,7 +1628,7 @@ export class HUD {
       </div>
       <div class="title-foot">
         <span>SETTINGS ARE SAVED ON THIS DEVICE</span>
-        <span>VOXELSTRIKE 0.2</span>
+        <span>VOXELSTRIKE ${__APP_VERSION__}</span>
       </div>
     `;
     document.body.appendChild(el);
@@ -1624,7 +1724,7 @@ export class HUD {
         <canvas id="pause-logo"></canvas>
         <div class="title-tag">Standing By</div>
         <div class="status-line">
-          <span>SECTOR <b class="hz">${stats.sector}</b> OF ${stats.totalSectors}</span>
+          <span>${stats.sector > stats.totalSectors ? `DEPTH <b class="hz">${stats.sector}</b>` : `SECTOR <b class="hz">${stats.sector}</b> OF ${stats.totalSectors}`}</span>
           <span>KILLS <b>${stats.kills} / ${stats.totalEnemies}</b></span>
           <span>SECRETS <b>${stats.secrets} / ${stats.totalSecrets}</b></span>
           <span>TIME <b>${stats.time}</b></span>
@@ -1754,11 +1854,13 @@ export class HUD {
     prevBest: string | null;
     saved: boolean;
     touch: boolean;
-    perks: Array<{ id: PerkId; name: string; short: string; desc: string }> | null;
+    perks: Array<{ id: OfferId; name: string; short: string; desc: string }> | null;
     final?: { totals: string; record: string };
+    /** final screen: "Keep descending" into endless depths */
+    onDescend?: () => void;
     onTick: () => void;
     onStamp: () => void;
-    onPick?: (id: PerkId) => void;
+    onPick?: (id: OfferId) => void;
     onContinue?: () => void;
     onAgain?: () => void;
     onMenu?: () => void;
@@ -1779,8 +1881,11 @@ export class HUD {
         <p class="sc-totals">${o.final.totals}</p>
         <p class="sc-totals">${o.final.record}</p>
         <div class="screen-btns">
-          <button id="again-btn" class="tbtn tbtn-primary" disabled>Play a new layout</button>
-          <div class="tbtn-row"><button id="menu-btn" class="tbtn tbtn-quiet" disabled>Main menu</button></div>
+          ${o.onDescend
+            ? `<button id="descend-btn" class="tbtn tbtn-primary" disabled>Keep descending &middot; Depth ${o.sector + 1}</button>
+          <div class="tbtn-row"><button id="again-btn" class="tbtn tbtn-quiet" disabled>Play a new layout</button><button id="menu-btn" class="tbtn tbtn-quiet" disabled>Main menu</button></div>`
+            : `<button id="again-btn" class="tbtn tbtn-primary" disabled>Play a new layout</button>
+          <div class="tbtn-row"><button id="menu-btn" class="tbtn tbtn-quiet" disabled>Main menu</button></div>`}
         </div>`;
     } else if (perks.length) {
       after = `
@@ -1834,7 +1939,7 @@ export class HUD {
       armed = true;
       for (const c of cards) c.disabled = false;
       el.querySelector('.sc-perks')?.classList.add('armed');
-      for (const b of el.querySelectorAll<HTMLButtonElement>('#again-btn, #menu-btn')) b.disabled = false;
+      for (const b of el.querySelectorAll<HTMLButtonElement>('#again-btn, #menu-btn, #descend-btn')) b.disabled = false;
     };
     const finish = (): void => {
       if (done) return;
@@ -1878,12 +1983,16 @@ export class HUD {
       cards[i].classList.add('chosen');
       el.querySelector('.sc-perks')?.classList.add('picked');
       for (const c of cards) c.disabled = true;
-      o.onPick?.(cards[i].dataset.id as PerkId);
+      o.onPick?.(cards[i].dataset.id as OfferId);
     };
     cards.forEach((c, i) => c.addEventListener('click', (ev) => {
       ev.stopPropagation();
       pick(i);
     }));
+    el.querySelector('#descend-btn')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (armed) o.onDescend?.();
+    });
     el.querySelector('#again-btn')?.addEventListener('click', (ev) => {
       ev.stopPropagation();
       if (armed) o.onAgain?.();
@@ -1905,7 +2014,7 @@ export class HUD {
       }
       if (ev.code !== 'Enter' && ev.code !== 'NumpadEnter' && ev.code !== 'Space') return;
       if (!done) finish();
-      else if (armed && o.final) o.onAgain?.();
+      else if (armed && o.final) (o.onDescend ?? o.onAgain)?.();
       else if (armed && !cards.length) o.onContinue?.();
     };
     window.addEventListener('keydown', this.titleKey);

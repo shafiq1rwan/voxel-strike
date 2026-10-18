@@ -1,6 +1,6 @@
 # Sector 4: Biofoundry monster behavior
 
-Status: design proposal, not implemented. The Biofoundry is campaign sector 4 (2026-10-18), generated fresh each run, and uses the existing enemies plus the tank Vatborn; the Spitter, Carapace and Broodkeeper below are still proposals and are not in the campaign or the Poki build. All timings, health values, and damage below are starting points for playtesting, not measured balance results.
+Status: the **Broodkeeper is implemented** (2026-10-18): it guards the red keycard in campaign sector 5 and on every fifth endless depth, solo only, in web and Poki builds, with the cycle, timings and damage windows below (acid globs are plain projectiles: no lingering patches yet). The Spitter and Carapace are still proposals and are not in the campaign or the Poki build. The Biofoundry is campaign sectors 4–5, generated fresh each run. All timings, health values, and damage below are starting points for playtesting, not measured balance results.
 
 ## Roster and references
 

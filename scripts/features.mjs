@@ -41,7 +41,23 @@ try {
   await page.waitForSelector('#hud', { timeout: 10000 });
   await page.click('#start-btn');
   await new Promise((r) => setTimeout(r, 600));
-  await page.evaluate(() => { window.__voxelstrike.input.locked = true; });
+  // sector 1 is a short opener with no brute and no ticker nests: run the
+  // gameplay sections in sector 2, which has the full roster
+  const opener = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    const rooms = g.level.rooms.length;
+    const kinds = new Set(g.enemies.list.map((e) => e.kind));
+    const shotgunAtSpawn = g.level.pickups.some((p) => p.kind === 'weaponShotgun' &&
+      g.level.rooms.find((r) => r.kind === 'spawn' && p.x >= r.x && p.x < r.x + r.w && p.z >= r.z && p.z < r.z + r.d));
+    g.levelIndex = 2;
+    g.buildLevel();
+    g.state = 'playing';
+    g.input.locked = true;
+    return { rooms, brute: kinds.has('brute'), ticker: kinds.has('ticker'), shotgunAtSpawn };
+  });
+  check(opener.rooms <= 7 && !opener.brute && !opener.ticker && opener.shotgunAtSpawn,
+    `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no tickers, shotgun in the spawn room`);
+  await new Promise((r) => setTimeout(r, 300));
 
   // --- 1a. ticker charges the player and self-destructs -----------------------
   const suicide = await page.evaluate(async () => {
@@ -712,6 +728,9 @@ try {
     ph.on('pageerror', (err) => errors.push(`[phone pageerror] ${err.message}`));
     await ph.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
     await ph.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    // a returning player who hasn't reached the Biofoundry: the busiest title there is
+    await ph.evaluate(() => { localStorage.setItem('voxelstrike-tutorial-done', '1'); localStorage.removeItem('voxelstrike-biofoundry-seen'); });
+    await ph.reload({ waitUntil: 'networkidle0' });
     await ph.waitForSelector('#title-settings-btn');
     const phoneTitle = await ph.evaluate(() => {
       const b = document.querySelector('#new-sector')?.getBoundingClientRect();
@@ -799,6 +818,167 @@ try {
     await pk.close();
   }
 
+  // --- 18. the Broodkeeper: activation, cycle, armor/core, HP bar, defeat ------
+  {
+    const bp = await browser.newPage();
+    bp.on('pageerror', (err) => errors.push(`[boss pageerror] ${err.message}`));
+    await bp.setViewport({ width: 1280, height: 720 });
+    await bp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await bp.waitForSelector('#start-btn');
+    await bp.evaluate(() => document.querySelector('#start-btn').click());
+    await new Promise((r) => setTimeout(r, 700));
+    const boss = await bp.evaluate(async () => {
+      const g = window.__voxelstrike;
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      g.levelIndex = 5; g.buildLevel(); g.state = 'playing'; g.input.locked = true; g.hud.hideScreen();
+      g.player.health = 5000;
+      const b = g.bossEnemy;
+      if (!b) return { found: false };
+      for (const e of g.enemies.list) if (e !== b && e.alive) { e.pos.set(2, e.pos.y, 2); e.awake = false; e.state = 'idle'; e.wake = () => {}; }
+      const spec = g.level.boss;
+      const out = { found: true };
+      out.dormantOutside = !b.bossActive && document.querySelector('#bossbar').hidden;
+      // walk into the chamber: 7 u in front of the cradle
+      g.player.spawnAt(spec.x - Math.sin(spec.yaw) * 7, 1.95, spec.z - Math.cos(spec.yaw) * 7);
+      await sleep(300);
+      out.active = b.bossActive;
+      out.bar = !document.querySelector('#bossbar').hidden;
+      out.objective = document.querySelector('#obj-text')?.textContent;
+      // one full cycle: a volley, an opening, a release, a second opening
+      const seen = new Set();
+      let acid = 0;
+      let barCore = false;
+      const t0 = performance.now();
+      while (performance.now() - t0 < 9000) {
+        seen.add(b.boss.phase);
+        acid = Math.max(acid, g.projectiles.liveList().filter((q) => q[0] === 2).length);
+        if (b.coreOpen && document.querySelector('#bossbar').classList.contains('core')) barCore = true;
+        await sleep(50);
+      }
+      out.phases = [...seen].sort().join(',');
+      out.acid = acid;
+      out.summons = b.boss.summons.length;
+      out.barCore = barCore;
+      // armor and the core
+      b.coreOpen = false; let h = b.hp; b.damage(40, 0, 0, g); out.closed = h - b.hp;
+      b.coreOpen = true; h = b.hp; b.lastHitCore = true; b.damage(40, 0, 0, g); out.core = h - b.hp;
+      // below 40%: five globs a volley
+      b.hp = b.tuning.hp * 0.3;
+      b.boss.phase = 'open2'; b.boss.t = 10;
+      await sleep(150);
+      out.shotsLow = b.boss.shots;
+      // defeat
+      g.projectiles.spawn('acid', b.pos.x, 3, b.pos.z, 0, 0, -1, 2, false);
+      b.coreOpen = true; b.lastHitCore = true; b.damage(99999, 0, 0, g);
+      await sleep(300);
+      out.dead = !b.alive;
+      out.acidAfter = g.projectiles.liveList().filter((q) => q[0] === 2).length;
+      out.barAfter = !document.querySelector('#bossbar').hidden;
+      out.key = g.pickups.items.some((p) => !p.taken && p.spec.kind === 'keyRed');
+      // the perk pool runs dry deep in endless: one-off rewards fill the offer
+      for (const id of ['volatile', 'overcharge', 'headhunter', 'momentum', 'secondWind', 'deepPockets', 'plating', 'scavenger']) g.perks.add(id);
+      return out;
+    });
+    check(boss.found, 'sector 5 spawns the Broodkeeper');
+    if (boss.found) {
+      check(boss.dormantOutside, 'it waits (no bar) until a player enters the chamber');
+      check(boss.active && boss.bar && boss.objective === 'Kill the Broodkeeper', `entering wakes it: HP bar up, objective "${boss.objective}"`);
+      check(boss.phases === 'open1,open2,release,volley', `it runs volley → open → release → open (${boss.phases})`);
+      check(boss.acid >= 1 && boss.summons >= 1, `it fires acid (${boss.acid}) and releases Husks (${boss.summons})`);
+      check(boss.barCore, 'the HP bar shows CORE EXPOSED while the core is open');
+      check(boss.closed === 10 && boss.core === 80, `closed armor takes 25% (${boss.closed} of 40), the open core 2× (${boss.core})`);
+      check(boss.shotsLow === 5, `below 40% health a volley is five globs (${boss.shotsLow})`);
+      check(boss.dead && boss.acidAfter === 0 && !boss.barAfter && boss.key, 'defeat clears its acid, hides the bar and drops the red keycard');
+    }
+    const offer = await bp.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.state = 'playing'; g.hud.hideScreen(); g.levelIndex = 6; g.win();
+      const ids = [...document.querySelectorAll('.sc-perk')].map((c) => c.dataset.id);
+      return { ids };
+    });
+    check(offer.ids.length === 3 && offer.ids.filter((i) => ['patchUp', 'resupply', 'reinforce'].includes(i)).length === 2,
+      `with one perk left, the offer is that perk plus one-off rewards (${offer.ids.join(', ')})`);
+    // building sector 5 marked the Biofoundry seen (and the clear may save a run): the title checks below need a fresh device
+    await bp.evaluate(() => ['voxelstrike-biofoundry-seen', 'voxelstrike-run', 'voxelstrike-best-depth'].forEach((k) => localStorage.removeItem(k)));
+    await bp.close();
+  }
+
+  // --- 18b. the Broodkeeper dies to real gunfire (no direct damage() calls) ----
+  {
+    const kp = await browser.newPage();
+    kp.on('pageerror', (err) => errors.push(`[boss-kill pageerror] ${err.message}`));
+    await kp.setViewport({ width: 1280, height: 720 });
+    await kp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await kp.waitForSelector('#start-btn');
+    await kp.click('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    await kp.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.levelIndex = 5; g.buildLevel(); g.state = 'playing'; g.input.locked = true; g.hud.hideScreen();
+      for (const e of g.enemies.list) if (e !== g.bossEnemy && e.alive) { e.update = () => {}; e.mesh.visible = false; e.pos.y = -50; }
+      const s = g.level.boss;
+      let placed = false;
+      // stand 6 u in front of the cradle, aimed at the core; keep the player alive
+      window.__hold = () => {
+        const p = g.player;
+        const fx = -Math.sin(s.yaw), fz = -Math.cos(s.yaw);
+        if (!placed) { p.spawnAt(s.x + fx * 6, 1.95, s.z + fz * 6); placed = true; }
+        p.pos.x = s.x + fx * 6; p.pos.z = s.z + fz * 6; p.vel.set(0, 0, 0);
+        p.yaw = Math.atan2(p.pos.x - s.x, p.pos.z - s.z);
+        const eye = p.eyeY ? p.eyeY() : p.pos.y + 0.6;
+        p.pitch = Math.atan2(g.bossEnemy.pos.y + 0.1 - eye, 5.2);
+        p.health = 1000;
+      };
+      window.__hold();
+      g.weapons.restoreLoadout(['pistol', 'shotgun', 'smg', 'rocket', 'arc'], 'pistol');
+    });
+    const fire = async (ms, top) => {
+      await kp.mouse.down();
+      const t0 = Date.now();
+      while (Date.now() - t0 < ms) {
+        const alive = await kp.evaluate((top) => {
+          const g = window.__voxelstrike;
+          window.__hold();
+          if (top) Object.assign(g.player.ammo, { bullets: 200, shells: 50, rockets: 20, cells: 100 });
+          return g.bossEnemy.alive;
+        }, top);
+        if (!alive) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      await kp.mouse.up();
+    };
+    const hurt = [];
+    for (const w of ['pistol', 'shotgun', 'smg', 'rocket', 'arc']) {
+      await kp.evaluate((w) => window.__voxelstrike.weapons.switchTo(w), w);
+      await new Promise((r) => setTimeout(r, 700));
+      const before = await kp.evaluate(() => window.__voxelstrike.bossEnemy.hp);
+      await fire(1200, true);
+      await new Promise((r) => setTimeout(r, 500));
+      const after = await kp.evaluate(() => window.__voxelstrike.bossEnemy.hp);
+      if (after < before) hurt.push(w);
+    }
+    check(hurt.length === 5, `every weapon hurts the Broodkeeper (${hurt.join(', ')})`);
+    // from full health, held Ripper fire through its real cycle (armor + openings)
+    await kp.evaluate(() => { const g = window.__voxelstrike; g.bossEnemy.hp = g.bossEnemy.tuning.hp; g.weapons.switchTo('smg'); });
+    await new Promise((r) => setTimeout(r, 600));
+    const t0 = Date.now();
+    await fire(60000, true);
+    const secs = (Date.now() - t0) / 1000;
+    const end = await kp.evaluate(() => {
+      const g = window.__voxelstrike;
+      return {
+        alive: g.bossEnemy.alive,
+        key: g.pickups.items.some((p) => !p.taken && p.spec.kind === 'keyRed'),
+        bar: !document.querySelector('#bossbar').hidden,
+        stage: document.querySelector('#obj-text')?.textContent,
+      };
+    });
+    check(!end.alive, `real gunfire kills it from full health (${secs.toFixed(1)}s of held Ripper fire)`);
+    check(end.key && !end.bar && /keycard/i.test(end.stage ?? ''), `then the keycard drops, the bar hides, the objective moves on ("${end.stage}")`);
+    await kp.evaluate(() => ['voxelstrike-biofoundry-seen', 'voxelstrike-run', 'voxelstrike-best-depth'].forEach((k) => localStorage.removeItem(k)));
+    await kp.close();
+  }
+
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
   // Desktop defaults to 480 lines, touch to 320 (above), still cycled in
@@ -811,7 +991,7 @@ try {
     await pc.evaluateOnNewDocument(() => {
       if (sessionStorage.getItem('seeded')) return;
       sessionStorage.setItem('seeded', '1');
-      localStorage.removeItem('voxelstrike-settings');
+      for (const k of ['voxelstrike-settings', 'voxelstrike-tutorial-done', 'voxelstrike-biofoundry-seen', 'voxelstrike-run']) localStorage.removeItem(k);
     });
     await pc.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
     await pc.waitForSelector('#start-btn');
@@ -821,6 +1001,26 @@ try {
       lines: window.__voxelstrike.rendererSys.renderer.domElement.height,
     }));
     check(!fresh.coop, 'the main screen has no co-op button (same as Poki)');
+    check(await pc.evaluate(() => window.__voxelstrike.overload === null), 'the Overload terminal is hidden in normal play (only ?overload builds it)');
+    const first = await pc.evaluate(() => {
+      const play = document.querySelector('#start-btn');
+      const steps = [...document.querySelectorAll('#title-steps .tstep-text')].map((t) => t.textContent.replace(/\s+/g, ' ').trim());
+      const buttons = [...document.querySelectorAll('#title-screen button')].map((b) => b.id);
+      const r = play.getBoundingClientRect();
+      return {
+        play: play.textContent.trim(), steps, buttons, banner: !!document.querySelector('#new-sector'),
+        goal: document.querySelector('.title-goal')?.textContent, playOnScreen: r.bottom <= innerHeight,
+      };
+    });
+    check(first.play === 'Play' && first.playOnScreen && first.goal === 'Escape the facility' && first.steps.length === 3 && /keycard/i.test(first.steps[0]),
+      `first visit: the goal, three steps and one PLAY button ("${first.goal}": ${first.steps.join(' > ')})`);
+    check(first.buttons.join() === 'title-settings-btn,start-btn' && !first.banner,
+      `first visit: nothing else to click but the settings gear, no NEW SECTOR banner (${first.buttons.join(', ')})`);
+    await pc.screenshot({ path: 'scripts/shots/features-title-first.png' });
+    // a returning player who hasn't reached the Biofoundry yet gets the banner
+    await pc.evaluate(() => localStorage.setItem('voxelstrike-tutorial-done', '1'));
+    await pc.reload({ waitUntil: 'networkidle0' });
+    await pc.waitForSelector('#start-btn');
     const banner = await pc.evaluate(() => {
       const b = document.querySelector('#new-sector');
       const menu = document.querySelector('.title-menu');
@@ -829,7 +1029,7 @@ try {
       return { shown: true, text: b.textContent.replace(/\s+/g, ' ').trim(), aboveMenu: r.bottom <= menu.getBoundingClientRect().top + 1, inside: r.left >= 0 && r.right <= innerWidth };
     });
     check(banner.shown && /NEW SECTOR/.test(banner.text) && /BIOFOUNDRY/.test(banner.text),
-      `the title shows the NEW SECTOR banner ("${banner.text ?? ''}")`);
+      `a returning player sees the NEW SECTOR banner ("${banner.text ?? ''}")`);
     check(banner.shown && banner.aboveMenu && banner.inside, 'the banner sits above the menu, inside the screen');
     await pc.screenshot({ path: 'scripts/shots/features-title-banner.png' });
     check(fresh.res === 480, `desktop defaults to 480-line pixelation (${fresh.res})`);

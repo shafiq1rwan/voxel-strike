@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const POKI_SDK = 'https://game-cdn.poki.com/scripts/v2/poki-sdk.js';
@@ -39,7 +39,11 @@ function pokiPlugin(outDir: string): Plugin {
 export default defineConfig(({ mode }) => {
   const poki = mode === 'poki';
   const outDir = poki ? 'dist-poki' : 'dist';
+  // package.json is the one version source; `npm run zip:poki` bumps its
+  // patch number before every Poki build, and the title footer shows it
+  const { version } = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')) as { version: string };
   return {
+    define: { __APP_VERSION__: JSON.stringify(version) },
     // relative base so the build works on GitHub Pages project sites
     // (https://<user>.github.io/<repo>/), Poki's CDN, and any other static host
     base: './',

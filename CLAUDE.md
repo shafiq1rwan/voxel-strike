@@ -34,7 +34,7 @@ GPU memory on iOS).
 npm run dev        # dev server on http://localhost:5173
 npm run build      # tsc --noEmit + vite build → dist/  (run this before calling work done)
 npm run preview    # serve the production build on :4173
-npm run build:poki # Poki build → dist-poki/ (also dev:poki / preview:poki; zip:poki → upload zip) — see POKI.md
+npm run build:poki # Poki build → dist-poki/ (also dev:poki / preview:poki; zip:poki → bumps the patch version, then the upload zip voxelstrike-poki-<version>.zip; the title footer shows the version) — see POKI.md
 ```
 
 Headless test suites (need a dev or preview server running; they drive Edge at
@@ -44,20 +44,20 @@ save screenshots to `scripts/shots/`):
 
 ```bash
 node scripts/smoke.mjs      # boot, move, shoot, explode; fails on any console error; enemy-bounds watchdog
-node scripts/e2e.mjs        # plays the whole 5-sector campaign: aggro, barrels, key → vault → lift → exit, the facility terminal into the Biofoundry, sector 5 harder than 4
+node scripts/e2e.mjs        # plays the whole 5-sector campaign: aggro, barrels, key → vault → lift → exit, the facility terminal into the Biofoundry, sector 5 harder than 4, the sector 5 Broodkeeper holds the key, Keep descending → depth 6
 node scripts/movement.mjs   # WASD displacement must match camera basis vectors at 5 yaw angles
 node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consistency, claw/dodge + rendered poses/motion clip
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
-node scripts/overload.mjs <url> # optional solo two-wave encounter, reward/firing/cap/save checks and touch UI
+node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), NEW SECTOR banner, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener, Broodkeeper (wake on entry, cycle, acid + summons, armor/core damage, boss bar, key drop, every weapon hurts it + killed by real Ripper fire), reward fill-ins
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start; the same budget in the Biofoundry at its heaviest (sector 5)
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, free revive in place once per attempt, keycard checkpoint retry (world untouched) + Restart sector, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
 node scripts/sector4.mjs <url> [--poki]  # the hand-built ?sector4 preview: route, key gate, door, lift, completion, replay, retry, save isolation, mobile; --poki: the flag is ignored
 node scripts/breach.mjs     # sector 4 (`?sector4` opens it alone): dormant Vatborn in each occupied tank; shoot one → sealed during agitation, real collision gap, liquid gush, it walks out and hunts, releases once
-node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 fresh-start, level complete/fail), rewarded revive (ad icon, equal-size beside retry, muted, pays only on a watched video, once per attempt, hidden without the SDK), hidden co-op, boots with SDK blocked
+node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 fresh-start, level complete/fail, endless N complete/fail capped at 20), rewarded revive (ad icon, equal-size beside retry, muted, pays only on a watched video, once per attempt, hidden without the SDK), hidden co-op, boots with SDK blocked
 ```
 
 `?seed=N` on the URL reproduces a layout deterministically. `window.__voxelstrike`
@@ -126,6 +126,23 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   sector number in `voxelstrike-best-rank-<n>`. Then a perk: `rollPerkOffer`
   (src/core/perks.ts) offers 3 unowned perks seeded by run seed + sector;
   `pickPerk` adds it, re-captures the next-sector checkpoint and descends.
+  When fewer than 3 perks are left the offer is filled with one-off REWARDS
+  (`RewardId`: patchUp / resupply / reinforce, `isReward`, `offerDef`) —
+  `pickPerk` applies them on the spot and never stores them.
+  ENDLESS: the final clear screen's *Keep descending* (`onDescend`, solo
+  only) runs `afterBreak(nextLevel)` from state 'won'; `levelIndex` keeps
+  counting past `TOTAL_SECTORS` and `Game.endless` is true from depth 6.
+  `themeFor(n)`: 1–3 facility, 4–5 Biofoundry, then two-depth alternation;
+  `bossFor(n)` = solo and every 5th depth (forces Biofoundry). Endless enemy
+  HP ×`min(1.8, 1 + 0.08·(n−5))`; best depth in `voxelstrike-best-depth`
+  (title footer); HUD / pause / death / Continue say DEPTH; Poki sends
+  `measure('endless', min(20, n), complete|fail)` instead of `level`.
+  BOSS: on a boss depth `buildLevel` holds the red key back (`bossKey`),
+  spawns the Broodkeeper (`bossEnemy`) from `LevelData.boss`, and the
+  objective's first stage is `'boss'` (skull, orange, arrow on the boss);
+  `updateBossBar()` drives `hud.setBoss()` each frame; `onBossDefeated`
+  (from `Enemy.die`) clears acid, spawns the key, hides the bar. The key
+  ambush is skipped on boss levels and the living boss is in `solidBoxes`.
   Perks (`Game.perks`, `hasPerk`) live in `Checkpoint.perks` — retry / save /
   Continue keep them, a new run clears them; `applyPerkStats` sets the caps
   they change (`Player.maxHealth`, `ammoMax` from `BASE_*`). Hooks: Volatile
@@ -191,6 +208,16 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   never reshuffles rooms/enemies/pickups for a given seed. Hanging fixtures
   only spawn in rooms h>=5 and never in the exit room (a lamp block over the
   ledge walkway would block the path to the pad).
+  Difficulty = sector/depth number. Sector 1 is a short OPENER (6–7 rooms,
+  shotgun in the spawn room, no ticker nests, no brute — 1 brute at 2, 2
+  from 3 — plus a hashed barrel pair in the first room; e2e needs a barrel).
+  `generateLevel(seed, n, theme, withBoss)`: with a boss, `placeBoss` puts
+  the Broodkeeper on a doorway-free N/S (then W/E) wall of the arena with a
+  clear 3.4×3.4 footprint (crates/barrels cleared), empties the arena's
+  tanks, puts the key spec 2.8u in front of it, keeps normal enemies out of
+  the arena, and the generator retries until it fits. Endless depths add
+  up to 2 enemies per room ≥2 steps from spawn (from depth 7) and up to 8
+  occupied tanks; `addEnemy` respects `ENEMY_CAP` (90).
 - `src/core/physics.ts` — axis-by-axis AABB vs voxels + dynamic boxes (doors,
   elevator). The voxel resolver only corrects penetration caused by *this
   frame's movement* (`maxPen` guard) — deep pre-existing embeds must never be
@@ -258,7 +285,24 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   from `Game.noise()` (gunfire), `update` per frame — drive dormant →
   agitated 1.2s → breach (front glass voxels become air via `setAndDirty`)
   → 0.8s step-out onto a verified clear tile. One release per tank, at most
-  two breaching at once, preallocated in `totalEnemies`),
+  two breaching at once, preallocated in `totalEnemies`;
+  `broodkeeper` is the wall-mounted boss — `buildBroodkeeper()` (~49 boxes,
+  matched to `reference/sector4-broodkeeper.png`: steel cradle + feet, two
+  bolted hatches hinged at the BOTTOM (they fold forward), bone chest plates
+  on outer hinges over an orange core whose seam glows even when closed —
+  the abdomen must stay below the chest or it covers the core —, capped head
+  with visor + mouth, lime reservoirs, two back towers). Unlike other rigs
+  its colours are RAW (no sRGB decode) with baked per-face shade
+  (`BOSS_FACE_SHADE`): decoded, the steel went black and the red merged into
+  one blob. The Biofoundry's crimson incubator-heart growth is skipped on
+  boss levels (it hid the silhouette). Speed 0,
+  600 HP, dormant until a player enters its chamber (`activateBoss`; `wake`
+  does nothing). `bossUpdate` loops volley (1.0s warn, 3 acid globs 0.35s
+  apart, 5 below 40% HP) → open 2.4s → release up to 2 Husks (cap 4 alive,
+  they bump `totalEnemies`) → open 3.0s. `damage()`: ×0.25 closed, ×2 on
+  the open core (`lastHitCore`, set by weapons.ts when a hitscan lands in
+  `BOSS_CORE_Y` while `coreOpen`), no knockback/pain. Acid is its own
+  projectile kind (`'acid'`, own pool, `ENEMY_SHOT_DAMAGE`, `clearAcid()`),
   doors/elevator (door.ts: the lift is a `group` — hazard-striped deck with
   an UP-arrow top, low side rails on the two sides off the boarding axis
   (`ElevatorSpec.walkAxis`), and an additive chevron beam up the shaft while
@@ -359,9 +403,15 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   pixelation 480 lines on desktop, 320 on touch, still cycled in Settings.
   Saved settings carry `v: 2`; an unversioned save holding the old one-size
   default (240) is moved to the device default once.
-- Title screen: identical on web and Poki — no Co-op button anywhere. A
-  NEW SECTOR banner (THE BIOFOUNDRY · SECTORS 4–5) shows above the menu
-  until the player first enters a Biofoundry sector (`buildLevel` sets
+- Title screen: identical on web and Poki — no Co-op button anywhere.
+  Kept bare on purpose (playtime fell to under 2 minutes): wordmark,
+  ESCAPE THE FACILITY, three step tiles (keycard → door → lift, the HUD's
+  objective icons/colours), one PLAY (`#start-btn`; Continue + New run
+  with a save), one controls line, a Settings gear (`#title-settings-btn`)
+  in the corner — don't add menu items back. A NEW SECTOR banner (THE
+  BIOFOUNDRY · SECTORS 4–5) shows above the menu for RETURNING players
+  only (`voxelstrike-tutorial-done` set) until they first enter a
+  Biofoundry sector (`buildLevel` sets
   `voxelstrike-biofoundry-seen`; the `?sector4` preview doesn't count). Web
   builds show it with `?coop` (development; `coop.mjs` uses it), and the
   `?role=…&room=…` auto-join still works.

@@ -31,6 +31,11 @@ const setupShot = (pg, offsetRad) => pg.evaluate(async (offset) => {
     if (o !== e && o.alive) { o.pos.x = 4; o.pos.z = 4; o.awake = false; o.state = 'idle'; }
   }
   const p2 = g.player;
+  // measure with the sidearm: sector 1's spawn room holds a shotgun, and a lane
+  // through it would auto-equip it (slow pump = no follow-up shot to land)
+  for (const it of g.pickups.items) if (!it.taken) g.pickups.take(it);
+  if (g.weapons.current !== 'pistol') g.weapons.switchTo('pistol');
+  p2.ammo.bullets = Math.max(p2.ammo.bullets, 48);
 
   // find a room with a clear 12-unit lane along x or z
   let lane = null;

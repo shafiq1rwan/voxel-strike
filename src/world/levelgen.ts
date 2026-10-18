@@ -39,6 +39,13 @@ export interface LevelData {
   world: VoxelWorld;
   theme?: LevelTheme;
   bio?: BioLayout;
+  /**
+   * Boss sectors (5, then every 5th depth): the Broodkeeper's cradle against
+   * an arena wall with no doorway behind it. `yaw` faces the room. The red
+   * keycard spec sits in front of it (so the walkability check still sees a
+   * reachable key); the game hides it until the boss dies and drops it.
+   */
+  boss?: { x: number; z: number; yaw: number; roomId: number } | null;
   spawn: { x: number; y: number; z: number };
   rooms: RoomDef[];
   doors: DoorSpec[];
@@ -80,17 +87,18 @@ interface Edge {
  * draws use the position hash, never the layout RNG, so facility sectors
  * keep their exact layouts for a given seed.
  */
-export function generateLevel(seed: number, difficulty = 1, theme: LevelTheme = 'facility'): LevelData {
+export function generateLevel(seed: number, difficulty = 1, theme: LevelTheme = 'facility', withBoss = false): LevelData {
   for (let attempt = 0; attempt < 10; attempt++) {
     const s = (seed + attempt * 7919) >>> 0;
-    const data = generateLevelOnce(s, difficulty, theme);
+    const data = generateLevelOnce(s, difficulty, theme, withBoss);
+    if (withBoss && !data.boss) continue; // a boss sector needs a cradle spot
     if (validateLevel(data)) {
       if (attempt > 0) console.warn(`[levelgen] used fallback seed ${s} after ${attempt} invalid layouts`);
       return data;
     }
   }
   console.error('[levelgen] no valid layout found, returning last attempt');
-  return generateLevelOnce(seed, difficulty, theme);
+  return generateLevelOnce(seed, difficulty, theme, withBoss);
 }
 
 /** room signs in the Biofoundry (normal rooms take these in order) */
@@ -101,9 +109,11 @@ const BIO_ROOM_NAMES = [
 ];
 const BIO_TANKS_MAX = 12;
 /** occupied tanks: 4 in the first Biofoundry sector, 6 from sector 5 on */
-const bioOccupied = (difficulty: number): number => (difficulty >= 5 ? 6 : 4);
+const bioOccupied = (difficulty: number): number => (difficulty >= 8 ? 8 : difficulty >= 5 ? 6 : 4);
+/** endless depths keep adding bodies; this keeps phones inside the draw budget */
+const ENEMY_CAP = 90;
 
-function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme): LevelData {
+function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, withBoss: boolean): LevelData {
   const rng = new RNG(seed);
   const isBio = theme === 'biofoundry';
   const world = new VoxelWorld(WORLD_X, WORLD_Y, WORLD_Z);
@@ -132,7 +142,9 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme):
     }
   }
 
-  const targetRooms = rng.int(10, 12) + Math.min(2, difficulty - 1);
+  // sector 1 is a short opener (a first clear within a few minutes); the
+  // rest grow with depth. Same single draw either way.
+  const targetRooms = difficulty === 1 ? rng.int(6, 7) : rng.int(10, 12) + Math.min(2, difficulty - 1);
   for (let attempt = 0; attempt < 300 && rooms.length < targetRooms; attempt++) {
     const w = rng.int(8, 15);
     const d = rng.int(8, 15);
@@ -741,6 +753,25 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme):
       }
     }
   }
+  // the opener always teaches barrels: a pair in the first room out of spawn
+  // (position-hashed, so it doesn't move anything the layout RNG placed)
+  if (difficulty === 1) {
+    const first = rooms.find((r) => r.dist === 1 && r.kind !== 'exit') ?? rooms.find((r) => r.kind !== 'spawn' && r.kind !== 'exit');
+    let hasBarrel = false;
+    if (first) for (let x = first.x; x < first.x + first.w && !hasBarrel; x++) for (let z = first.z; z < first.z + first.d; z++) {
+      if (world.get(x, 1, z) === Block.Barrel) { hasBarrel = true; break; }
+    }
+    if (first && !hasBarrel) {
+      for (let k = 0; k < 24; k++) {
+        const x = first.x + 2 + Math.floor(dhash(first.id, 61 + k, 3) * Math.max(1, first.w - 5));
+        const z = first.z + 2 + Math.floor(dhash(first.id, 91 + k, 3) * Math.max(1, first.d - 4));
+        if (world.get(x, 1, z) !== Block.Air || world.get(x + 1, 1, z) !== Block.Air) continue;
+        world.set(x, 1, z, Block.Barrel);
+        world.set(x + 1, 1, z, Block.Barrel);
+        break;
+      }
+    }
+  }
 
   // -- Biofoundry: specimen tanks + dressing data ---------------------------
   // After props and before pickups/enemies, so a tank only goes where its
@@ -754,6 +785,18 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme):
     occupiedTanks = bio.tanks.filter((t) => t.occupied).length;
   }
 
+  // -- boss cradle -----------------------------------------------------------
+  let boss: LevelData['boss'] = null;
+  const arenaRoom0 = rooms.find((r) => r.kind === 'arena');
+  if (withBoss && arenaRoom0) boss = placeBoss(world, arenaRoom0, bio?.heart ?? null);
+  // the fight's adds are the boss's own summons: tanks in its chamber stay empty
+  if (boss && bio) {
+    for (const t of bio.tanks) {
+      if (t.occupied && t.x >= arenaRoom0!.x && t.x < arenaRoom0!.x + arenaRoom0!.w && t.z >= arenaRoom0!.z && t.z < arenaRoom0!.z + arenaRoom0!.d) t.occupied = false;
+    }
+    occupiedTanks = bio.tanks.filter((t) => t.occupied).length;
+  }
+
   // -- pickups --------------------------------------------------------------
   const freeSpot = (r: RoomDef): [number, number] => {
     for (let tries = 0; tries < 20; tries++) {
@@ -764,16 +807,20 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme):
     return [r.cx + 0.5, r.cz + 0.5];
   };
 
-  // key
+  // key (on a boss sector the Broodkeeper carries it: the spec sits in front
+  // of the cradle for the walkability check, the game hides it until it dies)
   {
-    const [x, z] = freeSpot(keyRoom);
+    const [x, z] = boss
+      ? [boss.x - Math.sin(boss.yaw) * 2.8, boss.z - Math.cos(boss.yaw) * 2.8]
+      : freeSpot(keyRoom);
     pickups.push({ kind: 'keyRed', x, y: 1.5, z });
     const [hx, hz] = freeSpot(keyRoom);
     pickups.push({ kind: 'healthBig', x: hx, y: 1.4, z: hz });
   }
   // weapons: shotgun in the first room out of spawn, SMG midway
   const byDist = [...rooms].sort((a, b) => a.dist - b.dist);
-  const shotgunRoom = byDist.find((r) => r.dist >= 1 && r.kind !== 'exit') ?? spawnRoom;
+  // the opener hands it over in the spawn room: power in the first seconds
+  const shotgunRoom = difficulty === 1 ? spawnRoom : (byDist.find((r) => r.dist >= 1 && r.kind !== 'exit') ?? spawnRoom);
   {
     const [x, z] = freeSpot(shotgunRoom);
     pickups.push({ kind: 'weaponShotgun', x, y: 1.4, z });
@@ -826,8 +873,13 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme):
   }
 
   // -- enemies --------------------------------------------------------------
+  const addEnemy = (spec: EnemySpec): void => {
+    if (enemies.length < ENEMY_CAP) enemies.push(spec);
+  };
   for (const r of rooms) {
     if (r.kind === 'spawn') continue;
+    // a boss arena is the Broodkeeper's alone (its summons are the adds)
+    if (boss && r.id === boss.roomId) continue;
     let count: number;
     if (r.dist <= 1) count = rng.int(1, 2);
     else if (r.dist === 2) count = 2;
@@ -839,27 +891,31 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme):
     // the deep Biofoundry (sector 5): the other curves are capped by now, so
     // the far rooms get one more body (sectors 1–4 are untouched)
     if (difficulty >= 5 && r.dist >= 3) count += 1;
+    // endless depths: one more in the far rooms at depth 7, two from depth 10
+    if (difficulty > 5 && r.dist >= 2) count += Math.min(2, Math.floor((difficulty - 4) / 3));
     for (let i = 0; i < count; i++) {
       // farther rooms and later sectors skew ranged
       const rangedP = Math.min(0.75, (r.dist >= 2 ? 0.5 : 0.25) + (difficulty - 1) * 0.08);
       const ranged = rng.chance(rangedP);
       const [x, z] = freeSpot(r);
-      enemies.push({ kind: ranged ? 'sentinel' : 'husk', x, z, roomId: r.id });
+      addEnemy({ kind: ranged ? 'sentinel' : 'husk', x, z, roomId: r.id });
     }
-    // ticker nests: packs of suicide crawlers, more common deeper in
-    if (r.dist >= 1 && rng.chance(0.3 + (difficulty - 1) * 0.15)) {
+    // ticker nests: packs of suicide crawlers, more common deeper in (none in
+    // the sector 1 opener)
+    if (difficulty >= 2 && r.dist >= 1 && rng.chance(0.3 + (difficulty - 1) * 0.15)) {
       const pack = rng.int(1, Math.min(3, 1 + difficulty));
       for (let i = 0; i < pack; i++) {
         const [x, z] = freeSpot(r);
-        enemies.push({ kind: 'ticker', x, z, roomId: r.id });
+        addEnemy({ kind: 'ticker', x, z, roomId: r.id });
       }
     }
-    // the arena's pit boss guards the arc caster (two of them by sector 3)
+    // the arena's pit boss guards the arc caster (none in the opener, two by
+    // sector 3)
     if (r.kind === 'arena') {
-      const brutes = difficulty >= 3 ? 2 : 1;
+      const brutes = difficulty >= 3 ? 2 : difficulty >= 2 ? 1 : 0;
       for (let i = 0; i < brutes; i++) {
         const [x, z] = freeSpot(r);
-        enemies.push({ kind: 'brute', x, z, roomId: r.id });
+        addEnemy({ kind: 'brute', x, z, roomId: r.id });
       }
     }
   }
@@ -893,12 +949,52 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme):
     exitPad,
     secretRect,
     seed,
-    // occupied tanks' Vatborn are preallocated: the scenery spawns them
-    totalEnemies: enemies.length + occupiedTanks,
+    // occupied tanks' Vatborn and the boss are preallocated: the game spawns them
+    totalEnemies: enemies.length + occupiedTanks + (boss ? 1 : 0),
     totalSecrets: secretRect ? 1 : 0,
     theme,
     bio,
+    boss,
   };
+}
+
+/**
+ * The Broodkeeper's spot: centred on an arena wall with no doorway within
+ * three cells, its 3.4×3.4 footprint free of pillars and tanks (crates and
+ * barrels there are cleared). Prefers the incubator wall when there is one.
+ */
+function placeBoss(world: VoxelWorld, r: RoomDef, heart: BioLayout['heart']): LevelData['boss'] {
+  type Wall = { cx: number; cz: number; yaw: number; along: 'x' | 'z'; out: number };
+  const north: Wall = { cx: r.cx + 0.5, cz: r.z + 1.8, yaw: Math.PI, along: 'x', out: r.z - 1 };
+  const south: Wall = { cx: r.cx + 0.5, cz: r.z + r.d - 1.8, yaw: 0, along: 'x', out: r.z + r.d };
+  const west: Wall = { cx: r.x + 1.8, cz: r.cz + 0.5, yaw: -Math.PI / 2, along: 'z', out: r.x - 1 };
+  const east: Wall = { cx: r.x + r.w - 1.8, cz: r.cz + 0.5, yaw: Math.PI / 2, along: 'z', out: r.x + r.w };
+  const order: Wall[] = heart ? (heart.dir > 0 ? [north, south] : [south, north]) : [north, south];
+  order.push(west, east);
+  for (const w of order) {
+    // no doorway in the wall behind the cradle
+    let solid = true;
+    for (let k = -3; k <= 3 && solid; k++) {
+      const x = w.along === 'x' ? Math.floor(w.cx) + k : w.out;
+      const z = w.along === 'x' ? w.out : Math.floor(w.cz) + k;
+      for (let y = 1; y <= 2; y++) if (world.get(x, y, z) === Block.Air) solid = false;
+    }
+    if (!solid) continue;
+    // footprint: nothing structural in the way
+    const x0 = Math.floor(w.cx - 1.7), x1 = Math.floor(w.cx + 1.7);
+    const z0 = Math.floor(w.cz - 1.7), z1 = Math.floor(w.cz + 1.7);
+    let clear = true;
+    for (let x = x0; x <= x1 && clear; x++) for (let z = z0; z <= z1 && clear; z++) for (let y = 1; y <= 3; y++) {
+      const b = world.get(x, y, z);
+      if (b !== Block.Air && b !== Block.Crate && b !== Block.Barrel) { clear = false; break; }
+    }
+    if (!clear) continue;
+    for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) for (let y = 1; y <= 3; y++) {
+      if (world.get(x, y, z) !== Block.Air) world.set(x, y, z, Block.Air);
+    }
+    return { x: w.cx, z: w.cz, yaw: w.yaw, roomId: r.id };
+  }
+  return null;
 }
 
 type Hash = (x: number, y: number, z: number) => number;

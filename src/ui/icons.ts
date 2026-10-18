@@ -19,6 +19,7 @@ import { faRocket } from '@fortawesome/free-solid-svg-icons/faRocket';
 import { faBatteryFull } from '@fortawesome/free-solid-svg-icons/faBatteryFull';
 import { faRightLeft } from '@fortawesome/free-solid-svg-icons/faRightLeft';
 import { faClapperboard } from '@fortawesome/free-solid-svg-icons/faClapperboard';
+import { faGear } from '@fortawesome/free-solid-svg-icons/faGear';
 import { faBurst } from '@fortawesome/free-solid-svg-icons/faBurst';
 import { faBolt } from '@fortawesome/free-solid-svg-icons/faBolt';
 import { faCrosshairs } from '@fortawesome/free-solid-svg-icons/faCrosshairs';
@@ -28,7 +29,11 @@ import { faBoxesStacked } from '@fortawesome/free-solid-svg-icons/faBoxesStacked
 import { faScrewdriverWrench } from '@fortawesome/free-solid-svg-icons/faScrewdriverWrench';
 import { faBoxOpen } from '@fortawesome/free-solid-svg-icons/faBoxOpen';
 import { faHeartCirclePlus } from '@fortawesome/free-solid-svg-icons/faHeartCirclePlus';
-import type { PerkId } from '../core/perks';
+import { faSkull } from '@fortawesome/free-solid-svg-icons/faSkull';
+import { faKitMedical } from '@fortawesome/free-solid-svg-icons/faKitMedical';
+import { faBoxesPacking } from '@fortawesome/free-solid-svg-icons/faBoxesPacking';
+import { faShield } from '@fortawesome/free-solid-svg-icons/faShield';
+import type { OfferId } from '../core/perks';
 
 const C = 'currentColor';
 
@@ -78,8 +83,12 @@ export const ICONS = {
   pad: (size = 18) => fa(faFlagCheckered, C, size),
   /** touch weapon button: tap to cycle */
   swap: (size = 10) => fa(faRightLeft, C, size),
+  /** objective: a boss stands between you and the keycard */
+  boss: (size = 18) => fa(faSkull, C, size),
   /** marks a button that plays a video ad (Poki rewarded revive) */
   ad: (size = 16) => fa(faClapperboard, C, size),
+  /** title screen: the Settings corner button */
+  gear: (size = 18) => fa(faGear, C, size),
 };
 
 /**
@@ -87,7 +96,7 @@ export const ICONS = {
  * glance. Colours reuse the palette's meanings where one fits (arc teal,
  * armor blue, health red, headshot gold, brass for ammo).
  */
-const PERK_ICON: Record<PerkId, { icon: IconDefinition; color: string }> = {
+const PERK_ICON: Record<OfferId, { icon: IconDefinition; color: string }> = {
   volatile: { icon: faBurst, color: '#ff8a3c' },
   overcharge: { icon: faBolt, color: '#55e0ff' },
   headhunter: { icon: faCrosshairs, color: '#ffd028' },
@@ -97,14 +106,18 @@ const PERK_ICON: Record<PerkId, { icon: IconDefinition; color: string }> = {
   plating: { icon: faScrewdriverWrench, color: '#3a9cff' },
   scavenger: { icon: faBoxOpen, color: '#9fe8b0' },
   vitality: { icon: faHeartCirclePlus, color: '#e8524a' },
+  // one-off rewards (endless, once the perks run out)
+  patchUp: { icon: faKitMedical, color: '#e8524a' },
+  resupply: { icon: faBoxesPacking, color: '#d8b04a' },
+  reinforce: { icon: faShield, color: '#3a9cff' },
 };
 
-export function perkColor(id: PerkId): string {
+export function perkColor(id: OfferId): string {
   return PERK_ICON[id].color;
 }
 
 /** a perk's icon in its accent colour, `size` px tall */
-export function perkIcon(id: PerkId, size = 34): string {
+export function perkIcon(id: OfferId, size = 34): string {
   return fa(PERK_ICON[id].icon, PERK_ICON[id].color, size);
 }
 

@@ -17,20 +17,12 @@ tile. Re-submit when the playtime items are in.
 
 ## Planned
 
-### 1. Endless depth
-Endless sectors after the campaign with a persistent "deepest sector" best.
-The Biofoundry (sectors 4–5) is in; the five-sector campaign still caps a
-first run at roughly twenty to thirty minutes. Next candidates for the Biofoundry
-itself: the Spitter / Carapace / Broodkeeper proposals in
-`reference/sector4-monsters.md`, and co-op support (its tank breaches are
-host-local today, so co-op campaigns end at sector 3).
-
-### 2. Store thumbnails
+### 1. Store thumbnails
 Static 628×628+ tile, no text, one subject in motion, dark palette against
 Poki's aqua page. Brief and prompts: `reference/poki-thumbnail-prompts.md`.
 Animated 1080×1080 MP4 (4–6s, muted) from real gameplay at soft release.
 
-### 3. Quick melee (decided 2026-10-18)
+### 2. Quick melee (decided 2026-10-18)
 A dedicated bash on V (desktop) / a small button beside FIRE on touch, not a
 sixth weapon slot — a slot would touch both weapon `ORDER` arrays, the HUD
 slot bar, the digit keys, `DRY_SWITCH` and the touch weapon wheel for no
@@ -61,24 +53,33 @@ Shape:
 
 About a day including tests.
 
-### 4. Cross-run progression
+### 3. Cross-run progression
 Runs played, best depth, a weapon or skin unlock after a milestone, shown on
 the title screen so a returning player sees their own numbers.
 
-### 5. Sector 1 pacing
-Fewer rooms, the shotgun within the first two rooms, no packs and no brute
-until sector 2. First kill within fifteen seconds of the arrow appearing.
-Check the Poki funnel first (level 1 fresh-start vs complete vs fail) to see
-whether players die or wander.
+### 4. Geothermal biome
+A third theme for the endless rotation (the concept from earlier notes), so
+depths past 10 stop alternating between only two looks. The Spitter and
+Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Later / unscheduled
 
-- Sector 4 Biofoundry as a campaign sector (Spitter, Carapace, Broodkeeper
-  concepts in `reference/sector4-monsters.md`); Sector 5 geothermal concept.
+- Spitter and Carapace (concepts in `reference/sector4-monsters.md`).
+- Biofoundry in co-op (tank breaches and the boss are host-local today, so
+  co-op campaigns end at sector 3).
 - Play-as-operative view model (opt-in `?play=operative` until approved).
 - Difficulty choice and per-sector star ratings.
 
 ## Done
+
+- 2026-10-18 — Endless descent after sector 5 (*Keep descending* on the final
+  screen; DEPTH 6+ alternates facility and Biofoundry every two depths,
+  enemy HP up to ×1.8 and up to two extra per far room, a persistent deepest
+  depth on the title, `endless N` Poki events capped at 20). Sector 1 became
+  a short opener (6–7 rooms, shotgun in the spawn room, no tickers or
+  brutes; one brute in sector 2). The Broodkeeper boss guards the keycard in
+  sector 5 and every fifth depth, with a boss HP bar under the objective.
+  Perk offers fill with one-off rewards once the pool runs dry.
 
 - 2026-10-18 — Sector-clear moment: S–C rank from kills, secrets and
   time vs par with a score bonus, the tally counting up, a NEW BEST RANK
@@ -101,6 +102,10 @@ whether players die or wander.
   icon, never green, equal-size beside the retry, hidden without the SDK),
   free on web. Measure the effect with the level 1 complete / fresh-start
   ratio in a Poki playtest.
+
+- 2026-10-18 — Overload hidden from players (web `?overload` only, never on
+  Poki): a second terminal and offer screen in every sector competed with
+  the one goal while playtime dropped. Code and test kept.
 
 - 2026-10-18 — Solo Overload playtest: optional cyan terminal, two bounded
   waves (three Husks and one Sentinel), then one non-stacking reward:

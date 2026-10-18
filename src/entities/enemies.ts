@@ -50,7 +50,29 @@ const SCHED: Record<EnemySpec['kind'], { attack: Sched; charge: Sched }> = {
     attack: { prep: 0.7, lock: 0.45, commit: 0, recover: 0.9 },
     charge: { prep: 0.7, lock: 0.45, commit: 0, recover: 0.9 },
   },
+  // the boss runs its own cycle (bossUpdate); never used
+  broodkeeper: {
+    attack: { prep: 1, lock: 0, commit: 0, recover: 0 },
+    charge: { prep: 1, lock: 0, commit: 0, recover: 0 },
+  },
 };
+
+/**
+ * The Broodkeeper (reference/sector4-monsters.md): a stationary boss in a
+ * cradle. Cycle: acid volley (1 s warning, globs 0.35 s apart) → core open
+ * 2.4 s → release up to 2 Husks (1 s of hatch rattle, ≤ 4 summons alive) →
+ * core open 3 s → repeat. Five globs instead of three below 40% health.
+ * Closed armor takes 25% of the damage; open, the core zone takes 2×.
+ */
+const BOSS_VOLLEY_WARN = 1.0;
+const BOSS_SHOT_GAP = 0.35;
+const BOSS_OPEN_1 = 2.4;
+const BOSS_RELEASE = 1.4;
+const BOSS_OPEN_2 = 3.0;
+const BOSS_SUMMON_CAP = 4;
+const BOSS_ACID_SPEED = 11;
+/** core zone: this band of the body (center-relative y), hitscan only */
+export const BOSS_CORE_Y: [number, number] = [-0.22, 0.42];
 
 /** ticker arming beeps (seconds into the warning) */
 const TICKER_BEEPS = [0, 0.25, 0.45, 0.6];
@@ -86,10 +108,13 @@ const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
   // sector 4 preview: the escaped specimen (reference/sector4-monsters.md).
   // Shambles, short rush, one heavy swing with a long recovery; green blood
   vatborn: { hp: 55, speed: 3.4, halfX: 0.5, halfY: 0.9, painChance: 0.3, bloodColor: [0.55, 0.8, 0.3] },
+  // boss: never moves, never flinches (its armor and core do the work)
+  broodkeeper: { hp: 600, speed: 0, halfX: 1.5, halfY: 1.4, painChance: 0, bloodColor: [0.8, 0.25, 0.2] },
 };
 
 const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'tickerAlert' | 'bruteRoar'> = {
   husk: 'huskAlert', sentinel: 'sentinelAlert', ticker: 'tickerAlert', brute: 'bruteRoar', vatborn: 'bruteRoar',
+  broodkeeper: 'bruteRoar',
 };
 
 /** husk-skeleton walkers: the jointed rig + walker gait/attack animation drive them */
@@ -102,6 +127,10 @@ const _toPlayer = new THREE.Vector3();
 const _light: [number, number, number] = [0, 0, 0];
 const _dyn: [number, number, number] = [0, 0, 0];
 
+/** Broodkeeper face shades (+x, -x, +y, -y, +z, -z; it faces -z): light from the upper left */
+const BOSS_FACE_SHADE = [0.74, 0.9, 1.0, 0.5, 0.62, 0.86];
+
+const makePart = part;
 function part(parent: THREE.Object3D, w: number, h: number, d: number, color: number, fullBright = false): THREE.Mesh {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(w, h, d),
@@ -206,6 +235,27 @@ export class Enemy {
   private flinchSign = 1;
   /** set by hitscan right before damage() when the shot landed in the head zone */
   lastHitHead = false;
+  /** boss: set by hitscan right before damage() when the shot landed in the core zone */
+  lastHitCore = false;
+  /** boss: the chest plates are open — the core takes double, the rest full damage */
+  coreOpen = false;
+  /** boss state (null for every other kind) */
+  private boss: {
+    active: boolean;
+    phase: 'volley' | 'open1' | 'release' | 'open2';
+    t: number;
+    shots: number;
+    fired: number;
+    released: boolean;
+    summons: Enemy[];
+    yaw: number;
+    headYaw: number;
+    plates: number;
+    parts: {
+      torso: THREE.Group; head: THREE.Group; plateL: THREE.Group; plateR: THREE.Group;
+      hatchL: THREE.Group; hatchR: THREE.Group; core: THREE.Mesh; eye: THREE.Mesh; insets: THREE.Mesh[];
+    };
+  } | null = null;
   /** co-op client: this enemy is a network puppet — no AI, interpolate only */
   puppet = false;
   /**
@@ -238,6 +288,7 @@ export class Enemy {
     else if (spec.kind === 'ticker') this.buildTicker();
     else if (spec.kind === 'brute') this.buildBrute();
     else if (spec.kind === 'vatborn') this.buildVatborn();
+    else if (spec.kind === 'broodkeeper') this.buildBroodkeeper();
     else this.buildSentinel();
     this.mesh.position.copy(this.pos);
     if (startPatrolling) this.state = 'patrol';
@@ -567,6 +618,297 @@ export class Enemy {
     }
   }
 
+  private buildBroodkeeper(): void {
+    // Matches reference/sector4-broodkeeper.png box for box: a brick-red
+    // organism in a dark steel incubation cradle. Front to back: a plinth
+    // with two framed, bolted abdominal hatches (hinged at the bottom, they
+    // fold forward to release); two big bone chest plates meeting on a thin
+    // orange seam (the core behind them); a small head with a wide cap, an
+    // orange visor slit and a black mouth; lime reservoirs beside the head;
+    // chunky forelimbs braced on dark steel feet; two tall steel towers at
+    // the back. ~49 boxes, 3.4 wide. Faces local -z; the body origin is the
+    // collider centre, the floor is at y = -1.4.
+    // the sheet's own colours, taken RAW (no sRGB decode, like the gun view
+    // models' rawColor): decoded, the steel crushed to black and the red
+    // went blood-saturated. Each face gets a baked shade (lit from the upper
+    // left, like the sheet) so the boxes read apart instead of as one blob.
+    const RED = 0x962c2a, RED_D = 0x74201f, RED_L = 0xb03a34;
+    const STEEL_D = 0x2e3037, STEEL = 0x40434c, STEEL_L = 0x5a5e68, DOOR = 0x50545e;
+    const BONE = 0xd6c59c, RES = 0x92b828, LIME = 0xc0ff48, CORE = 0xff8a1c, EYE = 0xffa020, DARK = 0x0c0a0c;
+    const part = (parent: THREE.Object3D, w: number, h: number, d: number, hex: number, glow = false): THREE.Mesh => {
+      const m = makePart(parent, w, h, d, hex, glow);
+      const c = new THREE.Color().setHex(hex, THREE.LinearSRGBColorSpace);
+      m.userData.baseColor = c;
+      const mat = m.material as THREE.MeshBasicMaterial;
+      mat.color.copy(c);
+      if (!glow) {
+        const geo = m.geometry;
+        const n = geo.attributes.position.count; // 4 verts per face: +x -x +y -y +z -z
+        const col = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) col.fill(BOSS_FACE_SHADE[Math.floor(i / 4)], i * 3, i * 3 + 3);
+        geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        mat.vertexColors = true;
+      }
+      return m;
+    };
+    const b = this.body;
+    const at = (m: THREE.Object3D, x: number, y: number, z: number): THREE.Object3D => { m.position.set(x, y, z); return m; };
+    // cradle: base slab, the front plinth with its seam, steel feet
+    at(part(b, 2.7, 0.3, 2.3, STEEL_D), 0, -1.25, 0.1);
+    at(part(b, 2.0, 0.32, 0.5, STEEL), 0, -0.94, -0.78);
+    at(part(b, 1.9, 0.07, 0.02, STEEL_D), 0, -0.98, -1.04);
+    for (const sx of [-1, 1]) {
+      at(part(b, 0.8, 0.46, 0.9, STEEL_D), sx * 1.3, -1.17, -0.85);
+      at(part(b, 0.55, 0.36, 0.75, STEEL_D), sx * 1.45, -1.22, 0.75);
+    }
+    // back towers: tall steel with a recessed groove, above the head
+    for (const sx of [-1, 1]) {
+      at(part(b, 0.44, 2.3, 0.44, STEEL), sx * 1.25, 0.25, 0.85);
+      at(part(b, 0.16, 1.8, 0.03, STEEL_D), sx * 1.25, 0.35, 0.62);
+      at(part(b, 0.3, 0.45, 0.3, STEEL_D), sx * 0.7, 0.85, 0.55);
+    }
+    // brood abdomen + framed hatches
+    // stops below the chest: any higher and its front face covers the core
+    at(part(b, 2.0, 0.65, 1.6, RED), 0, -0.525, 0.15);
+    const hatch = (sx: number): THREE.Group => {
+      at(part(b, 0.64, 0.54, 0.06, RED_L), sx * 0.38, -0.5, -0.68);
+      at(part(b, 0.5, 0.4, 0.03, DARK), sx * 0.38, -0.5, -0.715);
+      // the door hinges on its bottom edge and folds forward
+      const g = new THREE.Group();
+      g.position.set(sx * 0.38, -0.7, -0.75);
+      at(part(g, 0.48, 0.38, 0.05, DOOR), 0, 0.19, 0);
+      for (const by of [0.08, 0.3]) at(part(g, 0.06, 0.06, 0.03, STEEL_L), -sx * 0.17, by, -0.035);
+      b.add(g);
+      return g;
+    };
+    const hatchL = hatch(-1);
+    const hatchR = hatch(1);
+    // forelimbs: shoulder hub → slanted upper arm → braced lower limb on the foot
+    for (const sx of [-1, 1]) {
+      at(part(b, 0.55, 0.6, 0.75, RED_D), sx * 0.95, 0.2, -0.4);
+      const upper = at(part(b, 0.55, 0.75, 0.7, RED), sx * 1.22, -0.08, -0.66);
+      upper.rotation.z = sx * 0.35;
+      at(part(b, 0.62, 0.8, 0.8, RED), sx * 1.33, -0.6, -0.86);
+    }
+    // chest: plates over the core, the seam between them glows orange
+    const torso = new THREE.Group();
+    torso.position.set(0, 0.1, 0);
+    b.add(torso);
+    at(part(torso, 1.7, 0.85, 1.3, RED_D), 0, 0.05, 0.1);
+    at(part(torso, 1.1, 0.74, 0.1, RED), 0, 0, -0.55);
+    at(part(torso, 1.3, 0.3, 1.0, RED), 0, 0.55, 0.25);
+    const core = part(torso, 0.5, 0.58, 0.04, CORE, true);
+    at(core, 0, 0, -0.61);
+    const plate = (sx: number): THREE.Group => {
+      // pivot on the outer edge so the plate swings open like a door
+      const g = new THREE.Group();
+      g.position.set(sx * 0.51, 0, -0.67);
+      at(part(g, 0.45, 0.58, 0.08, BONE), -sx * 0.225, 0, 0);
+      torso.add(g);
+      return g;
+    };
+    const plateL = plate(-1);
+    const plateR = plate(1);
+    // head: wide cap, visor slit, black mouth
+    const head = new THREE.Group();
+    head.position.set(0, 0.62, -0.3);
+    torso.add(head);
+    at(part(head, 0.6, 0.48, 0.55, RED), 0, -0.05, -0.05);
+    at(part(head, 0.95, 0.22, 0.72, RED), 0, 0.28, 0.05);
+    const eye = part(head, 0.42, 0.075, 0.03, EYE, true);
+    at(eye, 0, 0.1, -0.335);
+    at(part(head, 0.36, 0.18, 0.03, DARK), 0, -0.12, -0.335);
+    // reservoirs beside the head, clamped to the towers
+    const insets: THREE.Mesh[] = [];
+    for (const sx of [-1, 1]) {
+      at(part(b, 0.46, 0.7, 0.5, RES), sx * 1.3, 0.62, -0.2);
+      const inset = part(b, 0.2, 0.36, 0.03, LIME, true);
+      at(inset, sx * 1.3, 0.62, -0.465);
+      insets.push(inset);
+      at(part(b, 0.36, 0.2, 0.36, STEEL_D), sx * 1.05, 1.05, 0.1);
+    }
+    this.glowParts.push(core, eye, ...insets);
+    this.boss = {
+      active: false, phase: 'volley', t: -0.8, shots: 3, fired: 0, released: false, summons: [],
+      yaw: 0, headYaw: 0, plates: 0,
+      parts: { torso, head, plateL, plateR, hatchL, hatchR, core, eye, insets },
+    };
+  }
+
+  /** boss: turn the cradle to face the room (levelgen picks the yaw) */
+  setBossFacing(yaw: number): void {
+    if (!this.boss) return;
+    this.boss.yaw = yaw;
+    this.mesh.rotation.y = yaw;
+  }
+
+  /** boss: is the fight on (a player came into the chamber, or hit it) */
+  get bossActive(): boolean {
+    return !!this.boss?.active && this.alive;
+  }
+
+  /** boss: health left, 0..1 */
+  get bossFrac(): number {
+    return Math.max(0, this.hp) / this.tuning.hp;
+  }
+
+  private activateBoss(game: Game): void {
+    const b = this.boss;
+    if (!b || b.active || !this.alive) return;
+    b.active = true;
+    this.awake = true;
+    b.phase = 'volley';
+    b.t = -0.6; // a beat before the first warning
+    b.fired = 0;
+    b.shots = 3;
+    game.audio.play('bruteRoar', this.pos);
+    game.player.shake = Math.min(0.5, game.player.shake + 0.2);
+    game.hud.message('The BROODKEEPER wakes — shoot the orange core when its plates open.');
+  }
+
+  /** one acid glob from the mouth, aimed at the target's eye as it leaves */
+  private bossShoot(t: PlayerTarget, game: Game): void {
+    const b = this.boss!;
+    const fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw);
+    const mx = this.pos.x + fx * 1.15, my = this.pos.y + 0.6, mz = this.pos.z + fz * 1.15;
+    // a door or pillar right at the mouth catches the shot instead of skipping past it
+    if (!game.hasLOS(this.pos.x, my, this.pos.z, mx, my, mz)) return;
+    const dx = t.pos.x - mx, dy = t.eyeY() - my, dz = t.pos.z - mz;
+    const l = Math.hypot(dx, dy, dz) || 1;
+    game.projectiles.spawn('acid', mx, my, mz, dx / l, dy / l, dz / l, BOSS_ACID_SPEED, false);
+    game.audio.play('boltFire', { x: mx, y: my, z: mz });
+    game.dynLights.flash(mx, my, mz, 0.5, 1, 0.2, 1.2, 5, 0.15);
+  }
+
+  /** release up to two Husks into clear spots in front of the cradle (summons alive ≤ 4) */
+  private bossRelease(game: Game): void {
+    const b = this.boss!;
+    b.summons = b.summons.filter((e) => e.alive);
+    let slots = Math.min(2, BOSS_SUMMON_CAP - b.summons.length);
+    if (slots <= 0) return;
+    const fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw);
+    const rx = Math.cos(b.yaw), rz = -Math.sin(b.yaw);
+    const spots: Array<[number, number]> = [[2.8, -1.3], [2.8, 1.3], [3.9, 0], [3.9, -2], [3.9, 2]];
+    for (const [f, r] of spots) {
+      if (slots <= 0) break;
+      const x = this.pos.x + fx * f + rx * r, z = this.pos.z + fz * f + rz * r;
+      const cx = Math.floor(x), cz = Math.floor(z);
+      if (game.world.isSolid(cx, 1, cz) || game.world.isSolid(cx, 2, cz)) continue;
+      const near = (px: number, pz: number, rr: number): boolean => (px - x) ** 2 + (pz - z) ** 2 < rr * rr;
+      if (game.playerTargets().some((p) => !p.dead && near(p.pos.x, p.pos.z, 1.3))) continue;
+      if (game.enemies.list.some((e) => e !== this && e.alive && near(e.pos.x, e.pos.z, 1.0))) continue;
+      game.enemies.spawnFromSpecs([{ kind: 'husk', x, z, roomId: this.room?.id ?? 0 }], game.level.rooms, game);
+      const e = game.enemies.list[game.enemies.list.length - 1];
+      e.wake(game);
+      b.summons.push(e);
+      game.level.totalEnemies += 1; // kill ratios stay honest
+      game.particles.smoke(x, 1.2, z, 6);
+      game.dynLights.flash(x, 1.5, z, 0.9, 0.3, 0.25, 1.2, 5, 0.25);
+      slots--;
+    }
+    game.audio.play('clank', this.pos);
+  }
+
+  /** the boss's whole frame: activation, the attack cycle, the pose */
+  private bossUpdate(dt: number, game: Game): void {
+    const b = this.boss!;
+    const pl = this.tgt ?? game.player;
+    if (!b.active) {
+      // wakes when a player walks into the chamber (never on the way past)
+      const r = this.room;
+      if (r && game.playerTargets().some((t) => !t.dead &&
+        t.pos.x >= r.x && t.pos.x < r.x + r.w && t.pos.z >= r.z && t.pos.z < r.z + r.d)) {
+        this.activateBoss(game);
+      }
+    }
+    if (b.active && !pl.dead) {
+      b.t += dt;
+      switch (b.phase) {
+        case 'volley':
+          while (b.fired < b.shots && b.t >= BOSS_VOLLEY_WARN + b.fired * BOSS_SHOT_GAP) {
+            this.bossShoot(pl, game);
+            b.fired++;
+          }
+          if (b.t >= BOSS_VOLLEY_WARN + b.shots * BOSS_SHOT_GAP) {
+            b.phase = 'open1';
+            b.t = 0;
+            this.coreOpen = true;
+            game.audio.play('clank', this.pos);
+          }
+          break;
+        case 'open1':
+          if (b.t >= BOSS_OPEN_1) {
+            b.phase = 'release';
+            b.t = 0;
+            b.released = false;
+            this.coreOpen = false;
+          }
+          break;
+        case 'release':
+          if (!b.released && b.t >= 1.0) {
+            b.released = true;
+            this.bossRelease(game);
+          }
+          if (b.t >= BOSS_RELEASE) {
+            b.phase = 'open2';
+            b.t = 0;
+            this.coreOpen = true;
+            game.audio.play('clank', this.pos);
+          }
+          break;
+        case 'open2':
+          if (b.t >= BOSS_OPEN_2) {
+            b.phase = 'volley';
+            b.t = 0;
+            b.fired = 0;
+            b.shots = this.bossFrac < 0.4 ? 5 : 3;
+            this.coreOpen = false;
+            game.audio.play('sentinelAlert', this.pos); // the reservoirs charge
+          }
+          break;
+      }
+    }
+    this.animateBoss(dt, pl);
+    this.mesh.position.copy(this.pos);
+    this.mesh.scale.setScalar(1 + this.flashTime * 0.25);
+    this.mesh.rotation.z = 0;
+    this.updateLighting(game, dt);
+  }
+
+  private animateBoss(dt: number, pl: PlayerTarget): void {
+    const b = this.boss!;
+    const p = b.parts;
+    this.animPhase += dt;
+    const t = this.animPhase;
+    // breathing, a slow heave of the torso
+    p.torso.scale.y = 1 + Math.sin(t * 1.6) * 0.025;
+    // the head tracks the target within its neck's reach
+    const want = Math.atan2(-(pl.pos.x - this.pos.x), -(pl.pos.z - this.pos.z)) - b.yaw;
+    const rel = Math.atan2(Math.sin(want), Math.cos(want));
+    b.headYaw += (Math.max(-0.7, Math.min(0.7, rel)) - b.headYaw) * Math.min(1, dt * 5);
+    p.head.rotation.y = b.headYaw;
+    // the volley warning: the head draws back, the reservoirs brighten
+    const warn = b.active && b.phase === 'volley' ? Math.max(0, Math.min(1, b.t / BOSS_VOLLEY_WARN)) : 0;
+    const firing = b.active && b.phase === 'volley' && b.t >= BOSS_VOLLEY_WARN;
+    p.head.rotation.x = firing ? 0.25 * Math.max(0, 1 - ((b.t - BOSS_VOLLEY_WARN) % BOSS_SHOT_GAP) / BOSS_SHOT_GAP) : -0.35 * warn;
+    for (const m of p.insets) {
+      (m.material as THREE.MeshBasicMaterial).color.copy(m.userData.baseColor as THREE.Color).multiplyScalar(firing ? 2.2 : 0.8 + 1.6 * warn);
+    }
+    // chest plates swing open on the outer hinges while the core is exposed
+    b.plates += ((this.coreOpen ? 1 : 0) - b.plates) * Math.min(1, dt * 10);
+    p.plateL.rotation.y = -b.plates * 1.2;
+    p.plateR.rotation.y = b.plates * 1.2;
+    const coreGlow = this.coreOpen ? 1.7 + 0.5 * Math.sin(t * 12) : 1.1; // closed: the seam between the plates still glows
+    (p.core.material as THREE.MeshBasicMaterial).color.copy(p.core.userData.baseColor as THREE.Color).multiplyScalar(coreGlow);
+    (p.eye.material as THREE.MeshBasicMaterial).color.copy(p.eye.userData.baseColor as THREE.Color).multiplyScalar(b.active ? 1.6 : 0.8);
+    // hatches rattle for a second, then swing open to release
+    let hatch = 0;
+    if (b.active && b.phase === 'release') hatch = b.t < 1.0 ? Math.sin(b.t * 40) * 0.08 : Math.min(1.1, (b.t - 1.0) * 6);
+    // bottom hinge: negative x tips the top forward, the flap folds down
+    p.hatchL.rotation.x = -hatch * 1.3;
+    p.hatchR.rotation.x = -hatch * 1.3;
+  }
+
   get alive(): boolean {
     return this.state !== 'dead';
   }
@@ -578,7 +920,7 @@ export class Enemy {
 
   /** planted or committed: separation must not shove it (reference/enemy-upgrades.md) */
   get planted(): boolean {
-    return this.state === 'attack' || this.state === 'charge';
+    return this.state === 'attack' || this.state === 'charge' || this.kind === 'broodkeeper';
   }
 
   /**
@@ -604,6 +946,7 @@ export class Enemy {
 
   wake(game: Game): void {
     if (this.awake || !this.alive || this.scripted) return;
+    if (this.kind === 'broodkeeper') return; // it wakes on its own terms (activateBoss)
     this.awake = true;
     game.audio.play(ALERT_SOUND[this.kind], this.pos);
     if (this.state === 'idle' || this.state === 'patrol') this.setState('chase');
@@ -665,6 +1008,14 @@ export class Enemy {
 
   damage(dmg: number, dx: number, dz: number, game: Game): void {
     if (!this.alive) return;
+    let armored = false;
+    if (this.kind === 'broodkeeper') {
+      // closed plates: 25%; open: full, and the core zone takes double
+      if (!this.boss?.active) this.activateBoss(game);
+      armored = !this.coreOpen;
+      dmg *= this.coreOpen ? (this.lastHitCore ? 2 : 1) : 0.25;
+      this.lastHitCore = false;
+    }
     this.hp -= dmg;
     // hit feedback fires the same frame: white-hot flash, a sideways jolt,
     // a meaty thwack, and blood — waiting for the next lighting tick made
@@ -672,7 +1023,7 @@ export class Enemy {
     this.flashTime = 0.15;
     this.flinchSign = Math.random() < 0.5 ? -1 : 1;
     this.applyFlash();
-    game.audio.play('fleshHit', this.pos);
+    game.audio.play(armored ? 'impact' : 'fleshHit', this.pos);
     game.particles.blood(
       this.pos.x, this.pos.y + 0.2, this.pos.z, dx, 0, dz,
       this.tuning.bloodColor[0], this.tuning.bloodColor[1], this.tuning.bloodColor[2],
@@ -682,6 +1033,11 @@ export class Enemy {
     game.enemies.alertAt(this.pos.x, this.pos.z, 9, game);
     if (this.hp <= 0) {
       this.die(game);
+      return;
+    }
+    if (this.kind === 'broodkeeper') {
+      // anchored in its cradle: no knockback, no flinch
+      this.lastHitHead = false;
       return;
     }
     // micro-stagger + knockback: the hit interrupts momentum, then shoves
@@ -716,6 +1072,15 @@ export class Enemy {
     // Co-op clients skip the gameplay side effects — the host owns those.
     if (this.kind === 'ticker' && !game.isNetClient) {
       game.queueExplosion(this.pos.x, this.pos.y, this.pos.z, 0.08, 55, 2.8);
+    }
+    // the Broodkeeper: a burst of light and slime, its acid gone, the key dropped
+    if (this.kind === 'broodkeeper') {
+      this.coreOpen = false;
+      game.audio.play('explosion', this.pos);
+      game.dynLights.flash(this.pos.x, this.pos.y + 0.6, this.pos.z, 1, 0.55, 0.15, 2.6, 12, 0.6);
+      game.particles.debris(this.pos.x, this.pos.y + 0.6, this.pos.z, 0.55, 0.15, 0.2, 30);
+      game.player.shake = Math.min(0.7, game.player.shake + 0.4);
+      if (!game.isNetClient) game.onBossDefeated(this);
     }
     // the pit boss always drops a powerup — killing it is the arena's reward
     if (this.kind === 'brute' && !game.isNetClient) {
@@ -776,6 +1141,10 @@ export class Enemy {
     }
     if (this.emerge) {
       this.emergeUpdate(dt, game);
+      return;
+    }
+    if (this.boss) {
+      this.bossUpdate(dt, game);
       return;
     }
 

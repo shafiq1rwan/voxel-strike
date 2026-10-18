@@ -71,13 +71,15 @@ try {
     const before = await page.evaluate(() => {
       const g = window.__voxelstrike;
       g.input.locked = true; // re-force in case a lock event flipped it
-      return { ammo: g.player.ammo.bullets, state: g.state, locked: g.input.locked };
+      // all ammo types: the opener's spawn room holds a shotgun, which may be picked up and equipped first
+      const ammo = Object.values(g.player.ammo).reduce((s, v) => s + v, 0);
+      return { ammo, weapon: g.weapons?.current, state: g.state, locked: g.input.locked };
     });
     await page.mouse.down();
     await new Promise((r) => setTimeout(r, 300));
     await page.mouse.up();
     await new Promise((r) => setTimeout(r, 100));
-    const ammo = await page.evaluate(() => window.__voxelstrike.player.ammo.bullets);
+    const ammo = await page.evaluate(() => Object.values(window.__voxelstrike.player.ammo).reduce((s, v) => s + v, 0));
     fired = ammo < before.ammo;
     if (!fired) console.log(`  retry: shot did not register (diag=${JSON.stringify(before)})`);
   }
@@ -136,6 +138,24 @@ try {
 
   // --- play all five sectors -------------------------------------------------
   const completeLevel = async (sector) => {
+    // a boss sector: the Broodkeeper carries the keycard — kill it first
+    const boss = await page.evaluate(async () => {
+      const g = window.__voxelstrike;
+      const b = g.bossEnemy;
+      if (!b) return null;
+      const keyShown = () => g.pickups.items.some((p) => !p.taken && p.spec.kind === 'keyRed');
+      const before = { obj: document.querySelector('#obj-text')?.textContent ?? '', key: keyShown() };
+      b.coreOpen = true;
+      b.lastHitCore = true;
+      b.damage(99999, 0, 0, g);
+      await new Promise((r) => setTimeout(r, 300));
+      return { ...before, dead: !b.alive, keyAfter: keyShown(), obj2: document.querySelector('#obj-text')?.textContent ?? '' };
+    });
+    if (sector === 5) {
+      check(!!boss, 'sector 5 has the Broodkeeper');
+      check(boss && boss.obj === 'Kill the Broodkeeper' && !boss.key, `the objective is the boss and the keycard is held back ("${boss?.obj}")`);
+      check(boss && boss.dead && boss.keyAfter && boss.obj2 === 'Find the red keycard', 'killing it drops the keycard and moves the objective on');
+    }
     // heal + collect key
     const gotKey = await page.evaluate(async () => {
       const g = window.__voxelstrike;
@@ -321,6 +341,37 @@ try {
       await page.screenshot({ path: `${OUT}/e2e-4-campaign.png` });
     }
   }
+
+  // --- endless: Keep descending → depth 6, then a depth clear offers perks ----
+  let descendReady = false;
+  for (let i = 0; i < 60 && !descendReady; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    descendReady = await page.evaluate(() => { const b = document.querySelector('#descend-btn'); return !!b && !b.disabled; });
+  }
+  check(descendReady, 'the campaign-complete screen offers Keep descending');
+  await page.click('#descend-btn');
+  await new Promise((r) => setTimeout(r, 1500));
+  await forceLock();
+  const depth6 = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    return {
+      idx: g.levelIndex, state: g.state, theme: g.level.theme,
+      label: document.querySelector('#obj-label')?.textContent, num: document.querySelector('#obj-sector')?.textContent,
+      save: JSON.parse(localStorage.getItem('voxelstrike-run') || 'null'),
+      best: Number(localStorage.getItem('voxelstrike-best-depth') || 0),
+    };
+  });
+  check(depth6.idx === 6 && depth6.state === 'playing' && depth6.theme === 'facility',
+    `Keep descending → depth 6 (${depth6.theme}, state ${depth6.state})`);
+  check(depth6.label === 'DEPTH' && depth6.num === '6', `the HUD reads DEPTH 6 (${depth6.label} ${depth6.num})`);
+  check(depth6.save?.sector === 6 && depth6.best >= 6, `depth 6 is saved and recorded as the deepest (${depth6.save?.sector}, best ${depth6.best})`);
+  await page.screenshot({ path: `${OUT}/e2e-5-depth6.png` });
+  const endState6 = await completeLevel(6);
+  const clear6 = await page.evaluate(() => ({
+    rank: document.querySelector('.sc-rank-letter')?.textContent ?? '',
+    cards: document.querySelectorAll('.sc-perk').length,
+  }));
+  check(endState6 === 'intermission' && clear6.cards === 3, `a depth clear ranks it (${clear6.rank}) and offers perks again (${clear6.cards})`);
 
   // --- the Biofoundry is generated fresh every run --------------------------
   const variety = await page.evaluate(async () => {

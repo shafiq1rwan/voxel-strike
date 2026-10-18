@@ -58,8 +58,28 @@ off the core. The per-file rules and known gotchas live in
             ├──► intermission (sector 3 cleared) ──► facility terminal ──► playing (sector 4, Biofoundry)
             ├──► intermission (sector 4 cleared) ──► playing (sector 5, deep Biofoundry)
             │
-            └──► won (sector 5 cleared; co-op: sector 3) ──► results ──► Play a new layout / Main menu
+            └──► won (sector 5 cleared; co-op: sector 3) ──► results ──► Keep descending (solo) / Play a new layout / Main menu
+                                                                   │
+                                                                   └──► ad break ──► playing (depth 6, 7, … endless)
 ```
+
+**Endless depths.** `Game.levelIndex` keeps counting past `TOTAL_SECTORS`
+(5); `Game.endless` is true from depth 6. `themeFor(n)` keeps 1–3 facility
+and 4–5 Biofoundry, then alternates facility and Biofoundry every two
+depths. `bossFor(n)` is true on every fifth depth (solo only), which forces
+the Biofoundry. Endless levels use `generateLevel(seed, n, …)` with the depth
+as difficulty (Biofoundry tanks up to 8 occupied, up to two extra enemies per
+far room, a 90-enemy cap) and multiply enemy HP by up to 1.8. A depth clear
+is the normal sector-clear screen with a perk offer; once the perk pool is
+empty, `rollPerkOffer` fills it with one-off rewards (full health, ammo,
+armor). The HUD, pause, death and title screens say DEPTH instead of SECTOR.
+
+**Boss gate.** On a boss depth, `levelgen` places the Broodkeeper against a
+door-free wall of the arena room (`LevelData.boss`) and puts the red key spec
+in front of it. `buildLevel` holds that key back (`Game.bossKey`) and spawns
+the boss; the objective's first stage is `boss`. `Enemy.die()` calls
+`Game.onBossDefeated`, which clears its acid, spawns the held-back key and
+hides the boss bar. The keycard ambush is skipped on boss levels.
 
 `Game.frame()` calls `poki.setPlaying(state === 'playing')` every frame;
 the Poki wrapper forwards only the transitions.
@@ -93,7 +113,10 @@ Every sector entry goes through `Game.enterSector()`:
    pickups and enemies. A BFS walkability check (key reachable *without* the
    key, exit reachable *with* it) rejects broken layouts and retries with a
    fallback seed. Decoration uses a position hash, not the layout RNG, so
-   tuning deco never reshuffles a seed's layout.
+   tuning deco never reshuffles a seed's layout. Sector 1 (difficulty 1) is
+   a short opener: 6–7 rooms, a shotgun in the spawn room, no ticker nests,
+   no brute, and a hashed barrel pair in the first room. On a boss depth the
+   generator retries until the Broodkeeper fits its wall.
 3. **Light bake** (`world.ts`): a BFS flood from every lamp block into a
    per-voxel RGB grid.
 4. **Mesh** (`mesher.ts`): one greedy-meshed chunk per 16×16 column; faces
@@ -164,7 +187,9 @@ as a phone stand-in), sector 1 averages ~5–7 ms a frame at 4× slowdown and
 
 ## Combat
 
-Optional solo challenges live in `entities/overload.ts`. After ordinary level
+Optional solo challenges live in `entities/overload.ts`. They are hidden from
+players: `buildLevel` creates one only when `OVERLOAD_ENABLED` (web build +
+`?overload` on the URL), never on Poki. After ordinary level
 generation, `Overload.create` chooses a clear supported position in a normal
 room without moving campaign rooms, pickups or enemies. Its console and
 collision box are owned by the sector; one controller advances idle → active
@@ -224,6 +249,8 @@ codes (lazy-loaded), or BroadcastChannel for same-browser tabs
 | `voxelstrike-run` | Saved checkpoint for *Continue* (sector 2+) |
 | `voxelstrike-best-<seedHex>` | Best score for that layout seed |
 | `voxelstrike-tutorial-done` | First-run control hints shown |
+| `voxelstrike-best-depth` | Deepest endless depth reached (title footer) |
+| `voxelstrike-biofoundry-seen` | The Biofoundry was reached once (hides the title's NEW SECTOR banner, which returning players see) |
 
 The run and tutorial keys match the earlier Poki build — don't rename them.
 
@@ -232,7 +259,7 @@ The run and tutorial keys match the earlier Poki build — don't rename them.
 | Build | Command | Output | Goes to |
 |---|---|---|---|
 | Web | `npm run build` | `dist/` | GitHub Pages: `.github/workflows/deploy.yml` builds and deploys on every push to `main` |
-| Poki | `npm run zip:poki` | `dist-poki/` + `voxelstrike-poki.zip` | Uploaded by hand to the Poki Inspector ([POKI.md](../POKI.md)) |
+| Poki | `npm run zip:poki` | `dist-poki/` + `voxelstrike-poki-<version>.zip` (bumps the patch version first) | Uploaded by hand to the Poki Inspector ([POKI.md](../POKI.md)) |
 
 `vite.config.ts` uses `base: './'` so both work from a sub-path. The web
 build is also a PWA (`public/manifest.webmanifest` + network-first

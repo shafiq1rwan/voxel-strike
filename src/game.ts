@@ -7,7 +7,7 @@ import { TouchControls, isTouchDevice } from './core/touch';
 import { Box, rayBox } from './core/physics';
 import { VoxelWorld } from './world/world';
 import { ChunkManager } from './world/mesher';
-import { generateLevel, LevelData } from './world/levelgen';
+import { generateLevel, LevelData, type LevelTheme } from './world/levelgen';
 import { Block, isDestructible } from './world/blocks';
 import { Player } from './entities/player';
 import { Door, Elevator, ExitBeacon } from './entities/door';
@@ -24,9 +24,9 @@ import { HUD } from './ui/hud';
 import { Automap } from './ui/automap';
 import { Netplay } from './net/netplay';
 import { GameSettings, loadSettings, saveSettings } from './core/settings';
-import { EnemySpec, KeyColor, PickupKind } from './types';
+import { EnemySpec, KeyColor, PickupKind, PickupSpec } from './types';
 import { POKI, poki } from './platform/poki';
-import { PERKS, isPerkId, rollPerkOffer, type PerkId } from './core/perks';
+import { isPerkId, isReward, offerDef, rollPerkOffer, type OfferId, type PerkId } from './core/perks';
 import { BASE_AMMO_MAX, BASE_MAX_HEALTH } from './entities/player';
 import { biofoundryTerminal, decorateBiofoundry } from './preview/biofoundry';
 
@@ -74,13 +74,17 @@ export interface PlayerTarget {
 }
 
 /** the sector's critical path, as shown by the HUD objective tracker */
-type ObjectiveStage = 'key' | 'door' | 'lift' | 'pad';
-const OBJECTIVES: Record<ObjectiveStage, { text: string; color: string; icon: 'keycard' | 'door' | 'lift' | 'pad' }> = {
-  key: { text: 'Find red keycard', color: '#ff3428', icon: 'keycard' },
+type ObjectiveStage = 'boss' | 'key' | 'door' | 'lift' | 'pad';
+const OBJECTIVES: Record<ObjectiveStage, { text: string; color: string; icon: 'keycard' | 'door' | 'lift' | 'pad' | 'boss' }> = {
+  boss: { text: 'Kill the Broodkeeper', color: '#ff8a2a', icon: 'boss' },
+  key: { text: 'Find the red keycard', color: '#ff3428', icon: 'keycard' },
   door: { text: 'Open the red door', color: '#ff3428', icon: 'door' },
   lift: { text: 'Ride the lift up', color: '#ffd028', icon: 'lift' },
   pad: { text: 'Step on the exit pad', color: '#4cc26a', icon: 'pad' },
 };
+
+/** the optional Overload room: hidden from players; web builds show it with ?overload */
+const OVERLOAD_ENABLED = !POKI && typeof location !== 'undefined' && new URLSearchParams(location.search).has('overload');
 
 /** localStorage flag: the first-run control hints have been shown */
 const TUTORIAL_KEY = 'voxelstrike-tutorial-done';
@@ -115,6 +119,9 @@ const RUN_KEY = 'voxelstrike-run';
 type Rank = 'S' | 'A' | 'B' | 'C';
 const RANK_ORDER: Rank[] = ['S', 'A', 'B', 'C'];
 const RANK_BONUS: Record<Rank, number> = { S: 1500, A: 1000, B: 500, C: 0 };
+
+/** deepest endless depth reached on this device (title footer) */
+const BEST_DEPTH_KEY = 'voxelstrike-best-depth';
 
 /** set the first time the player enters the Biofoundry: hides the title's NEW SECTOR banner */
 const BIOFOUNDRY_SEEN_KEY = 'voxelstrike-biofoundry-seen';
@@ -518,8 +525,8 @@ export class Game {
     const seed = this.levelSeed();
     console.log(`[voxelstrike] generating sector ${this.levelIndex}, seed=${seed}`);
     const authored = this.authoredLevel();
-    const theme = this.levelIndex >= BIOFOUNDRY_SECTOR ? 'biofoundry' : 'facility';
-    this.level = authored ? authored.generate(seed) : generateLevel(seed, this.levelIndex, theme);
+    const theme = this.themeFor(this.levelIndex);
+    this.level = authored ? authored.generate(seed) : generateLevel(seed, this.levelIndex, theme, this.bossFor(this.levelIndex));
     this.world = this.level.world;
     const scene = this.rendererSys.scene;
 
@@ -549,14 +556,34 @@ export class Game {
       scene.add(this.exitBeacon.mesh);
     }
 
-    this.pickups = new PickupManager(this.level.pickups, this.world);
+    // a boss carries the red keycard: it drops at the spec's spot when it dies
+    this.bossEnemy = null;
+    this.bossKey = this.level.boss ? this.level.pickups.find((p) => p.kind === 'keyRed') ?? null : null;
+    this.pickups = new PickupManager(this.bossKey ? this.level.pickups.filter((p) => p !== this.bossKey) : this.level.pickups, this.world);
     scene.add(this.pickups.group);
     this.automap.reset(this);
 
     this.enemies.spawnFromSpecs(this.level.enemies, this.level.rooms, this);
+    if (this.level.boss) {
+      const b = this.level.boss;
+      this.enemies.spawnFromSpecs([{ kind: 'broodkeeper', x: b.x, z: b.z, roomId: b.roomId }], this.level.rooms, this);
+      this.bossEnemy = this.enemies.list[this.enemies.list.length - 1];
+      this.bossEnemy.setBossFacing(b.yaw);
+    }
+    // endless depths: every enemy is a little tougher (+8% a depth, up to +80%)
+    if (this.levelIndex > TOTAL_SECTORS) {
+      const k = Math.min(1.8, 1 + 0.08 * (this.levelIndex - TOTAL_SECTORS));
+      for (const e of this.enemies.list) e.hp = Math.round(e.hp * k);
+      if (!this.preview && this.levelIndex > Number(storageGet(BEST_DEPTH_KEY) ?? 0)) {
+        storageSet(BEST_DEPTH_KEY, String(this.levelIndex));
+      }
+    }
     scene.add(this.enemies.group);
-    // the optional Overload encounter lives in the generated sectors only
-    if (!authored && !this.net) {
+    // the optional Overload encounter lives in the generated sectors only, and
+    // is hidden from players for now (a second terminal + offer screen in every
+    // sector muddied the one goal while playtime was the problem): web builds
+    // open it with ?overload for development, Poki never shows it
+    if (!authored && !this.net && OVERLOAD_ENABLED) {
       this.overload = Overload.create(this);
       if (this.overload) scene.add(this.overload.group);
     }
@@ -704,6 +731,10 @@ export class Game {
   private perks = new Set<PerkId>();
   /** score when this sector attempt began: the clear screen's kill points */
   private levelStartScore = 0;
+  /** the Broodkeeper on a boss sector (null elsewhere) */
+  private bossEnemy: Enemy | null = null;
+  /** the red keycard it carries, held back until it dies */
+  private bossKey: PickupSpec | null = null;
 
   hasPerk(p: PerkId): boolean {
     return this.perks.has(p);
@@ -824,7 +855,7 @@ export class Game {
     if (!raw) return null;
     try {
       const cp = JSON.parse(raw) as Checkpoint;
-      if (cp.v !== 1 || !(cp.sector >= 2 && cp.sector <= TOTAL_SECTORS) || !cp.ammo || !Array.isArray(cp.owned)) return null;
+      if (cp.v !== 1 || !(cp.sector >= 2 && cp.sector <= 999) || !cp.ammo || !Array.isArray(cp.owned)) return null;
       return cp;
     } catch {
       return null;
@@ -936,8 +967,10 @@ export class Game {
   private showDeathScreen(): void {
     const revive: 'ad' | 'free' | null = this.revivesUsed >= this.revivesAllowed ? null : POKI ? (poki.adsAvailable() ? 'ad' : null) : 'free';
     this.hud.showDeath({
-      stats: `Died in sector ${this.levelIndex} &nbsp;·&nbsp; Kills this sector: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,
+      stats: `Died in ${this.sectorName()} &nbsp;·&nbsp; Kills here: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}` +
+        (this.endless ? ` &nbsp;·&nbsp; Deepest: depth ${Math.max(this.levelIndex, Number(storageGet(BEST_DEPTH_KEY) ?? 0))}` : ''),
       sector: this.levelIndex,
+      unit: this.endless ? 'depth' : 'sector',
       keycard: this.keyCheckpoint !== null,
       revive,
       onRetry: () => {
@@ -1194,6 +1227,32 @@ export class Game {
     return this.net ? FACILITY_SECTORS : TOTAL_SECTORS;
   }
 
+  /** past the campaign: endless depths (solo) */
+  private get endless(): boolean {
+    return this.levelIndex > TOTAL_SECTORS;
+  }
+
+  /**
+   * The look of a sector: facility 1–3, Biofoundry 4–5; endless depths
+   * alternate every two (6–7 facility, 8–9 Biofoundry, …), and a boss depth
+   * is always the Biofoundry.
+   */
+  private themeFor(n: number): LevelTheme {
+    if (n <= FACILITY_SECTORS) return 'facility';
+    if (n <= TOTAL_SECTORS || this.bossFor(n)) return 'biofoundry';
+    return ((n - TOTAL_SECTORS - 1) >> 1) % 2 === 0 ? 'facility' : 'biofoundry';
+  }
+
+  /** the Broodkeeper waits at the end of the campaign and every fifth depth after */
+  private bossFor(n: number): boolean {
+    return !this.net && n >= TOTAL_SECTORS && n % 5 === 0;
+  }
+
+  /** "sector 3" / "depth 7" */
+  private sectorName(n = this.levelIndex): string {
+    return n > TOTAL_SECTORS ? `depth ${n}` : `sector ${n}`;
+  }
+
   /** a hand-built level replaces levelgen only in a preview run (`?sector4`) */
   private authoredLevel(): LevelPreview | null {
     return this.preview ?? null;
@@ -1246,8 +1305,14 @@ export class Game {
     this.buildLevel();
     this.captureCheckpoint();
     this.net?.sendNextLevel();
-    const deeper = this.levelIndex > BIOFOUNDRY_SECTOR
-      ? 'deeper into the Biofoundry. More tanks are full down here.'
+    if (this.endless) {
+      const where = this.level.boss ? 'something big is waiting in the incubation chamber.'
+        : this.level.theme === 'biofoundry' ? 'the Biofoundry goes deeper.' : 'old facility levels, colder and meaner.';
+      this.enterSector(`DEPTH ${this.levelIndex} — ${where}`, adShown);
+      return;
+    }
+    const deeper = this.level.boss ? 'the Broodkeeper guards the keycard. Kill it.'
+      : this.levelIndex > BIOFOUNDRY_SECTOR ? 'deeper into the Biofoundry. More tanks are full down here.'
       : 'it gets worse down here.';
     this.enterSector(`SECTOR ${this.levelIndex} of ${this.totalSectors} — ${deeper}`, adShown);
   }
@@ -1276,6 +1341,8 @@ export class Game {
       best: this.bestScoreForSeed(),
       touch: this.isTouch,
       continueSector: save?.sector,
+      continueLabel: save ? (save.sector > TOTAL_SECTORS ? `Depth ${save.sector}` : `Sector ${save.sector}`) : undefined,
+      bestDepth: Number(storageGet(BEST_DEPTH_KEY) ?? 0) || 0,
       onStart: () => {
         storageSet(RUN_KEY, null); // a new run replaces any saved one
         this.afterBreak((ad) => this.startGame(ad));
@@ -1285,7 +1352,8 @@ export class Game {
       // keep it behind ?coop for development (URL auto-join still works)
       onCoop: !POKI && new URLSearchParams(location.search).has('coop') ? () => this.openCoop() : undefined,
       onSettings: () => this.openSettings('title'),
-      newSector: storageGet(BIOFOUNDRY_SEEN_KEY) === null,
+      // returning players only: a first visit sees just the goal and PLAY
+      newSector: storageGet(TUTORIAL_KEY) !== null && storageGet(BIOFOUNDRY_SEEN_KEY) === null,
     });
   }
 
@@ -1408,6 +1476,15 @@ export class Game {
     }
     if (this.elevator) this.solidBoxCache.push(this.elevator.box());
     if (this.overload && !this.net) this.solidBoxCache.push(this.overload.box);
+    // the Broodkeeper's cradle is a wall while it lives
+    const bk = this.bossEnemy;
+    if (bk && bk.alive) {
+      this.solidBoxCache.push({
+        minX: bk.pos.x - bk.half.x, maxX: bk.pos.x + bk.half.x,
+        minY: bk.pos.y - bk.half.y, maxY: bk.pos.y + bk.half.y,
+        minZ: bk.pos.z - bk.half.z, maxZ: bk.pos.z + bk.half.z,
+      });
+    }
     return this.solidBoxCache;
   }
 
@@ -1579,7 +1656,7 @@ export class Game {
     this.hud.killMarker(e.lastHitHead);
     this.punchFOV(0.8);
     // score: kill value scaled by the combo chain (kills within 2.5s of each other)
-    let points = e.kind === 'brute' ? 300 : e.kind === 'sentinel' ? 150 : e.kind === 'ticker' ? 75 : 100;
+    let points = e.kind === 'broodkeeper' ? 2500 : e.kind === 'brute' ? 300 : e.kind === 'sentinel' ? 150 : e.kind === 'ticker' ? 75 : 100;
     if (e.lastHitHead) points += 50; // headshot kill bonus
     this.comboChain = this.comboTimer > 0 ? this.comboChain + 1 : 1;
     this.comboTimer = 2.5;
@@ -1601,6 +1678,28 @@ export class Game {
     }
   }
 
+  /** the Broodkeeper fell: its acid goes, the red keycard drops where it stood guard */
+  onBossDefeated(e: Enemy): void {
+    this.projectiles.clearAcid();
+    const k = this.bossKey;
+    if (k) {
+      this.spawnPickup('keyRed', k.x, k.y, k.z);
+      this.bossKey = null;
+    }
+    this.hud.setBoss(null);
+    this.hud.message('The BROODKEEPER is dead — take the RED keycard.');
+    this.hud.streak('BOSS DOWN');
+    this.punchFOV(3);
+    void e;
+  }
+
+  /** boss HP bar: shown while a boss fight is on */
+  private updateBossBar(): void {
+    const b = this.bossEnemy;
+    if (b && b.bossActive && this.state === 'playing') this.hud.setBoss('BROODKEEPER', b.bossFrac, b.coreOpen);
+    else this.hud.setBoss(null);
+  }
+
   /** grabbing the red keycard springs a security response around the player */
   onKeyPickup(): void {
     if (this.isNetClient) return; // the host owns the ambush
@@ -1610,6 +1709,8 @@ export class Game {
       this.keyCheckpoint = { cp: this.makeCheckpoint(this.levelIndex), x: p.x, y: p.y, z: p.z, yaw: this.player.yaw };
       this.hud.message('Checkpoint — you will retry from the keycard.');
     }
+    // a boss sector's key came off the boss: that fight was the response
+    if (this.level.boss) return;
     const keyRoom = this.level.rooms.find((r) => r.kind === 'key');
     if (!keyRoom) return;
     const specs: EnemySpec[] = [];
@@ -1648,6 +1749,7 @@ export class Game {
   /** brief FOV widening on heavy impacts — decays each frame */
   /** which step of key → red door → lift → exit pad the player is on */
   private objectiveStage(): ObjectiveStage {
+    if (this.bossEnemy?.alive && !this.player.hasKey('red')) return 'boss';
     const exitDoor = this.doors.find((d) => d.spec.locked === 'red');
     if (exitDoor && exitDoor.locked) return this.player.hasKey('red') ? 'door' : 'key';
     // up on the exit ledge (the lift's top floor) → last step
@@ -1657,6 +1759,10 @@ export class Game {
 
   private objectiveTarget(stage: ObjectiveStage): { x: number; z: number } | null {
     switch (stage) {
+      case 'boss': {
+        const b = this.bossEnemy;
+        return b ? { x: b.pos.x, z: b.pos.z } : null;
+      }
       case 'key': {
         const k = this.level.pickups.find((p) => p.kind === 'keyRed');
         return k ? { x: k.x, z: k.z } : null;
@@ -1732,7 +1838,8 @@ export class Game {
   onPlayerDeath(): void {
     if (!this.net) {
       // Poki events are deliberately few: level 1 fresh-start, level N complete / fail (POKI.md)
-      poki.measure('level', this.levelIndex, 'fail');
+      if (this.endless) poki.measure('endless', Math.min(20, this.levelIndex), 'fail');
+      else poki.measure('level', this.levelIndex, 'fail');
     }
     this.state = 'dead';
     this.deathTimer = 0;
@@ -1803,7 +1910,7 @@ export class Game {
       onTick: () => this.audio.play('termKey'),
       onStamp: () => this.audio.play('rankStamp'),
     };
-    if (this.levelIndex < this.totalSectors) {
+    if (this.levelIndex !== this.totalSectors) {
       this.state = 'intermission';
       // the save points at the NEXT sector: quitting now resumes there
       this.captureCheckpoint(this.levelIndex + 1);
@@ -1812,7 +1919,7 @@ export class Game {
         ...common,
         nextSector: this.levelIndex + 1,
         saved: true,
-        perks: offer.map((id) => PERKS[id]),
+        perks: offer.map((id) => offerDef(id)),
         onPick: (id) => this.pickPerk(id),
         onContinue: () => this.descendFromClear(),
       });
@@ -1845,12 +1952,30 @@ export class Game {
         if (this.state === 'won') this.afterBreak((ad) => this.newRunNow(ad));
       },
       onMenu: () => this.goToTitle(),
+      // the campaign is done; the descent isn't
+      onDescend: () => {
+        if (this.state === 'won') this.afterBreak((ad) => this.nextLevel(ad));
+      },
     });
   }
 
-  /** a perk card was picked on the sector-clear screen: keep it, then descend */
-  private pickPerk(id: PerkId): void {
-    if (this.state !== 'intermission' || this.perks.has(id)) return;
+  /** a perk card was picked on the sector-clear screen: keep it (or take the reward), then descend */
+  private pickPerk(id: OfferId): void {
+    if (this.state !== 'intermission') return;
+    const pl = this.player;
+    if (isReward(id)) {
+      if (id === 'patchUp') pl.health = pl.maxHealth;
+      else if (id === 'reinforce') pl.armor = Math.min(pl.maxArmor, pl.armor + 75);
+      else for (const t of Object.keys(pl.ammo) as (keyof typeof pl.ammo)[]) {
+        pl.ammo[t] = Math.min(pl.ammoMax[t], pl.ammo[t] + Math.round(pl.ammoMax[t] * 0.5));
+      }
+      this.hud.updateStats(pl);
+      this.hud.updateWeapon(this.weapons);
+      this.captureCheckpoint(this.levelIndex + 1);
+      this.descendFromClear();
+      return;
+    }
+    if (this.perks.has(id)) return;
     this.perks.add(id);
     this.applyPerkStats();
     if (id === 'vitality') this.player.heal(25);
@@ -1900,7 +2025,9 @@ export class Game {
     this.hud.updateScore(this.score, 1);
     this.audio.play('win');
     this.clearTransientFX();
-    poki.measure('level', this.levelIndex, 'complete'); // the only other Poki event (POKI.md)
+    // the only other Poki events (POKI.md); endless depths have their own bucket
+    if (this.endless) poki.measure('endless', Math.min(20, this.levelIndex), 'complete');
+    else poki.measure('level', this.levelIndex, 'complete');
     this.input.releaseLock();
 
     // solo: the sector-clear moment — tally, rank stamp, new best, then a perk
@@ -2140,6 +2267,7 @@ export class Game {
     this.pickups.update(dt, this.time, this);
     this.elevator?.animate(dt, this.time);
     this.updateObjective();
+    this.updateBossBar();
     this.exitBeacon?.animate(dt, this.objStage === 'pad');
     this.hud.updateAmmo(this.player, this.weapons);
     this.hud.updateBuffs(this.player);

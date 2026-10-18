@@ -14,12 +14,20 @@ npm run preview:poki   # serve dist-poki/ on http://localhost:4173 to try it
 npm run dev:poki       # dev server in Poki mode (HMR)
 ```
 
-To ship, build and zip in one step, then upload `voxelstrike-poki.zip` to the
-Poki Inspector:
+To ship, build and zip in one step, then upload `voxelstrike-poki-<version>.zip`
+to the Poki Inspector:
 
 ```bash
-npm run zip:poki       # build:poki + scripts/zip-poki.ps1 → voxelstrike-poki.zip (git-ignored)
+npm run zip:poki       # bump version + build:poki + scripts/zip-poki.ps1 → voxelstrike-poki-<version>.zip (git-ignored)
 ```
+
+Every `zip:poki` bumps the patch number in `package.json` (0.3.0 → 0.3.1 →
+…) before building, so each upload has its own version. The title screen's
+footer shows it (`VOXELSTRIKE 0.3.1`), and the zip is named after it, so a
+build seen on Poki can be matched to its zip. Commit the bumped
+`package.json` / `package-lock.json` with the release. A failed build still
+uses up its number; that's harmless. `build:poki`, `dev:poki` and the web
+build never bump it.
 
 The zip has `index.html` at its root and forward-slash entry paths. Don't
 use `Compress-Archive` instead. On Windows PowerShell 5.1 it writes
@@ -75,36 +83,41 @@ wrapper call is then a no-op and the game plays normally without ads.
 
 ## Game events (`PokiSDK.measure`)
 
-The optional solo Overload challenge is included. Its offer/reward screens
-use the `overload` state, so the existing per-frame SDK bridge stops gameplay
-while a choice is open and starts it again on return. These menus do not
-request ad breaks or add measure events. The web-only `?overload` spawn/equipment
-shortcut is ignored in the Poki build; players find the terminal normally.
+The optional solo Overload challenge is NOT in the Poki build: it is hidden
+from players (2026-10-18) and only appears with `?overload` on web builds,
+which the Poki build ignores. If it comes back: its offer/reward screens use
+the `overload` state, so the per-frame SDK bridge stops gameplay while a
+choice is open, and they request no ad breaks or measure events.
 
-Deliberately small: the game sends **7 events**, enough to answer "how many
+Deliberately small: the game sends **7 campaign events plus 2 endless ones**, enough to answer "how many
 started playing", "who passed each level" and "how many times players died". Everything else (loads, plays,
 ads, playtime) Poki already tracks on its own. None of the values may contain
 `/` or `^`.
 
 | category | what | action | Fired when |
 |---|---|---|---|
-| `level` | `1` | `fresh-start` | A new run begins: title *Enter the facility*, *New run* (title or death screen), or *Play a new layout*. Not sent on *Retry sector* or *Continue* |
+| `level` | `1` | `fresh-start` | A new run begins: title *Play*, *New run* (title or death screen), or *Play a new layout*. Not sent on *Retry sector* or *Continue* |
 | `level` | `1` – `5` | `complete` | That sector's exit pad is reached |
 | `level` | `1` – `5` | `fail` | The player dies in that sector (solo) |
+| `endless` | `6` – `20` | `complete` | An endless depth past sector 5 is cleared (depth 20 and deeper all report as `20`) |
+| `endless` | `6` – `20` | `fail` | The player dies at that endless depth (same cap) |
 
 In the Game Events tab they group as `level` → `1` … `5` →
 `fresh-start` / `complete` / `fail`, which reads as a funnel:
 
 **level 1 fresh-start** (played) → **level 1 complete** → **level 2 complete** →
 **level 3 complete** (reached the Biofoundry) → **level 4 complete** →
-**level 5 complete** (finished the game). Sectors 4–5 are the generated Biofoundry and ships in the Poki build;
+**level 5 complete** (finished the campaign). Past that, *Keep descending*
+starts the endless run: `endless 6 complete` … show how deep players go, and
+`endless N fail` where the run ended. The value is capped at 20 so the
+dashboard keeps a bounded set of rows. Sectors 4–5 are the generated Biofoundry and ships in the Poki build;
 only the standalone `?sector4` hand-built preview stays web-only.
 
-- **Played** = `level 1 fresh-start` — players who pressed *Enter the facility*
+- **Played** = `level 1 fresh-start` — players who pressed *Play*
   (or started another run). Poki's own load count includes people who left
   on the title screen.
 - **Passed level N** = `level N complete`.
-- **Total deaths** = `level 1 fail` + `level 2 fail` + `level 3 fail`. Each
+- **Total deaths** = every `level N fail` plus every `endless N fail`. Each
   death sends exactly one `fail`, and the split shows which sector kills
   players most.
 - Counts are events, not unique players: someone who clears sector 1 in two

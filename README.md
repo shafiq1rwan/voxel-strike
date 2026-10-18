@@ -56,9 +56,11 @@ flag is ignored.
 
 ## How to play
 
-### Optional Overload room (solo playtest)
+### Optional Overload room (solo playtest, hidden)
 
-Each solo campaign sector places a cyan **OVERLOAD / OPTIONAL** terminal in
+**Hidden from players (2026-10-18).** The terminal only appears with `?overload` on the URL of a web build; normal play and the Poki build never show it, so the one goal (keycard → door → lift) stays the only thing to read while playtime is the problem. The code and its test (`overload.mjs`, which uses the flag) stay in place.
+
+With the flag, each solo campaign sector places a cyan **OVERLOAD / OPTIONAL** terminal in
 an existing room where there is safe space. Its cyan outlined map marker
 appears after exploration. Approach it and press **E**, or tap the context
 button on touch devices, then choose **Start fight** or **Not now**. The
@@ -84,7 +86,7 @@ sectors survive retry and save/Continue. New runs remove the sidegrade.
 This first version is solo-only and does not appear in the Sector 4 preview.
 
 For quick testing, run `npm run dev` and open
-`http://localhost:5173/?overload&seed=12345`. After **Enter the facility** you
+`http://localhost:5173/?overload&seed=12345`. After **Play** you
 start beside the terminal with a shotgun and 24 shells. The shortcut is
 web-only; the Poki build ignores the shortcut but includes the normal solo
 challenge. Ordinary URLs retain the usual spawn and starting equipment.
@@ -93,7 +95,10 @@ challenge. Ordinary URLs retain the usual spawn and starting equipment.
 each run: three facility sectors, then — after a facility terminal tells you
 the only way out — two sectors of the **Biofoundry**, a purple-lit specimen
 lab where gunfire wakes what sleeps in the tanks (the deeper one has more
-full tanks and more enemies). In each one, find the **RED
+full tanks and more enemies). Sector 1 is a short opener: a handful of rooms,
+a shotgun in the starting room, no tickers or brutes. In sector 5 the
+keycard is guarded by the **Broodkeeper**, a boss on the incubation chamber
+wall; kill it and it drops the key. In each sector, find the **RED
 keycard**, open the locked vault door, ride the elevator in the exit hall,
 and stand on the glowing green **exit pad** to descend. Your weapons, ammo,
 health, and armor carry over between sectors — keycards don't. Each sector
@@ -105,6 +110,15 @@ is a **checkpoint**: retry from it and you're back where you took it, still
 holding it, with the rest of the sector as you left it. You can also restart
 the whole sector, or start a new run. From sector 2 on, progress is saved so
 the title offers **Continue**.
+
+**After sector 5 the run keeps going.** The final clear screen offers
+**Keep descending**: endless depths 6, 7, 8 … alternate between the facility
+and the Biofoundry every two depths, with tougher enemies and more of them
+the deeper you go, and another Broodkeeper on every fifth depth. The HUD
+reads DEPTH instead of SECTOR, the title shows your **deepest depth**, and
+Continue picks up at the depth you saved. Once the perk pool runs dry, the
+clear screen fills the offer with one-off rewards: full health, ammo or
+armor.
 
 **Clearing a sector** ranks it **S, A, B or C** from your kills, the secret
 and your time against par — a better rank adds more score, and beating your
@@ -250,6 +264,13 @@ locks (dodge after it and the hit misses), then a recovery you can punish.
   asleep in the specimen tanks. Gunfire nearby (or shooting the glass) wakes
   it: it pounds the glass, breaks out and hunts you with a slow, crushing
   overhead swing.
+- **Broodkeeper** *(boss, sector 5 and every fifth depth)* — a brick-red
+  brood organism in a steel incubation cradle on the chamber wall. It sleeps until you walk in,
+  then a boss health bar drops under the objective. It loops: three acid
+  globs (five when it's badly hurt), its chest plates swing open on an
+  orange core, it releases up to two Husks, then opens again. Closed, its
+  armor shrugs off three quarters of your damage; the open core takes double.
+  Killing it drops the red keycard.
 
 All of them run a full state machine — **idle / patrol / chase / attack / pain /
 death** — wake on line-of-sight or nearby gunfire, alert each other, and
@@ -350,11 +371,11 @@ fake pointer lock they share, and the gotchas are in
 
 ```bash
 node scripts/smoke.mjs      # boot, move, shoot, explode — fails on any console error
-node scripts/e2e.mjs        # plays the whole 5-sector campaign
+node scripts/e2e.mjs        # plays the whole 5-sector campaign (kills the sector 5 boss), then Keep descending into depth 6
 node scripts/movement.mjs   # W/A/S/D must match the camera's vectors at 5 facing angles
 node scripts/firing.mjs     # spam-click, hold-to-fire and the click buffer
 node scripts/aimassist.mjs  # touch aim assist (magnetism, sticky, rotation); desktop stays raw
-node scripts/features.mjs   # tickers, ambush, powerups, combo, arena, headshots, automap, lift, touch weapon wheel, phone settings, title banner, pixelation defaults
+node scripts/features.mjs   # tickers, ambush, powerups, combo, arena, headshots, automap, lift, touch weapon wheel, phone settings, title banner, pixelation defaults, sector 1 opener, Broodkeeper fight + boss bar, reward fill-ins
 node scripts/checkpoint.mjs # retry, revive, keycard checkpoint, save + Continue, quit to menu, new run — no page reloads
 node scripts/monkey.mjs     # randomized stress run with NaN / out-of-world checks
 node scripts/coop.mjs       # 2-player co-op over BroadcastChannel
@@ -363,7 +384,7 @@ node scripts/husk.mjs       # husk gait, chase consistency, claw/dodge, pose cap
 node scripts/overload.mjs   # the optional Overload room
 node scripts/breach.mjs     # a dormant Vatborn breaks out of its tank
 node scripts/sector4.mjs <url>  # the hand-built ?sector4 preview (add --poki on a Poki server)
-node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ads, rewarded revive, measure() events (level 1 fresh-start, level complete/fail)
+node scripts/poki.mjs       # Poki build only (npm run dev:poki): SDK lifecycle, ads, rewarded revive, measure() events (level 1 fresh-start, level complete/fail, endless depth complete/fail)
 ```
 
 Each accepts an optional URL argument, e.g.

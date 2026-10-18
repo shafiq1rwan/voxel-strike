@@ -270,6 +270,24 @@ try {
   check(noVideo.disabled && /no video/i.test(noVideo.text), `the revive button says so and is disabled ("${noVideo.text}")`);
   const sentNow = (await calls(page)).filter((x) => x.startsWith('measure'));
   check(sentNow.every((x) => /^measure level [1-5] (fresh-start|complete|fail)$/.test(x)), 'revive adds no game events of its own');
+  // endless descent (past sector 5): depths get their own `endless` bucket, capped at 20
+  await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.player.dead = false; g.player.health = 100;
+    g.levelIndex = 7; g.state = 'playing'; g.hud.hideScreen();
+    g.win();
+  });
+  await sleep(150);
+  await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.hud.hideScreen(); g.levelIndex = 25; g.state = 'playing';
+    g.player.health = 0; g.player.dead = true;
+    g.onPlayerDeath();
+  });
+  await sleep(150);
+  const deep = (await calls(page)).filter((x) => x.startsWith('measure')).slice(-2);
+  check(deep.join() === 'measure endless 7 complete,measure endless 20 fail',
+    `endless depths send endless N complete / fail, capped at 20 (${deep.join(', ')})`);
   console.log('  calls:', (await calls(page)).join(' | '));
   await page.close();
 

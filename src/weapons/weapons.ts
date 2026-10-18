@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { AmmoType, WeaponId } from '../types';
 import { Input } from '../core/input';
 import { rayBox } from '../core/physics';
-import type { Enemy } from '../entities/enemies';
+import { BOSS_CORE_Y, type Enemy } from '../entities/enemies';
 import { AimCone, findAimTarget } from '../entities/aimassist';
 import type { Game } from '../game';
 import { buildFirstPersonArm, buildFirstPersonHand } from '../entities/operative';
@@ -913,8 +913,12 @@ export class WeaponSystem {
       const hitY = origin.y + dir.y * t;
       // headshot: creatures with heads take double damage in the top slice
       const headshot = (e.kind === 'husk' || e.kind === 'brute' || e.kind === 'vatborn') && hitY > e.pos.y + e.half.y * 0.45;
+      // boss: the orange core band while its chest plates are open (×2 in damage())
+      const core = e.kind === 'broodkeeper' && e.coreOpen &&
+        hitY > e.pos.y + BOSS_CORE_Y[0] && hitY < e.pos.y + BOSS_CORE_Y[1];
+      if (core) e.lastHitCore = true;
       game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, origin.x + dir.x * t, hitY, origin.z + dir.z * t);
-      if (headshot) {
+      if (headshot || core) {
         game.audio.play('headshot', e.pos);
         game.hud.headshotMarker();
         // extra spray from the skull

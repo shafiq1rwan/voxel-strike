@@ -1,14 +1,14 @@
 {
   "name": "voxelstrike",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:poki": "vite --mode poki",
     "build": "tsc --noEmit && vite build",
     "build:poki": "tsc --noEmit && vite build --mode poki",
-    "zip:poki": "npm run build:poki && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/zip-poki.ps1",
+    "zip:poki": "npm version patch --no-git-tag-version && npm run build:poki && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/zip-poki.ps1",
     "preview": "vite preview",
     "preview:poki": "vite preview --mode poki"
   },
