@@ -50,7 +50,7 @@ node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consi
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener, Broodkeeper (wake on entry, cycle, acid + summons, armor/core damage, boss bar, key drop, every weapon hurts it + killed by real Ripper fire), reward fill-ins
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener, Broodkeeper (wake on entry, cycle, acid + summons, armor/core damage, boss bar, key drop, every weapon hurts it + killed by real Ripper fire), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start; the same budget in the Biofoundry at its heaviest (sector 5)
@@ -154,7 +154,11 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   streak popups at 2/3/4 kills), per-seed best score in localStorage
   (`voxelstrike-best-<seedHex>`), and `onKeyPickup()` — grabbing the red
   keycard spawns an awake ambush in the key room (and bumps
-  `level.totalEnemies` so intermission ratios stay honest). The HUD
+  `level.totalEnemies` so intermission ratios stay honest). The secret
+  room's cracked wall (`LevelData.secretWall`) glints: `secretGlint()` spits
+  amber sparks + a 'secretHint' shimmer every ~2s while a player within 9u
+  can see it, with one "looks weak" line per sector; entering the room calls
+  `hud.secretFound()` (gold SECRET FOUND stamp). The HUD
   objective tracker is driven by `updateObjective()` each frame:
   `objectiveStage()` derives key → door → lift → pad from game state (pad =
   feet above the lift's highY − 0.4) and the arrow points at
@@ -354,6 +358,13 @@ node scripts/itch-download.mjs <url> <dir>        # download a free/PWYW itch.io
   (cells ammo): `fireArc` raycasts the first target then chains to up to 3
   more within 7u (LOS-checked, ×0.7 damage per hop), drawn as jagged teal
   tracer segments (`Tracers.fire` takes color + life; pool sized for it).
+  Quick melee is NOT a slot: `MELEE` + `meleeStrike()` in weapons.ts (V,
+  right mouse, touch `#tmelee` → `Input.consumeMelee`). 0.15s windup, 0.6s
+  cooldown, centre reach 1.8 (+ big bodies' extra half-width), same floor,
+  50° cone, LOS, one target, 35 dmg + shove, ×2 when `Enemy.vulnerable`
+  (pain/stun or the recover phase); with no enemy in reach it damages the
+  destructible voxel at arm's length (crate / barrel / cracked wall). The
+  view model jabs via `meleeT` in `animate()`. `lastMelee` is for tests.
   Adding a weapon means updating BOTH `ORDER` arrays (weapons.ts — exported,
   also used by touch.ts's weapon wheel — + hud.ts), `DRY_SWITCH` in weapons.ts,
   and the Digit list in input.ts. Hitscan headshots: husk/brute hits above

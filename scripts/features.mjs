@@ -979,6 +979,164 @@ try {
     await kp.close();
   }
 
+  // --- 19. quick melee + the secret wall that tells you it's there --------------
+  {
+    const mp = await browser.newPage();
+    mp.on('pageerror', (err) => errors.push(`[melee pageerror] ${err.message}`));
+    await mp.setViewport({ width: 1280, height: 720 });
+    await mp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await mp.waitForSelector('#start-btn');
+    await mp.click('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    // sector 2 has tickers; freeze every enemy so positions are ours to set
+    await mp.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.levelIndex = 2; g.buildLevel(); g.state = 'playing'; g.input.locked = true; g.hud.hideScreen();
+      g.player.health = 1000;
+      for (const e of g.enemies.list) { e.update = () => {}; e.pos.y = -50; }
+      const r = g.level.rooms.find((q) => q.kind === 'spawn');
+      window.__stand = () => { const p = g.player; p.pos.set(r.cx + 0.5, p.pos.y, r.cz + 0.5); p.vel.set(0, 0, 0); p.yaw = 0; p.pitch = 0; };
+      g.player.spawnAt(r.cx + 0.5, 2.05, r.cz + 0.5);
+      window.__stand();
+      // put one enemy of `kind` d units straight ahead (yaw 0 = facing -z), same floor
+      window.__place = (kind, d) => {
+        const e = g.enemies.list.find((q) => q.kind === kind && q.alive && !q.__used);
+        e.__used = true;
+        const p = g.player;
+        e.pos.set(p.pos.x, p.pos.y - p.half.y + e.half.y + 0.01, p.pos.z - d);
+        e.vel.set(0, 0, 0);
+        e.state = 'idle';
+        e.mesh.position.copy(e.pos);
+        return g.enemies.list.indexOf(e);
+      };
+    });
+    const bash = async () => {
+      await mp.evaluate(() => window.__stand());
+      await mp.keyboard.press('KeyV');
+      await new Promise((r) => setTimeout(r, 300));
+      return mp.evaluate(() => window.__voxelstrike.weapons.lastMelee);
+    };
+    const hp = (i) => mp.evaluate((i) => window.__voxelstrike.enemies.list[i].hp, i);
+    const park = (i) => mp.evaluate((i) => { window.__voxelstrike.enemies.list[i].pos.y = -50; }, i);
+    await new Promise((r) => setTimeout(r, 900)); // let the cooldown from the click settle
+
+    const h1 = await mp.evaluate(() => window.__place('husk', 1.3));
+    const before = await hp(h1);
+    const res1 = await bash();
+    const after = await hp(h1);
+    const pushed = await mp.evaluate((i) => { const e = window.__voxelstrike.enemies.list[i]; return Math.hypot(e.vel.x, e.vel.z); }, h1);
+    check(res1 === 'enemy' && Math.round(before - after) === 35 && pushed > 3,
+      `V bashes a husk in front: 35 damage and a shove (${res1}, ${Math.round(before - after)}, push ${pushed.toFixed(1)})`);
+    // the cooldown is real: an immediate second press does nothing
+    await mp.evaluate(() => window.__voxelstrike.enemies.list.forEach((e) => { e.vel.set(0, 0, 0); }));
+    await mp.evaluate((i) => { const g = window.__voxelstrike, e = g.enemies.list[i], p = g.player; e.pos.set(p.pos.x, e.pos.y, p.pos.z - 1.3); }, h1);
+    const hpA = await hp(h1);
+    await mp.keyboard.press('KeyV');
+    await new Promise((r) => setTimeout(r, 200));
+    check(await hp(h1) === hpA, 'a second press inside the 0.6 s cooldown lands nothing');
+    await new Promise((r) => setTimeout(r, 500));
+    // reading the telegraph pays: a staggered husk takes double
+    await mp.evaluate((i) => { const e = window.__voxelstrike.enemies.list[i]; e.state = 'pain'; e.hp = 200; }, h1);
+    const res2 = await bash();
+    check(res2 === 'crit' && Math.round(200 - await hp(h1)) === 70, `a staggered enemy takes double (${res2}, ${Math.round(200 - await hp(h1))})`);
+    // out of reach: a whiff
+    await new Promise((r) => setTimeout(r, 450));
+    await mp.evaluate((i) => { const g = window.__voxelstrike, e = g.enemies.list[i], p = g.player; e.state = 'idle'; e.pos.set(p.pos.x, e.pos.y, p.pos.z - 3); }, h1);
+    const hpFar = await hp(h1);
+    const res3 = await bash();
+    check(res3 !== 'enemy' && res3 !== 'crit' && await hp(h1) === hpFar, `3 u away is out of reach (${res3})`);
+    await park(h1);
+    // bashing a ticker kills it, and its corpse still blows
+    await new Promise((r) => setTimeout(r, 450));
+    const tk = await mp.evaluate(() => window.__place('ticker', 1.2));
+    await bash();
+    const tick = await mp.evaluate((i) => { const g = window.__voxelstrike; return { dead: !g.enemies.list[i].alive, boom: g.pendingExplosions.length > 0 || g.player.health < 1000 }; }, tk);
+    check(tick.dead && tick.boom, `bashing a ticker kills it and it detonates (dead ${tick.dead}, blast ${tick.boom})`);
+    await mp.evaluate(() => { window.__voxelstrike.player.health = 1000; });
+
+    // the secret wall: stand 4 u in front of it, looking at it
+    const wall = await mp.evaluate(() => {
+      const g = window.__voxelstrike;
+      const cells = g.level.secretWall ?? [];
+      const s = g.level.secretRect;
+      if (!cells.length || !s) return null;
+      let cx = 0, cz = 0;
+      for (const [x, , z] of cells) { cx += x + 0.5; cz += z + 0.5; }
+      cx /= cells.length; cz /= cells.length;
+      const scx = s.x + s.w / 2, scz = s.z + s.d / 2;
+      const ax = Math.abs(cx - scx) > Math.abs(cz - scz);
+      const nx = ax ? Math.sign(cx - scx) : 0, nz = ax ? 0 : Math.sign(cz - scz);
+      return { cells: cells.length, cx, cz, nx, nz };
+    });
+    check(!!wall && wall.cells >= 2, `the level knows its cracked secret wall (${wall?.cells} cells)`);
+    if (wall) {
+      await mp.evaluate((w) => {
+        const g = window.__voxelstrike, p = g.player;
+        window.__stand = () => {
+          p.pos.set(w.cx + w.nx * 4, p.pos.y, w.cz + w.nz * 4); p.vel.set(0, 0, 0);
+          p.yaw = Math.atan2(w.nx, w.nz); p.pitch = -0.15;
+        };
+        p.spawnAt(w.cx + w.nx * 4, 2.05, w.cz + w.nz * 4);
+        window.__stand();
+      }, wall);
+      await new Promise((r) => setTimeout(r, 2600));
+      const hint = await mp.evaluate(() => (document.querySelector('#messages')?.textContent ?? ''));
+      check(/cracked wall looks weak/i.test(hint), 'near the cracked wall, a line says to shoot or bash it');
+      await mp.screenshot({ path: 'scripts/shots/features-secret-glint.png' });
+      // walk up and bash it open
+      await mp.evaluate((w) => {
+        const p = window.__voxelstrike.player;
+        window.__stand = () => { p.pos.set(w.cx + w.nx * 1.0, p.pos.y, w.cz + w.nz * 1.0); p.vel.set(0, 0, 0); p.yaw = Math.atan2(w.nx, w.nz); p.pitch = -0.35; };
+      }, wall);
+      let opened = false;
+      for (let i = 0; i < 6 && !opened; i++) {
+        await bash();
+        await new Promise((r) => setTimeout(r, 400));
+        opened = await mp.evaluate(() => { const g = window.__voxelstrike; return (g.level.secretWall ?? []).some(([x, y, z]) => g.world.get(x, y, z) === 0); });
+      }
+      check(opened, 'a bash breaks the cracked wall open');
+      // step inside: the SECRET FOUND moment
+      await mp.evaluate(() => {
+        const g = window.__voxelstrike, s = g.level.secretRect;
+        window.__stand = () => {};
+        g.player.spawnAt(s.x + s.w / 2, 2.05, s.z + s.d / 2);
+      });
+      await new Promise((r) => setTimeout(r, 400));
+      const found = await mp.evaluate(() => ({
+        text: document.querySelector('.secret-found')?.textContent ?? '',
+        secrets: window.__voxelstrike.secretsFound,
+      }));
+      check(/SECRET FOUND/.test(found.text) && /\+500/.test(found.text) && found.secrets === 1, `stepping in shows SECRET FOUND (+500) ("${found.text}")`);
+      await mp.screenshot({ path: 'scripts/shots/features-secret-found.png' });
+    }
+    await mp.close();
+  }
+
+  // --- 19b. touch: the BASH button sits by FIRE on the right edge and swings --
+  {
+    const tp = await browser.newPage();
+    tp.on('pageerror', (err) => errors.push(`[bash-touch pageerror] ${err.message}`));
+    await tp.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
+    await tp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await tp.waitForSelector('#start-btn');
+    await tp.tap('#start-btn');
+    await new Promise((r) => setTimeout(r, 1200));
+    const lay = await tp.evaluate(() => {
+      const r = (q) => document.querySelector(q)?.getBoundingClientRect();
+      const b = r('#tmelee'), f = r('#tfire'), j = r('#tjump'), a = r('#tammo');
+      const overlap = (p, q) => p && q && p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom;
+      return { ok: !!b, right: b ? innerWidth - b.right : 0, onScreen: b && b.top >= 0 && b.bottom <= innerHeight, hits: [f, j, a].filter((x) => overlap(b, x)).length };
+    });
+    check(lay.ok && lay.onScreen && lay.hits === 0 && lay.right < 200,
+      `touch BASH button sits by FIRE on the right side, overlapping nothing (${lay.right.toFixed(0)}px from the edge)`);
+    await tp.evaluate(() => { window.__voxelstrike.state = 'playing'; });
+    await tp.tap('#tmelee');
+    await new Promise((r) => setTimeout(r, 300));
+    check(await tp.evaluate(() => window.__voxelstrike.weapons.lastMelee !== ''), 'tapping BASH swings');
+    await tp.screenshot({ path: 'scripts/shots/features-touch-bash.png' });
+    await tp.close();
+  }
+
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
   // Desktop defaults to 480 lines, touch to 320 (above), still cycled in

@@ -60,7 +60,8 @@ Follows the owner's mockup.
 | Weapon slots | `#slots` | 1–5; owned slots bright, active slot yellow with an underline bar |
 | Keycards | `#keys` | Red key slot always shown (dim until held); blue/yellow only when held |
 | Weapon + ammo | `#ammo-block` | Weapon name, ammo-type icon, count, `AMMO` label |
-| Hint strip | `#hint` | First-run control hints (3 steps, sector 1 of the first solo run) |
+| Hint strip | `#hint` | First-run control hints (3 steps, sector 1 of the first solo run): controls; follow the yellow arrow; bash (V / BASH) + switching + map |
+| Secret found | `.secret-found` | Big gold *SECRET FOUND* stamp with *+500* under it (and *THE THUMPER IS IN HERE* if not owned yet), a warm edge glow `#secret-glow`, ~2.6 s. Near the cracked wall beforehand, a one-per-sector line: *That cracked wall looks weak. Shoot it or bash it (V).* |
 | FPS | `#fps` | Bottom-left, small and dim |
 
 Objective stages, in order: **Find the red keycard** (keycard icon, red) →
@@ -107,6 +108,7 @@ Differences from desktop:
 | Look (right side) | Drag to aim. With aim assist on: magnetism, sticky aim and rotation assist |
 | FIRE | Hold to fire |
 | JUMP | Jump |
+| BASH `#tmelee` | Quick melee. A smaller round button up and in from FIRE (right 122px, bottom 112px), so the firing thumb rolls onto it; never on the aiming side. Clear of FIRE, JUMP and the ammo count |
 | **Weapon button** `#tweapon` | Above JUMP, in a column against the right edge with FIRE (anything further in gets hit by look swipes). Shows ⇄, the slot number and the weapon name. **Tap** = next owned weapon. **Swipe left/right** = previous/next. **Hold 280 ms** = weapon wheel |
 | Weapon wheel `#twheel` | Owned weapons fan out in an arc above the button; the current one is outlined yellow. Slide onto one and release to pick it; release on the button to cancel |
 | Auto-switch | Firing an empty weapon switches to a loaded one (shotgun → SMG → arc → pistol → rockets last). Touch only |

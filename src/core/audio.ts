@@ -16,6 +16,7 @@ export type SoundName =
   | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup' | 'secret'
   | 'doorOpen' | 'doorClose' | 'doorLocked' | 'elevator' | 'teleport'
   | 'step' | 'clank' | 'termKey' | 'termOff' | 'rankStamp'
+  | 'meleeSwing' | 'meleeHit' | 'secretHint'
   | 'win';
 
 interface ListenerState {
@@ -295,6 +296,20 @@ export class AudioMan {
         break;
       case 'impact':
         this.noise(out, 0.32, 0.002, 0.06, 'bandpass', 2500, 900);
+        break;
+      case 'meleeSwing':
+        // a short airy whoosh as the gun jabs out
+        this.noise(out, 0.28, 0.02, 0.14, 'bandpass', 500, 1800);
+        break;
+      case 'meleeHit':
+        // heavy blunt thud: low knock + a body crunch
+        this.tone(out, 'sine', 0.6, 0.002, 0.14, 150, 55);
+        this.noise(out, 0.55, 0.002, 0.12, 'lowpass', 1300, 200);
+        break;
+      case 'secretHint':
+        // faint glassy shimmer from a cracked wall: something is behind it
+        this.tone(out, 'triangle', 0.12, 0.04, 0.5, 1568, 1760);
+        this.tone(out, 'sine', 0.08, 0.06, 0.6, 2349, 2093, 0.12);
         break;
       case 'crateBreak':
         this.noise(out, 0.7, 0.004, 0.22, 'lowpass', 1400, 220);

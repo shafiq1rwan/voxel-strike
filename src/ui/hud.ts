@@ -448,6 +448,32 @@ body.touch-mode #boss-head { font-size: 10px; }
   text-shadow: 2px 2px 0 #000, 0 0 18px rgba(255,208,40,.6);
   pointer-events: none; animation: streakup 1.1s forwards; white-space: nowrap;
 }
+/* SECRET FOUND: a gold stamp in the middle of the screen, bigger and longer than a streak */
+.secret-found {
+  position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: none; animation: secretin 2.6s forwards; white-space: nowrap;
+}
+.secret-found b {
+  font-size: 34px; letter-spacing: 8px; text-indent: 8px; color: #ffd028;
+  padding: 6px 22px; border: 2px solid #ffd028; background: rgba(40,30,4,.55);
+  text-shadow: 2px 2px 0 #000, 0 0 22px rgba(255,208,40,.75);
+  box-shadow: 0 0 26px rgba(255,208,40,.35), inset 0 0 14px rgba(255,208,40,.2);
+}
+.secret-found span { font-size: 16px; font-weight: bold; letter-spacing: 3px; color: #f0f2f6; text-shadow: 2px 2px 0 #000; }
+@keyframes secretin {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(1.8); }
+  10% { opacity: 1; transform: translate(-50%, -50%) scale(.94); }
+  18% { transform: translate(-50%, -50%) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -62%); }
+}
+body.touch-mode .secret-found b { font-size: 24px; letter-spacing: 5px; }
+body.touch-mode .secret-found span { font-size: 12px; }
+#secret-glow {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  box-shadow: inset 0 0 120px rgba(255,208,40,.55); transition: opacity .6s;
+}
 @keyframes streakup {
   0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); }
   15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
@@ -527,6 +553,8 @@ body.touch-mode #boss-head { font-size: 10px; }
    further in sits where the thumb drags to aim and gets hit by look swipes */
 #tfire { right: 18px; bottom: 18px; width: 104px; height: 104px; font-size: 16px; }
 #tjump { right: 37px; bottom: 134px; }
+/* quick melee: up and in from FIRE, so the firing thumb rolls onto it (never the aim side) */
+#tmelee { right: 122px; bottom: 112px; width: 56px; height: 56px; font-size: 11px; }
 /* weapon button above JUMP: tap = next, swipe = prev/next, hold = wheel */
 #tweapon { right: 37px; bottom: 210px; flex-direction: column; gap: 2px; line-height: 1; }
 #tweapon .ico { opacity: .75; }
@@ -1198,6 +1226,27 @@ export class HUD {
   updateScore(score: number, mult: number): void {
     this.scoreNumEl.textContent = String(score).padStart(6, '0');
     this.scoreMultEl.textContent = mult > 1 ? `×${mult}` : '';
+  }
+
+  /** the secret room: a gold SECRET FOUND stamp, the points under it, a warm edge glow */
+  secretFound(points: number, extra = ''): void {
+    this.root.querySelectorAll('.secret-found').forEach((el) => el.remove());
+    const el = document.createElement('div');
+    el.className = 'secret-found';
+    el.innerHTML = `<b>SECRET FOUND</b><span>+${points}${extra ? ` &middot; ${extra}` : ''}</span>`;
+    this.root.appendChild(el);
+    setTimeout(() => el.remove(), 2650);
+    let glow = this.root.querySelector('#secret-glow') as HTMLElement | null;
+    if (!glow) {
+      glow = document.createElement('div');
+      glow.id = 'secret-glow';
+      this.root.appendChild(glow);
+    }
+    glow.style.transition = 'none';
+    glow.style.opacity = '1';
+    void glow.offsetWidth;
+    glow.style.transition = 'opacity 1.4s';
+    glow.style.opacity = '0';
   }
 
   /** big center popup for kill streaks (DOUBLE KILL etc.) */

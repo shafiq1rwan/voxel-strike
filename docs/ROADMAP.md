@@ -22,42 +22,11 @@ Static 628×628+ tile, no text, one subject in motion, dark palette against
 Poki's aqua page. Brief and prompts: `reference/poki-thumbnail-prompts.md`.
 Animated 1080×1080 MP4 (4–6s, muted) from real gameplay at soft release.
 
-### 2. Quick melee (decided 2026-10-18)
-A dedicated bash on V (desktop) / a small button beside FIRE on touch, not a
-sixth weapon slot — a slot would touch both weapon `ORDER` arrays, the HUD
-slot bar, the digit keys, `DRY_SWITCH` and the touch weapon wheel for no
-gain. Why now: the enemy rework gave every melee enemy a warning, a locked
-direction and a protected recovery (husk bent over after a missed claw,
-brute dazed 1.3s on a wall, sentinel folded for 0.9s). A free, instant hit
-that is strong in exactly those windows turns the telegraphs into a skill
-loop, removes the empty-gun dead end, and opens crates and barrels without
-spending rounds.
-
-Shape:
-- One swing: ~0.15s windup, 0.6s cooldown. Reach ~1.8u in a cone, with the
-  same reach / same-floor / cone / line-of-sight rules the enemies use
-  (`meleeStrike` in `enemies.ts`), damage once per swing.
-- ~35 damage (a husk in two hits, or one after a pistol shot) plus knockback
-  that shoves a husk out of its claw range.
-- ×2 against a staggered or recovering enemy — the reward for reading the
-  telegraph.
-- Breaks a crate or barrel in one hit at arm's reach. Bashing a ticker
-  detonates it; that stays.
-- View model: the gun in hand jabs forward with a short dip. No hands (owner's
-  call in `ART.md`), no new model.
-- Guard rails: reach stays under the husk's 1.55u standoff and the cooldown
-  is real, so the guns keep their point. The touch button lives on the right
-  edge with FIRE and JUMP, never under the aiming thumb.
-- Tests: a `features.mjs` section for the one-hit rule, the stagger bonus and
-  the ticker detonation. Update the first-run tips and `UI_SPEC.md`.
-
-About a day including tests.
-
-### 3. Cross-run progression
+### 2. Cross-run progression
 Runs played, best depth, a weapon or skin unlock after a milestone, shown on
 the title screen so a returning player sees their own numbers.
 
-### 4. Geothermal biome
+### 3. Geothermal biome
 A third theme for the endless rotation (the concept from earlier notes), so
 depths past 10 stop alternating between only two looks. The Spitter and
 Carapace proposals in `reference/sector4-monsters.md` are still open.
@@ -71,6 +40,18 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 - Difficulty choice and per-sector star ratings.
 
 ## Done
+
+- 2026-10-18 — Quick melee: V / right click / touch BASH (up and in from
+  FIRE). 0.15 s windup, 0.6 s cooldown, 1.8 u centre reach (+ big bodies'
+  extra half-width), same floor, 50° cone, LOS, one target: 35 damage + a
+  shove, ×2 on a staggered or recovering enemy (`Enemy.vulnerable`), quad
+  ×4. With no enemy in reach it breaks a crate, barrel or cracked wall at
+  arm's length. View model: pull back, jab forward with a dip. Tips teach it.
+- 2026-10-18 — The secret wall gives itself away: within 9 u with line of
+  sight, amber sparks + a faint shimmer every ~2 s from the cracked voxels
+  (`LevelData.secretWall`), a one-per-sector "looks weak" line; stepping in
+  shows a gold SECRET FOUND stamp. Playtests suggested players never found
+  the Thumper's room.
 
 - 2026-10-18 — Endless descent after sector 5 (*Keep descending* on the final
   screen; DEPTH 6+ alternates facility and Biofoundry every two depths,

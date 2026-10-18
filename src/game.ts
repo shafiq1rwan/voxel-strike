@@ -194,6 +194,9 @@ export class Game {
   private totalSecretsFound = 0;
   private totalSecretsSoFar = 0;
   private secretAnnounced = false;
+  /** cracked-wall hint: next glint, whether the "looks weak" line was shown this sector */
+  private secretGlintT = 0;
+  private secretHinted = false;
   private deathTimer = 0;
   private levelStartTime = 0;
   private totalPlayTime = 0;
@@ -594,6 +597,8 @@ export class Game {
     this.kills = 0;
     this.secretsFound = 0;
     this.secretAnnounced = false;
+    this.secretGlintT = 0;
+    this.secretHinted = false;
     this.player.keys.clear();
     this.player.dead = false;
     // reached the Biofoundry (campaign, not the ?sector4 preview): it's no longer "new"
@@ -1197,17 +1202,17 @@ export class Game {
     this.tipTimer -= dt;
     if (this.tipTimer > 0) return;
     const k = (t: string): string => `<span class="kc">${t}</span>`;
-    const objective = 'FOLLOW THE <b style="color:#ffd028">&#9650;</b> AT THE TOP TO YOUR OBJECTIVE';
+    const objective = 'FOLLOW THE <b style="color:#ffd028">YELLOW ARROW</b> AT THE TOP TO YOUR OBJECTIVE';
     const tips: [string, number][] = this.isTouch
       ? [
           ['LEFT THUMB &mdash; MOVE &nbsp;&middot;&nbsp; RIGHT THUMB &mdash; AIM &nbsp;&middot;&nbsp; ' + k('FIRE'), 7],
           [objective, 6],
-          [`${k('MAP')} SHOWS WHERE YOU'VE BEEN &nbsp;&middot;&nbsp; TAP ${k('GUN')} TO SWITCH &middot; HOLD FOR ALL`, 6],
+          [`${k('BASH')} HITS UP CLOSE &nbsp;&middot;&nbsp; TAP ${k('GUN')} TO SWITCH &middot; HOLD FOR ALL &nbsp;&middot;&nbsp; ${k('MAP')}`, 7],
         ]
       : [
           [`${k('W')}${k('A')}${k('S')}${k('D')} MOVE &nbsp;&middot;&nbsp; ${k('MOUSE')} AIM &nbsp;&middot;&nbsp; ${k('CLICK')} FIRE &nbsp;&middot;&nbsp; ${k('SPACE')} JUMP`, 7],
           [objective, 6],
-          [`${k('TAB')} MAP &nbsp;&middot;&nbsp; ${k('1')}&ndash;${k('5')} OR ${k('WHEEL')} SWITCH GUNS`, 6],
+          [`${k('V')} BASH UP CLOSE &nbsp;&middot;&nbsp; ${k('1')}&ndash;${k('5')} OR ${k('WHEEL')} SWITCH GUNS &nbsp;&middot;&nbsp; ${k('TAB')} MAP`, 7],
         ];
     if (this.tipStep >= tips.length) {
       this.tipStep = -1;
@@ -1610,6 +1615,48 @@ export class Game {
     }
     this.player.shake = Math.min(0.7, this.player.shake + 0.3);
     this.enemies.alertAt(x, z, 20, this);
+  }
+
+  /**
+   * The cracked wall that seals the secret room catches the eye: while a
+   * player can see it from up close, amber sparks spit from the cracks with
+   * a faint glassy shimmer every couple of seconds, and the first time each
+   * sector a line says to shoot or bash it. Players never found it on their own.
+   */
+  private secretGlint(dt: number): void {
+    const cells = this.level.secretWall;
+    if (!cells?.length) return;
+    this.secretGlintT -= dt;
+    if (this.secretGlintT > 0) return;
+    this.secretGlintT = 0.25; // re-check soon when out of range
+    const standing = cells.filter(([x, y, z]) => this.world.get(x, y, z) === Block.Cracked);
+    if (!standing.length) return; // already broken open: the hole speaks for itself
+    const s = this.level.secretRect!;
+    const scx = s.x + s.w / 2, scz = s.z + s.d / 2;
+    let cx = 0, cz = 0;
+    for (const [x, , z] of cells) { cx += x + 0.5; cz += z + 0.5; }
+    cx /= cells.length; cz /= cells.length;
+    // the room-facing side: away from the secret room, along the wall's axis
+    const ax = Math.abs(cx - scx) > Math.abs(cz - scz);
+    const nx = ax ? Math.sign(cx - scx) : 0, nz = ax ? 0 : Math.sign(cz - scz);
+    const fx = cx + nx * 0.55, fz = cz + nz * 0.55;
+    const p = this.player.pos;
+    const d = Math.hypot(p.x - fx, p.z - fz);
+    if (d > 9 || !this.hasLOS(p.x, this.player.eyeY(), p.z, fx, 1.8, fz)) return;
+    this.secretGlintT = 1.6 + Math.random() * 0.6;
+    const [gx, gy, gz] = standing[Math.floor(Math.random() * standing.length)];
+    const sx = gx + 0.5 + nx * 0.52 + (nx ? 0 : (Math.random() - 0.5) * 0.7);
+    const sy = gy + 0.3 + Math.random() * 0.5;
+    const sz = gz + 0.5 + nz * 0.52 + (nz ? 0 : (Math.random() - 0.5) * 0.7);
+    this.particles.impact(sx, sy, sz, nx, 0.2, nz, 1, 0.78, 0.25);
+    this.dynLights.flash(sx + nx * 0.3, sy, sz + nz * 0.3, 1, 0.72, 0.25, 0.9, 3.5, 0.35);
+    this.audio.play('secretHint', { x: sx, y: sy, z: sz });
+    if (!this.secretHinted && d < 7) {
+      this.secretHinted = true;
+      this.hud.message(this.isTouch
+        ? 'That cracked wall looks weak. Shoot it or BASH it.'
+        : 'That cracked wall looks weak. Shoot it or bash it (V).');
+    }
   }
 
   onVoxelBroken(x: number, y: number, z: number, block: Block): void {
@@ -2311,9 +2358,14 @@ export class Game {
         this.secretAnnounced = true;
         this.secretsFound = 1;
         this.audio.play('secret');
-        this.hud.message('You found a secret area! +500');
+        this.audio.play('powerup');
+        this.hud.secretFound(500, this.weapons.has('rocket') ? '' : 'THE THUMPER IS IN HERE');
+        this.dynLights.flash(p.x, this.player.eyeY(), p.z, 1, 0.82, 0.3, 2.2, 9, 0.6);
+        this.punchFOV(2.5);
         this.score += 500;
         this.hud.updateScore(this.score, Math.min(5, this.comboChain) || 1);
+      } else if (this.state === 'playing') {
+        this.secretGlint(dt);
       }
     }
 

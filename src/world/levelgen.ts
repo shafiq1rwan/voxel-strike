@@ -55,6 +55,8 @@ export interface LevelData {
   /** center of the 2×2 exit pad on the ledge (y = its top surface) */
   exitPad: { x: number; y: number; z: number } | null;
   secretRect: Rect | null;
+  /** the cracked voxels that seal the secret room (the game glints them when a player is near) */
+  secretWall?: Array<[number, number, number]>;
   seed: number;
   totalEnemies: number;
   totalSecrets: number;
@@ -948,6 +950,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     elevator,
     exitPad,
     secretRect,
+    secretWall: crackCells.filter(([x, y, z]) => world.get(x, y, z) === Block.Cracked),
     seed,
     // occupied tanks' Vatborn and the boss are preallocated: the game spawns them
     totalEnemies: enemies.length + occupiedTanks + (boss ? 1 : 0),

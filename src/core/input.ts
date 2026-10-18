@@ -8,6 +8,8 @@ export class Input {
   private buttons = new Set<number>();
   /** set on every left-button press so a fast tap between frames isn't lost */
   private firePressed = false;
+  /** quick melee: V, the right mouse button, or the touch BASH button */
+  private meleePressed = false;
   /** written by TouchControls on touch devices, merged into the getters below */
   readonly touchState = { moveX: 0, moveY: 0, fire: false, jump: false };
   /** number key / wheel weapon-switch request, consumed by weapons */
@@ -38,6 +40,7 @@ export class Input {
       if (num >= 0) this.switchRequest = num;
       if (e.code === 'Tab' || e.code === 'KeyM') this.onToggleMap?.();
       if (e.code === 'KeyE') this.onInteract?.();
+      if (e.code === 'KeyV') this.meleePressed = true;
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -55,6 +58,7 @@ export class Input {
       if (this.locked) {
         this.buttons.add(e.button);
         if (e.button === 0) this.firePressed = true;
+        if (e.button === 2) this.meleePressed = true;
       } else {
         // mid-game without pointer lock (e.g. the co-op host whose game
         // started long after the HOST click) — clicking recaptures the mouse
@@ -103,6 +107,7 @@ export class Input {
     this.keys.clear();
     this.buttons.clear();
     this.firePressed = false;
+    this.meleePressed = false;
   }
 
   releaseLock(): void {
@@ -143,6 +148,18 @@ export class Input {
   /** used by touch fire button to register a press edge */
   pressFire(): void {
     this.firePressed = true;
+  }
+
+  /** true once per melee press since the last call */
+  consumeMelee(): boolean {
+    const p = this.meleePressed;
+    this.meleePressed = false;
+    return p;
+  }
+
+  /** touch BASH button */
+  pressMelee(): void {
+    this.meleePressed = true;
   }
 
   /** consume mouse deltas for this frame */

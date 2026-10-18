@@ -72,6 +72,7 @@ export class TouchControls {
       <div id="tammo"><i id="tammo-ico"></i><span id="tammo-num">–</span></div>
       <button id="tjump" class="tbtn-touch">JUMP</button>
       <button id="tfire" class="tbtn-touch">FIRE</button>
+      <button id="tmelee" class="tbtn-touch">BASH</button>
       <button id="tweapon" class="tbtn-touch">${ICONS.swap()}<span id="tweapon-num">1</span><span id="tweapon-name">SIDEARM</span></button>
       <div id="twheel"></div>
       <button id="tmap" class="tbtn-touch">MAP</button>
@@ -111,6 +112,7 @@ export class TouchControls {
     const lookZone = ui.querySelector('#tlook-zone') as HTMLElement;
     const fire = ui.querySelector('#tfire') as HTMLElement;
     const jump = ui.querySelector('#tjump') as HTMLElement;
+    const melee = ui.querySelector('#tmelee') as HTMLElement;
     const pause = ui.querySelector('#tpause') as HTMLElement;
     const map = ui.querySelector('#tmap') as HTMLElement;
 
@@ -208,6 +210,7 @@ export class TouchControls {
     }, () => {
       this.input.touchState.jump = false;
     });
+    bindButton(melee, () => this.input.pressMelee());
     bindButton(pause, () => onPause());
     bindButton(map, () => onMap());
 

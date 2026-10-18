@@ -137,6 +137,7 @@ in Settings (180 / 240 / 320 / 480).
 | Mouse | Aim (click to capture the pointer) |
 | Left click | Fire |
 | Space | Jump |
+| V or right click | Quick melee: bash with the gun in hand |
 | 1–5 or mouse wheel | Switch weapon |
 | Tab or M | Automap (fills in as you explore) |
 | Esc | Release the mouse (pauses) |
@@ -146,8 +147,8 @@ around you.
 
 **On phones/tablets** the game switches to touch controls automatically:
 touch anywhere on the left half to get a joystick under your thumb, drag the
-right side to aim, and use the FIRE and JUMP buttons (ammo count above
-FIRE). The **weapon button** above JUMP switches guns: tap for the next one,
+right side to aim, and use the FIRE and JUMP buttons (ammo count beside
+FIRE). **BASH**, up and in from FIRE, is the quick melee. The **weapon button** above JUMP switches guns: tap for the next one,
 swipe left/right to step through them, or hold to open a weapon wheel and
 slide onto the one you want. An empty gun switches to a loaded one by
 itself. MAP and pause are top-right, and the weapon slots move to the top so
@@ -196,7 +197,13 @@ Tips:
 - Green **toxic barrels** explode when shot — and chain-react. Lure enemies
   near them, but keep your distance.
 - One wall in each level has visible **cracks** — break it to find a secret
-  stash (the rocket launcher lives there).
+  stash (the rocket launcher lives there). Up close it gives itself away:
+  amber sparks spit from the cracks with a faint shimmer, and stepping
+  inside lands a big **SECRET FOUND** (+500).
+- **Quick melee** (V, right click, or BASH on touch): the gun in hand jabs
+  forward for 35 damage and a shove. It hits double on an enemy that is
+  staggered or recovering from a missed attack, breaks crates, barrels and
+  cracked walls at arm's length, and needs no ammo. 0.6 s between swings.
 - Every sector has one huge pillared **arena** — the ARC CASTER floats in the
   middle, and the Brute guarding it always drops a powerup. The lightning
   chains between enemies, so save your cells for crowds.

@@ -918,6 +918,16 @@ export class Enemy {
     return this.dormant || this.emerge !== null;
   }
 
+  /**
+   * Open to a punish (the quick melee does double damage): staggered or
+   * stunned, or recovering after a committed attack — the windows every
+   * telegraph promises.
+   */
+  get vulnerable(): boolean {
+    if (!this.alive || this.kind === 'broodkeeper') return false;
+    return this.state === 'pain' || ((this.state === 'attack' || this.state === 'charge') && this.phase === 'recover');
+  }
+
   /** planted or committed: separation must not shove it (reference/enemy-upgrades.md) */
   get planted(): boolean {
     return this.state === 'attack' || this.state === 'charge' || this.kind === 'broodkeeper';

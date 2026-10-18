@@ -7,6 +7,16 @@ import { BOSS_CORE_Y, type Enemy } from '../entities/enemies';
 import { AimCone, findAimTarget } from '../entities/aimassist';
 import type { Game } from '../game';
 import { buildFirstPersonArm, buildFirstPersonHand } from '../entities/operative';
+import { isDestructible } from '../world/blocks';
+
+/**
+ * Quick melee (V / right mouse / touch BASH): the gun in hand jabs forward.
+ * Not a weapon slot. Reach is centre to centre (bigger bodies get their extra
+ * half-width); same floor, a cone and line of sight like the enemies' own
+ * strikes; one target per swing. Double damage on a staggered or recovering
+ * enemy — the reward for reading a telegraph.
+ */
+export const MELEE = { windup: 0.15, cooldown: 0.6, reach: 1.8, coneDeg: 50, damage: 35, shove: 5, voxelDamage: 200 };
 
 /** touch bullet magnetism: miss by up to ~0.7u beside the body; 4–7 degrees */
 const MAGNET_CONE: AimCone = { margin: 0.7, min: 0.07, max: 0.12, maxDist: 40 };
@@ -480,6 +490,12 @@ export class WeaponSystem {
   // view-model motion state
   /** seconds since the current weapon last fired (drives slide/pump/bolt/coils) */
   private shotT = 10;
+  /** quick melee: seconds since the swing started, cooldown left, strike still to land */
+  private meleeT = 10;
+  private meleeCd = 0;
+  private meleePending = false;
+  /** what the last swing hit (tests read it): 'enemy' | 'crit' | 'voxel' | 'wall' | 'miss' */
+  lastMelee: string = '';
   private kickRoll = 0;
   private swayX = 0;
   private swayY = 0;
@@ -681,6 +697,21 @@ export class WeaponSystem {
       }
     } else if (this.raiseT < 1) {
       this.raiseT = Math.min(1, this.raiseT + dt * 6);
+    }
+
+    // quick melee: jab, then the strike lands after a short windup
+    this.meleeCd = Math.max(0, this.meleeCd - dt);
+    this.meleeT += dt;
+    if (input.consumeMelee() && !game.player.dead && this.pending === null && this.raiseT > 0.9 && this.meleeCd === 0) {
+      this.meleeT = 0;
+      this.meleeCd = MELEE.cooldown;
+      this.meleePending = true;
+      this.cooldown = Math.max(this.cooldown, MELEE.windup + 0.12); // no shot mid-jab
+      game.audio.play('meleeSwing');
+    }
+    if (this.meleePending && this.meleeT >= MELEE.windup) {
+      this.meleePending = false;
+      this.meleeStrike(game);
     }
 
     // firing: hold-to-fire at the weapon's rate; a click during cooldown is
@@ -896,6 +927,73 @@ export class WeaponSystem {
     }
   }
 
+  /** the bash lands: the nearest enemy in reach, else a crate / barrel / cracked wall at arm's length */
+  private meleeStrike(game: Game): void {
+    const pl = game.player;
+    const eye = pl.eyeY();
+    const fx = -Math.sin(pl.yaw), fz = -Math.cos(pl.yaw);
+    const feet = pl.pos.y - pl.half.y;
+    const cosCone = Math.cos((MELEE.coneDeg * Math.PI) / 180);
+    let best: Enemy | null = null;
+    let bestD = Infinity;
+    for (const e of game.enemies.list) {
+      if (!e.alive || e.scripted) continue;
+      const dx = e.pos.x - pl.pos.x;
+      const dz = e.pos.z - pl.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > MELEE.reach + Math.max(0, e.half.x - 0.4)) continue;
+      if (Math.abs(e.pos.y - e.half.y - feet) > 1.2) continue; // same floor
+      // hugging it: any facing within 90° counts; otherwise the cone
+      const dot = (dx * fx + dz * fz) / Math.max(0.001, d);
+      if (dot < (d < 0.9 ? 0 : cosCone)) continue;
+      if (!game.hasLOS(pl.pos.x, eye, pl.pos.z, e.pos.x, e.pos.y, e.pos.z)) continue;
+      if (d < bestD) {
+        bestD = d;
+        best = e;
+      }
+    }
+    if (best) {
+      const e = best;
+      const crit = e.vulnerable;
+      const dmg = MELEE.damage * (crit ? 2 : 1) * (pl.buffs.quad > 0 ? 4 : 1);
+      const n = Math.max(0.3, bestD);
+      const dx = (e.pos.x - pl.pos.x) / n, dz = (e.pos.z - pl.pos.z) / n;
+      game.applyEnemyHit(e, dmg, dx, dz, false);
+      // a real shove: out of a husk's claw range (brutes barely budge, the boss not at all)
+      if (!game.isNetClient && e.alive && e.kind !== 'broodkeeper') {
+        const mass = e.kind === 'brute' ? 0.25 : 1;
+        e.vel.x += dx * MELEE.shove * mass;
+        e.vel.z += dz * MELEE.shove * mass;
+      }
+      game.audio.play('meleeHit', e.pos);
+      game.particles.blood(e.pos.x, e.pos.y + 0.3, e.pos.z, dx, 0.3, dz,
+        e.tuning.bloodColor[0], e.tuning.bloodColor[1], e.tuning.bloodColor[2], crit ? 14 : 8);
+      if (crit) game.hud.headshotMarker();
+      else game.hud.hitMarker();
+      pl.shake = Math.min(0.5, pl.shake + (crit ? 0.22 : 0.12));
+      game.noise(pl.pos.x, pl.pos.z, 8);
+      this.lastMelee = crit ? 'crit' : 'enemy';
+      return;
+    }
+    // nothing alive in reach: crates, barrels and cracked walls break at arm's length
+    const dir = game.camera.getWorldDirection(_fwd);
+    const hit = game.world.raycast(pl.pos.x, eye, pl.pos.z, dir.x, dir.y, dir.z, MELEE.reach);
+    if (hit) {
+      const hx = pl.pos.x + dir.x * hit.t, hy = eye + dir.y * hit.t, hz = pl.pos.z + dir.z * hit.t;
+      game.particles.impact(hx, hy, hz, hit.nx, hit.ny, hit.nz, 0.9, 0.9, 0.95);
+      game.audio.play('impact', { x: hx, y: hy, z: hz });
+      pl.shake = Math.min(0.5, pl.shake + 0.08);
+      if (isDestructible(game.world.get(hit.x, hit.y, hit.z))) {
+        game.applyVoxelDamage(hit.x, hit.y, hit.z, MELEE.voxelDamage);
+        this.lastMelee = 'voxel';
+      } else {
+        this.lastMelee = 'wall';
+      }
+      return;
+    }
+    this.lastMelee = 'miss';
+  }
+
   private hitscan(origin: THREE.Vector3, dir: THREE.Vector3, damage: number, game: Game, muzzle: THREE.Vector3): void {
     const MAX = 60;
     const wHit = game.world.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, MAX);
@@ -1043,15 +1141,35 @@ export class WeaponSystem {
       (p.cellWindow!.material as THREE.MeshBasicMaterial).color.setRGB(0.2 * cells, 0.82 * cells, cells);
     }
 
+    // quick melee: pull back through the windup, jab forward with a short
+    // dip as it lands, then ease back (no hands: the gun itself is the bash)
+    let thrust = 0;
+    let dip = 0;
+    const m = this.meleeT;
+    if (m < MELEE.windup) {
+      const k = m / MELEE.windup;
+      thrust = -0.05 * k;
+      dip = 0.015 * k;
+    } else if (m < MELEE.windup + 0.07) {
+      const k = (m - MELEE.windup) / 0.07;
+      thrust = -0.05 + 0.27 * k;
+      dip = 0.015 - 0.065 * k;
+    } else if (m < MELEE.windup + 0.4) {
+      const k = 1 - (m - MELEE.windup - 0.07) / 0.33;
+      const e = k * k * (3 - 2 * k);
+      thrust = 0.22 * e;
+      dip = -0.05 * e;
+    }
+
     this.viewModel.position.set(
-      0.3 + bobX + this.swayX + jx + lower * 0.05,
-      this.vmY + bobY + this.swayY + jy - lower * 0.3 - this.landDip,
-      -0.62 + this.kickZ,
+      0.3 + bobX + this.swayX + jx + lower * 0.05 - thrust * 0.25,
+      this.vmY + bobY + this.swayY + jy - lower * 0.3 - this.landDip + dip,
+      -0.62 + this.kickZ - thrust,
     );
     this.viewModel.rotation.set(
-      this.kickZ * 0.9 - lower * 0.75 + this.swayY * 1.6,
-      -this.swayX * 1.4,
-      -this.kickZ * 0.35 + this.kickRoll + lower * 0.4 + bobX * 0.8 + pumpTilt,
+      this.kickZ * 0.9 - lower * 0.75 + this.swayY * 1.6 + dip * 2.5,
+      -this.swayX * 1.4 + thrust * 0.6,
+      -this.kickZ * 0.35 + this.kickRoll + lower * 0.4 + bobX * 0.8 + pumpTilt - thrust * 0.5,
     );
 
     // tint the gun (and its edges) by local light; glow parts stay full-bright
