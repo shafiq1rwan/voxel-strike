@@ -915,6 +915,10 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
 .tbtn-primary::after { right: -1px; }
 .tbtn-primary:hover { background: #ffd028; color: #0a0c12; }
 .title-menu-row { display: flex; gap: 12px; }
+/* a saved run: Continue and New run side by side (one row instead of two) */
+.title-menu.title-menu-pair { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+.title-menu-pair .tbtn-play { padding-left: 46px; padding-right: 46px; }
+.title-menu-pair .tbtn-newrun { align-self: stretch; padding-left: 20px; padding-right: 20px; }
 .tbtn-quiet { font-size: 12px; padding: 9px 18px; color: #8a94a8; }
 .tbtn-quiet:hover { color: #cfd6e4; border-color: #6a7488; }
 .tbtn-play { font-size: 22px; padding: 18px 76px; letter-spacing: .3em; text-indent: .3em; }
@@ -1662,6 +1666,12 @@ export class HUD {
     onArmory?: () => void;
     /** "NEW SECTOR" banner for the Biofoundry: returning players only, until they reach it */
     newSector?: boolean;
+    /**
+     * Has played before (the first-run tips are done): they know the goal,
+     * so the goal line, the three step tiles and the controls line are left
+     * out — on a phone the full stack overflowed the screen.
+     */
+    returning?: boolean;
     onSettings: () => void;
   }): void {
     this.hideScreen();
@@ -1669,10 +1679,11 @@ export class HUD {
     el.id = 'title-screen';
     el.className = 'tscreen';
     const cont = opts.continueSector && opts.onContinue ? opts.continueSector : 0;
-    // one line of controls instead of a how-to panel (the first run's hint strip teaches the rest)
-    const controls = opts.touch
-      ? '<b>LEFT THUMB</b> move<i>&middot;</i><b>RIGHT THUMB</b> aim<i>&middot;</i><b>FIRE</b> shoot'
-      : '<b>WASD</b> move<i>&middot;</i><b>MOUSE</b> aim<i>&middot;</i><b>CLICK</b> shoot';
+    // one line of controls, first visit on desktop only: the first run's hint
+    // strip teaches the rest, and on touch it teaches the thumbs in play
+    const controls = '<b>WASD</b> move<i>&middot;</i><b>MOUSE</b> aim<i>&middot;</i><b>CLICK</b> shoot';
+    const showGoal = !opts.returning;
+    const showControls = !opts.returning && !opts.touch;
     // the goal, as the three steps the in-game objective tracker walks through
     const step = (n: number, icon: string, color: string, text: string): string =>
       `<div class="tstep" style="--c:${color}"><span class="tstep-n">${n}</span><span class="tstep-icon">${icon}</span><span class="tstep-text">${text}</span></div>`;
@@ -1695,28 +1706,26 @@ export class HUD {
       ${armoryBtn}
       <div class="title-center">
         <canvas id="title-logo"></canvas>
-        <div class="title-goal">Escape the facility</div>
+        ${showGoal ? `<div class="title-goal">Escape the facility</div>
         <div id="title-steps" class="tsteps">
           ${step(1, ICONS.keycard(28), '#ff3428', 'Find the<br>red keycard')}
           <span class="tstep-sep">&#9656;</span>
           ${step(2, ICONS.door(28), '#ff3428', 'Open the<br>red door')}
           <span class="tstep-sep">&#9656;</span>
           ${step(3, ICONS.lift(28), '#4cc26a', 'Ride the<br>lift out')}
-        </div>
+        </div>` : ''}
         ${opts.newSector ? `<div id="new-sector" class="new-sector" role="note">
           <span class="ns-tag">NEW SECTOR</span>
           <span class="ns-text"><b>THE BIOFOUNDRY</b><i>&middot;</i>SECTORS 4&ndash;5<i>&middot;</i>DON'T WAKE THE TANKS</span>
         </div>` : ''}
-        <div class="title-menu">
+        <div class="title-menu${cont ? ' title-menu-pair' : ''}">
           ${cont
-            ? `<button id="continue-btn" class="tbtn tbtn-primary tbtn-play">Continue &middot; ${opts.continueLabel ?? `Sector ${cont}`}</button>`
+            ? `<button id="continue-btn" class="tbtn tbtn-primary tbtn-play">Continue &middot; ${opts.continueLabel ?? `Sector ${cont}`}</button>
+              <button id="start-btn" class="tbtn tbtn-quiet tbtn-newrun">New run</button>`
             : '<button id="start-btn" class="tbtn tbtn-primary tbtn-play">Play</button>'}
-          ${cont || opts.onCoop ? `<div class="title-menu-row">
-            ${cont ? '<button id="start-btn" class="tbtn tbtn-quiet">New run</button>' : ''}
-            ${opts.onCoop ? '<button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button>' : ''}
-          </div>` : ''}
+          ${opts.onCoop ? '<div class="title-menu-row"><button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button></div>' : ''}
         </div>
-        <div class="title-controls">${controls}</div>
+        ${showControls ? `<div class="title-controls">${controls}</div>` : ''}
       </div>
       <div class="title-foot has-mid">
         <span>${foot}</span>

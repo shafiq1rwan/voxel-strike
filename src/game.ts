@@ -1454,6 +1454,8 @@ export class Game {
       onArmory: () => this.openArmory('title'),
       // returning players only: a first visit sees just the goal and PLAY
       newSector: storageGet(TUTORIAL_KEY) !== null && storageGet(BIOFOUNDRY_SEEN_KEY) === null,
+      // ...and returning players skip the goal + steps they already know
+      returning: storageGet(TUTORIAL_KEY) !== null,
     });
   }
 

@@ -431,11 +431,16 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 - Title screen: identical on web and Poki — no Co-op button anywhere.
   Kept bare on purpose (playtime fell to under 2 minutes): wordmark,
   ESCAPE THE FACILITY, three step tiles (keycard → door → lift, the HUD's
-  objective icons/colours), one PLAY (`#start-btn`; Continue + New run
-  with a save), one controls line, the NEXT SKIN goal line, a Settings gear
+  objective icons/colours), one PLAY (`#start-btn`; with a save Continue
+  and New run share ONE row), one controls line (first visit on desktop
+  only), the NEXT SKIN goal line, a Settings gear
   (`#title-settings-btn`) top-right and an Armory button
   (`#title-armory-btn`) top-left (owner's call) — don't add menu items
-  back. The Armory (`HUD.showArmory`) is tabbed per gun with a turntable
+  back. RETURNING players (`voxelstrike-tutorial-done` set, the
+  `returning` option of `showTitle`) skip the goal line, the step tiles and
+  the controls line — they know the goal, and the full stack overflowed a
+  phone (`features.mjs` #14 checks it fits 667×375 with nothing to scroll).
+  The Armory (`HUD.showArmory`) is tabbed per gun with a turntable
   preview (`ui/armory-preview.ts`: its own WebGL canvas, freed by
   `hideScreen` via `logoStop`). A NEW SECTOR banner (THE
   BIOFOUNDRY · SECTORS 4–5) shows above the menu for RETURNING players

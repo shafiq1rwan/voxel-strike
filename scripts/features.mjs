@@ -735,12 +735,20 @@ try {
     const phoneTitle = await ph.evaluate(() => {
       const b = document.querySelector('#new-sector')?.getBoundingClientRect();
       const start = document.querySelector('#start-btn')?.getBoundingClientRect();
+      const scr = document.querySelector('#title-screen');
       return {
         banner: !!b, inside: !!b && b.left >= 0 && b.right <= innerWidth,
         noHScroll: document.documentElement.scrollWidth <= innerWidth,
         startOnScreen: !!start && start.top >= 0 && start.bottom <= innerHeight,
+        // a returning player already knows the goal: no step tiles or controls
+        // line, and the whole screen fits without scrolling
+        steps: !!document.querySelector('#title-steps'),
+        controls: !!document.querySelector('.title-controls'),
+        overflow: scr.scrollHeight - scr.clientHeight,
       };
     });
+    check(!phoneTitle.steps && !phoneTitle.controls && phoneTitle.overflow <= 0,
+      `phone title, returning player: no step tiles or controls line, nothing to scroll (overflow ${phoneTitle.overflow}px)`);
     await ph.screenshot({ path: 'scripts/shots/features-phone-title-banner.png' });
     check(phoneTitle.banner && phoneTitle.inside && phoneTitle.noHScroll,
       'phone title: the NEW SECTOR banner fits the width, no sideways scroll');
