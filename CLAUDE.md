@@ -50,7 +50,7 @@ node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consi
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener, Broodkeeper (wake on entry, cycle, acid + summons, armor/core damage, boss bar, key drop, every weapon hurts it + killed by real Ripper fire), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit)
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener, Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit)
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start; the same budget in the Biofoundry at its heaviest (sector 5)
@@ -301,12 +301,19 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   (`BOSS_FACE_SHADE`): decoded, the steel went black and the red merged into
   one blob. The Biofoundry's crimson incubator-heart growth is skipped on
   boss levels (it hid the silhouette). Speed 0,
-  600 HP, dormant until a player enters its chamber (`activateBoss`; `wake`
-  does nothing). `bossUpdate` loops volley (1.0s warn, 3 acid globs 0.35s
-  apart, 5 below 40% HP) → open 2.4s → release up to 2 Husks (cap 4 alive,
-  they bump `totalEnemies`) → open 3.0s. `damage()`: ×0.25 closed, ×2 on
-  the open core (`lastHitCore`, set by weapons.ts when a hitscan lands in
-  `BOSS_CORE_Y` while `coreOpen`), no knockback/pain. Acid is its own
+  2200 HP (it was 600 and died to held SMG fire inside its first opening,
+  ~8s; a PERFECT held-SMG fight is now ~25s, `features.mjs` 18b keeps it in
+  20–50s of game time), dormant until a player enters its chamber
+  (`activateBoss`; `wake` does nothing). `bossUpdate` loops volley (1.0s
+  warn, 3 acid globs 0.35s apart) → open 1.4s → release up to 2 Husks (cap
+  4 alive, they bump `totalEnemies`) → open 1.8s. Below half health
+  (`BOSS_ENRAGE`, against `maxHp`, which follows endless HP scaling) it
+  ENRAGES once: a roar + message, volleys of 5 globs fanned `BOSS_FAN`
+  apart so one sidestep can't beat them, and a ticker in each release.
+  `damage()`: ×0.25 closed, ×0.6 on the open body, ×2 on the open core
+  (`lastHitCore`, set by weapons.ts when a hitscan lands in `BOSS_CORE_Y`
+  while `coreOpen`), and quad counts ×2 not ×4 (`dmg *= 0.5` while the
+  player's quad is up), no knockback/pain. Acid is its own
   projectile kind (`'acid'`, own pool, `ENEMY_SHOT_DAMAGE`, `clearAcid()`),
   doors/elevator (door.ts: the lift is a `group` — hazard-striped deck with
   an UP-arrow top, low side rails on the two sides off the boarding axis

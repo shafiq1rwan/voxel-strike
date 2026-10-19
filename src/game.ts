@@ -583,7 +583,7 @@ export class Game {
     // endless depths: every enemy is a little tougher (+8% a depth, up to +80%)
     if (this.levelIndex > TOTAL_SECTORS) {
       const k = Math.min(1.8, 1 + 0.08 * (this.levelIndex - TOTAL_SECTORS));
-      for (const e of this.enemies.list) e.hp = Math.round(e.hp * k);
+      for (const e of this.enemies.list) e.maxHp = e.hp = Math.round(e.hp * k);
       if (!this.preview && this.levelIndex > Number(storageGet(BEST_DEPTH_KEY) ?? 0)) {
         storageSet(BEST_DEPTH_KEY, String(this.levelIndex));
       }

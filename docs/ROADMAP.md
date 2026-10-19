@@ -41,6 +41,15 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-19 — Broodkeeper retune (owner: "too easy to kill"). Held SMG
+  fire at the core killed it in ~8 s, inside its first opening: 600 HP,
+  the core open 61% of the cycle, full damage to the body while open, quad
+  ×4. Now 2200 HP, openings 1.4 s + 1.8 s, body ×0.6 while open (core ×2),
+  quad counts ×2 on it, and below half health it enrages (fanned five-glob
+  volleys, a ticker in each release). A perfect held-SMG fight is ~25 s;
+  `features.mjs` keeps it in 20–50 s. Watch the sector 5 `fail` count in
+  the next playtest — if it spikes, ease the HP first.
+
 - 2026-10-18 — Weapon skins (owner's call, as a reason to keep playing):
   all 22 concepts from `reference/weapon-skins/` as paint data (roles +
   flat marks on the side AND top, which is what first person sees), baked

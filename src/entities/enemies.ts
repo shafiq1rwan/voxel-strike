@@ -66,11 +66,18 @@ const SCHED: Record<EnemySpec['kind'], { attack: Sched; charge: Sched }> = {
  */
 const BOSS_VOLLEY_WARN = 1.0;
 const BOSS_SHOT_GAP = 0.35;
-const BOSS_OPEN_1 = 2.4;
+// the core is open 3.2 s of a 6.65 s cycle (it was 5.4 of 8.85: held SMG
+// fire killed the 600 HP boss inside its first opening, ~8 s). With 2200 HP
+// a PERFECT held-SMG fight at the core takes ~24 s — real ones run longer
+const BOSS_OPEN_1 = 1.4;
 const BOSS_RELEASE = 1.4;
-const BOSS_OPEN_2 = 3.0;
+const BOSS_OPEN_2 = 1.8;
 const BOSS_SUMMON_CAP = 4;
 const BOSS_ACID_SPEED = 11;
+/** below this much health it enrages: a fanned volley and a ticker in each release */
+const BOSS_ENRAGE = 0.5;
+/** angle between the globs of an enraged volley's fan (radians) */
+const BOSS_FAN = 0.12;
 /** core zone: this band of the body (center-relative y), hitscan only */
 export const BOSS_CORE_Y: [number, number] = [-0.22, 0.42];
 
@@ -109,7 +116,7 @@ const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
   // Shambles, short rush, one heavy swing with a long recovery; green blood
   vatborn: { hp: 55, speed: 3.4, halfX: 0.5, halfY: 0.9, painChance: 0.3, bloodColor: [0.55, 0.8, 0.3] },
   // boss: never moves, never flinches (its armor and core do the work)
-  broodkeeper: { hp: 600, speed: 0, halfX: 1.5, halfY: 1.4, painChance: 0, bloodColor: [0.8, 0.25, 0.2] },
+  broodkeeper: { hp: 2200, speed: 0, halfX: 1.5, halfY: 1.4, painChance: 0, bloodColor: [0.8, 0.25, 0.2] },
 };
 
 const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'tickerAlert' | 'bruteRoar'> = {
@@ -163,6 +170,8 @@ export class Enemy {
   readonly tuning: EnemyTuning;
   state: EState = 'idle';
   hp: number;
+  /** full health, after any endless scaling (the boss bar and enrage use it) */
+  maxHp = 0;
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
   readonly half = new THREE.Vector3();
@@ -248,6 +257,8 @@ export class Enemy {
     fired: number;
     released: boolean;
     summons: Enemy[];
+    /** phase 2 announced (below BOSS_ENRAGE) */
+    enraged?: boolean;
     yaw: number;
     headYaw: number;
     plates: number;
@@ -279,6 +290,7 @@ export class Enemy {
     this.kind = spec.kind;
     this.tuning = TUNING[spec.kind];
     this.hp = this.tuning.hp;
+    this.maxHp = this.hp;
     this.half.set(this.tuning.halfX, this.tuning.halfY, this.tuning.halfX);
     this.pos.set(spec.x, groundY + this.half.y + (spec.kind === 'sentinel' ? 1.0 : 0.05), spec.z);
     this.room = room;
@@ -749,7 +761,7 @@ export class Enemy {
 
   /** boss: health left, 0..1 */
   get bossFrac(): number {
-    return Math.max(0, this.hp) / this.tuning.hp;
+    return Math.max(0, this.hp) / (this.maxHp || this.tuning.hp);
   }
 
   private activateBoss(game: Game): void {
@@ -767,7 +779,7 @@ export class Enemy {
   }
 
   /** one acid glob from the mouth, aimed at the target's eye as it leaves */
-  private bossShoot(t: PlayerTarget, game: Game): void {
+  private bossShoot(t: PlayerTarget, game: Game, fan = 0): void {
     const b = this.boss!;
     const fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw);
     const mx = this.pos.x + fx * 1.15, my = this.pos.y + 0.6, mz = this.pos.z + fz * 1.15;
@@ -775,7 +787,10 @@ export class Enemy {
     if (!game.hasLOS(this.pos.x, my, this.pos.z, mx, my, mz)) return;
     const dx = t.pos.x - mx, dy = t.eyeY() - my, dz = t.pos.z - mz;
     const l = Math.hypot(dx, dy, dz) || 1;
-    game.projectiles.spawn('acid', mx, my, mz, dx / l, dy / l, dz / l, BOSS_ACID_SPEED, false);
+    // a fanned glob turns about the vertical, so a sidestep no longer beats the whole volley
+    const c = Math.cos(fan), sn = Math.sin(fan);
+    const ux = (dx * c - dz * sn) / l, uz = (dx * sn + dz * c) / l;
+    game.projectiles.spawn('acid', mx, my, mz, ux, dy / l, uz, BOSS_ACID_SPEED, false);
     game.audio.play('boltFire', { x: mx, y: my, z: mz });
     game.dynLights.flash(mx, my, mz, 0.5, 1, 0.2, 1.2, 5, 0.15);
   }
@@ -785,6 +800,8 @@ export class Enemy {
     const b = this.boss!;
     b.summons = b.summons.filter((e) => e.alive);
     let slots = Math.min(2, BOSS_SUMMON_CAP - b.summons.length);
+    // enraged: one of the two is a ticker (it sprints in and blows)
+    const kinds: Array<'husk' | 'ticker'> = this.bossFrac < BOSS_ENRAGE ? ['ticker', 'husk'] : ['husk', 'husk'];
     if (slots <= 0) return;
     const fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw);
     const rx = Math.cos(b.yaw), rz = -Math.sin(b.yaw);
@@ -797,7 +814,7 @@ export class Enemy {
       const near = (px: number, pz: number, rr: number): boolean => (px - x) ** 2 + (pz - z) ** 2 < rr * rr;
       if (game.playerTargets().some((p) => !p.dead && near(p.pos.x, p.pos.z, 1.3))) continue;
       if (game.enemies.list.some((e) => e !== this && e.alive && near(e.pos.x, e.pos.z, 1.0))) continue;
-      game.enemies.spawnFromSpecs([{ kind: 'husk', x, z, roomId: this.room?.id ?? 0 }], game.level.rooms, game);
+      game.enemies.spawnFromSpecs([{ kind: kinds[2 - slots] ?? 'husk', x, z, roomId: this.room?.id ?? 0 }], game.level.rooms, game);
       const e = game.enemies.list[game.enemies.list.length - 1];
       e.wake(game);
       b.summons.push(e);
@@ -823,10 +840,18 @@ export class Enemy {
     }
     if (b.active && !pl.dead) {
       b.t += dt;
+      if (!b.enraged && this.bossFrac < BOSS_ENRAGE) {
+        b.enraged = true;
+        game.audio.play('bruteRoar', this.pos);
+        game.player.shake = Math.min(0.6, game.player.shake + 0.3);
+        game.hud.message('The BROODKEEPER is enraged — the acid spreads and tickers join the brood.');
+      }
       switch (b.phase) {
         case 'volley':
           while (b.fired < b.shots && b.t >= BOSS_VOLLEY_WARN + b.fired * BOSS_SHOT_GAP) {
-            this.bossShoot(pl, game);
+            // enraged: the five globs fan out (-2..+2 steps) instead of all aiming dead on
+            const enraged = b.shots > 3;
+            this.bossShoot(pl, game, enraged ? (b.fired - 2) * BOSS_FAN : 0);
             b.fired++;
           }
           if (b.t >= BOSS_VOLLEY_WARN + b.shots * BOSS_SHOT_GAP) {
@@ -861,7 +886,7 @@ export class Enemy {
             b.phase = 'volley';
             b.t = 0;
             b.fired = 0;
-            b.shots = this.bossFrac < 0.4 ? 5 : 3;
+            b.shots = this.bossFrac < BOSS_ENRAGE ? 5 : 3;
             this.coreOpen = false;
             game.audio.play('sentinelAlert', this.pos); // the reservoirs charge
           }
@@ -1020,10 +1045,14 @@ export class Enemy {
     if (!this.alive) return;
     let armored = false;
     if (this.kind === 'broodkeeper') {
-      // closed plates: 25%; open: full, and the core zone takes double
+      // closed plates: 25%; open: the body 60%, the core zone double — the
+      // opening rewards aim, not just pointing at it
       if (!this.boss?.active) this.activateBoss(game);
       armored = !this.coreOpen;
-      dmg *= this.coreOpen ? (this.lastHitCore ? 2 : 1) : 0.25;
+      dmg *= this.coreOpen ? (this.lastHitCore ? 2 : 0.6) : 0.25;
+      // quad damage counts double here, not 4x: a powerup speeds the fight
+      // up without skipping it (every weapon and melee multiplies by 4)
+      if (game.player.buffs.quad > 0) dmg *= 0.5;
       this.lastHitCore = false;
     }
     this.hp -= dmg;

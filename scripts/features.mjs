@@ -870,11 +870,16 @@ try {
       // armor and the core
       b.coreOpen = false; let h = b.hp; b.damage(40, 0, 0, g); out.closed = h - b.hp;
       b.coreOpen = true; h = b.hp; b.lastHitCore = true; b.damage(40, 0, 0, g); out.core = h - b.hp;
-      // below 40%: five globs a volley
+      b.coreOpen = true; h = b.hp; b.lastHitCore = false; b.damage(40, 0, 0, g); out.body = h - b.hp;
+      // quad damage counts double on the boss, not 4x
+      g.player.buffs.quad = 10; b.coreOpen = true; h = b.hp; b.lastHitCore = true; b.damage(40, 0, 0, g); out.quadCore = h - b.hp;
+      g.player.buffs.quad = 0;
+      // below half health: it enrages, five fanned globs a volley
       b.hp = b.tuning.hp * 0.3;
       b.boss.phase = 'open2'; b.boss.t = 10;
       await sleep(150);
       out.shotsLow = b.boss.shots;
+      out.enraged = !!b.boss.enraged;
       // defeat
       g.projectiles.spawn('acid', b.pos.x, 3, b.pos.z, 0, 0, -1, 2, false);
       b.coreOpen = true; b.lastHitCore = true; b.damage(99999, 0, 0, g);
@@ -894,8 +899,10 @@ try {
       check(boss.phases === 'open1,open2,release,volley', `it runs volley → open → release → open (${boss.phases})`);
       check(boss.acid >= 1 && boss.summons >= 1, `it fires acid (${boss.acid}) and releases Husks (${boss.summons})`);
       check(boss.barCore, 'the HP bar shows CORE EXPOSED while the core is open');
-      check(boss.closed === 10 && boss.core === 80, `closed armor takes 25% (${boss.closed} of 40), the open core 2× (${boss.core})`);
-      check(boss.shotsLow === 5, `below 40% health a volley is five globs (${boss.shotsLow})`);
+      check(boss.closed === 10 && boss.core === 80 && boss.body === 24,
+        `closed armor takes 25% (${boss.closed} of 40), the open body 60% (${boss.body}), the open core 2× (${boss.core})`);
+      check(boss.quadCore === 40, `quad damage counts double on the boss, not 4× (open core hit ${boss.quadCore} of 40, would be 320)`);
+      check(boss.shotsLow === 5 && boss.enraged, `below half health it enrages: a volley is five globs (${boss.shotsLow})`);
       check(boss.dead && boss.acidAfter === 0 && !boss.barAfter && boss.key, 'defeat clears its acid, hides the bar and drops the red keycard');
     }
     const offer = await bp.evaluate(() => {
@@ -969,9 +976,11 @@ try {
     // from full health, held Ripper fire through its real cycle (armor + openings)
     await kp.evaluate(() => { const g = window.__voxelstrike; g.bossEnemy.hp = g.bossEnemy.tuning.hp; g.weapons.switchTo('smg'); });
     await new Promise((r) => setTimeout(r, 600));
-    const t0 = Date.now();
-    await fire(60000, true);
-    const secs = (Date.now() - t0) / 1000;
+    // measured in GAME time: a slow headless frame rate clamps dt, so wall
+    // time would overstate the fight
+    const g0 = await kp.evaluate(() => window.__voxelstrike.time);
+    await fire(120000, true);
+    const secs = (await kp.evaluate(() => window.__voxelstrike.time)) - g0;
     const end = await kp.evaluate(() => {
       const g = window.__voxelstrike;
       return {
@@ -982,6 +991,9 @@ try {
       };
     });
     check(!end.alive, `real gunfire kills it from full health (${secs.toFixed(1)}s of held Ripper fire)`);
+    // the fight is meant to last ~25–35 s of perfect held SMG fire at the core
+    // (it was ~8 s: the 600 HP boss died inside its first opening)
+    check(secs >= 20 && secs <= 50, `a perfect held-Ripper fight lasts a few cycles, not one opening (${secs.toFixed(1)}s, want 20–50)`);
     check(end.key && !end.bar && /keycard/i.test(end.stage ?? ''), `then the keycard drops, the bar hides, the objective moves on ("${end.stage}")`);
     await kp.evaluate(() => ['voxelstrike-biofoundry-seen', 'voxelstrike-run', 'voxelstrike-best-depth'].forEach((k) => localStorage.removeItem(k)));
     await kp.close();
