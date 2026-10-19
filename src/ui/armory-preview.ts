@@ -2,8 +2,14 @@
  * Armory turntable: the real gun model (`buildWeaponModel`) in a chosen
  * skin, on its own small WebGL canvas. Rendered at half resolution with
  * nearest-neighbour scaling so it keeps the game's chunky look; spins slowly
- * on its own and can be dragged round. One context per Armory visit: `stop()`
- * frees it (renderer, model geometry + materials) when the screen closes.
+ * on its own and can be dragged round.
+ *
+ * ONE WebGL context for the whole session: the renderer and its canvas are
+ * created on the first visit and the same canvas element is moved into each
+ * new Armory screen. Disposing it per visit with forceContextLoss() fired a
+ * webglcontextlost event on every close (error trackers report it), and
+ * NOT forcing the loss leaks a context per visit — past the browser's limit
+ * (~16) it kills the oldest one, which can be the game's own canvas.
  */
 import * as THREE from 'three';
 import { buildWeaponModel } from '../weapons/weapons';
@@ -15,17 +21,39 @@ export interface ArmoryPreview {
   stop(): void;
 }
 
-export function startArmoryPreview(canvas: HTMLCanvasElement): ArmoryPreview {
-  let renderer: THREE.WebGLRenderer | null = null;
-  try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true });
-  } catch {
+/** the session's one turntable renderer + canvas (null = not made yet / unavailable) */
+let shared: { canvas: HTMLCanvasElement; renderer: THREE.WebGLRenderer } | null = null;
+let unavailable = false;
+
+/**
+ * `slot`: the screen's placeholder canvas. It is swapped for the shared one,
+ * which takes over its id, class and inline style.
+ */
+export function startArmoryPreview(slot: HTMLCanvasElement): ArmoryPreview {
+  if (!shared && !unavailable) {
+    try {
+      const c = document.createElement('canvas');
+      const r = new THREE.WebGLRenderer({ canvas: c, antialias: false, alpha: true });
+      // the view model's colours are raw palette values, like the game's own pass
+      r.outputColorSpace = THREE.LinearSRGBColorSpace;
+      r.setClearColor(0x000000, 0);
+      shared = { canvas: c, renderer: r };
+    } catch {
+      unavailable = true;
+    }
+  }
+  if (!shared) {
     // no second context available: the list still works, just no turntable
     return { show: () => {}, stop: () => {} };
   }
-  // the view model's colours are raw palette values, like the game's own pass
-  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
-  renderer.setClearColor(0x000000, 0);
+  const canvas = shared.canvas;
+  canvas.id = slot.id;
+  canvas.className = slot.className;
+  canvas.style.cssText = slot.style.cssText;
+  delete canvas.dataset.model;
+  slot.replaceWith(canvas);
+  let renderer: THREE.WebGLRenderer | null = shared.renderer;
+  renderer.clear();
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(28, 16 / 9, 0.05, 20);
   const pivot = new THREE.Group();
@@ -134,8 +162,8 @@ export function startArmoryPreview(canvas: HTMLCanvasElement): ArmoryPreview {
       canvas.removeEventListener('pointercancel', onUp);
       if (model) dispose(model);
       model = null;
-      renderer!.dispose();
-      renderer!.forceContextLoss();
+      // keep the renderer and its context for the next visit (see the top)
+      renderer!.clear();
       renderer = null;
     },
   };

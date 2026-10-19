@@ -55,6 +55,18 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-19 — Exit-room reference pass: riveted gray/rusted panels on walls
+  and ledge, steel floor and dark ceiling, two warm work lights, local green
+  exit glow, worn/bolted lift steel and framed green threshold. Added motor
+  cabinet, live status display, conduit, toolbox, intercom, emergency light
+  and fan grille with procedural placement and boarding clearance.
+  Web review shortcut: `?exitroom&seed=12345`.
+
+- 2026-10-19 — Exit room rebuilt to `reference/exit-lift-red-room-v1.png`
+  (owner: stepping on a green square in an empty room felt weird): a
+  mechanical exit lift (masts, crossbrace, drive box, carriages, status
+  lamps), yellow ledge railing, a green EXIT sign over the pad, warm lighting
+  and crates. Replaced the chevron beams and an exit door tried first.
 - 2026-10-19 — Gentler sector 1 → 3 ramp (Player Fit Test: sector 2 lost
   ~74%). Sector 2: 8–9 rooms (was 11–13), lone tickers in ~25% of rooms plus
   one guaranteed to introduce them, no extra far-room enemy. Sector 3:

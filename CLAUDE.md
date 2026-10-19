@@ -52,6 +52,7 @@ node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from 
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
 node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + gentle sector 2 (8–9 rooms, lone tickers), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit)
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
+node scripts/exit-room-props.mjs [url] # seven props, 24 layouts/four lift directions, boarding route, ride/status/exit, ?exitroom shortcut, ready/docked screenshots
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start; the same budget in the Biofoundry at its heaviest (sector 5)
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, free revive in place once per attempt, keycard checkpoint retry (world untouched) + Restart sector, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
@@ -191,7 +192,15 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   secret-room language.
 - `src/world/levelgen.ts` — rooms + MST corridors, doors (exit door always
   red-locked, forced placement), secret room behind cracked blocks, exit ledge
-  + elevator, barrels/crates/lamps/pickups/enemies. A `LevelTheme` changes
+  + elevator, barrels/crates/lamps/pickups/enemies. The exit room follows
+  `reference/exit-lift-red-room-v1.png` (owner's call over an exit door that
+  was tried first): the pad sits against the ledge's back wall under a green
+  EXIT sign (`LevelData.exitSign`), the ledge rail is an invisible
+  `PowerBarrier` row under yellow tube railing (`LevelData.ledgeRail`, both
+  drawn by `ExitArt` in door.ts), the room is lit by warm work lamps with
+  green only right over the pad, and crate stacks stand in the ledge-foot
+  corners (never beside a doorway). A green square in an empty room didn't
+  read as a way out. A `LevelTheme` changes
   only the look and dressing, never the structure: `'biofoundry'` (sector 4)
   makes normal rooms 5–6 tall, lights them violet (key room stays red, exit
   teal, corridors teal), builds 2×2 ribbed pillars, places up to 12 specimen
@@ -322,11 +331,17 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   while `coreOpen`), and quad counts ×2 not ×4 (`dmg *= 0.5` while the
   player's quad is up), no knockback/pain. Acid is its own
   projectile kind (`'acid'`, own pool, `ENEMY_SHOT_DAMAGE`, `clearAcid()`),
-  doors/elevator (door.ts: the lift is a `group` — hazard-striped deck with
-  an UP-arrow top, low side rails on the two sides off the boarding axis
-  (`ElevatorSpec.walkAxis`), and an additive chevron beam up the shaft while
-  it waits at the bottom; `ExitBeacon` is the same beam in green over the
-  exit pad, lit only during the "step on the exit pad" objective. Riders
+  doors/elevator (door.ts: the lift is a mechanical service lift after
+  `reference/exit-lift-red-room-v1.png` — fixed: two guide masts with chain
+  channels and bolt plates, a crossbrace with an EXIT LIFT plate and amber
+  lamps, a drive box with an amber UP indicator, amber floor lamps; moving
+  in `deck` at y = topY: a grated deck with a thin hazard rim and one
+  chevron, dark side rails with amber strips on the two sides off the
+  boarding axis (`ElevatorSpec.walkAxis`), carriage blocks on the masts and
+  status lamps amber below / green docked. `new Elevator(spec, toLedge)`
+  orients it toward the pad. The old chevron-beam columns (lift + pad) are
+  gone — the mockup's brief rejects holographic beams. Physics unchanged:
+  `box()` is still a solid column to topY. Riders
   fell off the open deck easily and then waited ~6s, so: `holdRider()`
   clamps the local player inside the footprint while the deck moves (a jump
   still clears it) and keeps holding the two OPEN sides for 0.4s after it
@@ -455,8 +470,12 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   the controls line — they know the goal, and the full stack overflowed a
   phone (`features.mjs` #14 checks it fits 667×375 with nothing to scroll).
   The Armory (`HUD.showArmory`) is tabbed per gun with a turntable
-  preview (`ui/armory-preview.ts`: its own WebGL canvas, freed by
-  `hideScreen` via `logoStop`). A NEW SECTOR banner (THE
+  preview (`ui/armory-preview.ts`: ONE extra WebGL context for the whole
+  session — the canvas is created once and moved into each Armory screen;
+  `hideScreen` → `logoStop` only stops its loop. Never `forceContextLoss()`
+  it per visit: that fired a webglcontextlost error report on every close,
+  and leaking a context per visit lets the browser kill the game's own).
+  A NEW SECTOR banner (THE
   BIOFOUNDRY · SECTORS 4–5) shows above the menu for RETURNING players
   only (`voxelstrike-tutorial-done` set) until they first enter a
   Biofoundry sector (`buildLevel` sets

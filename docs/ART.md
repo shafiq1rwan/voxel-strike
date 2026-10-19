@@ -77,6 +77,24 @@ green exit cue. Geometry stays box-built, with a matching collision box and
 explicit disposal on sector teardown. Terminal shaders/textures warm up with
 the level. No generated artwork is loaded at runtime.
 
+- **The exit room** follows `reference/exit-lift-red-room-v1.png` (owner's
+  call; an exit blast door was tried first): a small mechanical service lift
+  — two stout guide masts, a crossbrace with an EXIT LIFT plate and amber
+  lamps, a drive box with an amber UP light, a dark grated deck with a thin
+  hazard rim and one pale chevron, carriage blocks and amber-striped side
+  rails that ride with it, status lamps amber below and green when docked —
+  yellow tube railing along the ledge, a green EXIT sign on the wall over
+  the pad, warm work lamps with green only over the destination, and crate
+  stacks at the ledge's foot. No holographic beams.
+  The room has at least a 10-by-10 footprint, a dark panelled ceiling,
+  riveted gray wall panels with sparse rust runs, matching panelled ledge
+  faces and steel floor plates. Two small warm work lamps and amber boarding
+  lamps light it; green has a short throw around the fixed, segmented exit
+  threshold. Lift steel has pixel wear, bolt plates and per-face shading.
+  Service props (`entities/exit-room-props.ts`) add a vented motor cabinet,
+  wall status display, floor conduit, corner toolbox, entrance intercom,
+  emergency light and high fan grille. Placement follows the boarding axis
+  and keeps the lift lane clear. Web shortcut: `?exitroom&seed=12345`.
 - **Texture atlas:** 16-pixel procedural tiles (`drawTile` in
   `world/blocks.ts`). Surfaces are grimy and noisy, never clean gradients.
 - **Decoration variants** (rusty, vented, piped and worn walls; piped and

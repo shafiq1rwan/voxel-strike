@@ -58,10 +58,16 @@ try {
     const perRoom = {};
     for (const t of tickers) perRoom[t.roomId] = (perRoom[t.roomId] ?? 0) + 1;
     const s2 = { rooms: g.level.rooms.length, tickers: tickers.length, maxPack: Math.max(0, ...Object.values(perRoom)) };
+    // the exit pad is the threshold of an exit door in the back wall
+    const sign = g.level.exitSign, pad = g.level.exitPad;
+    s2.gate = !!sign && !!pad && sign.y === pad.y &&
+      (sign.face === 'zmin' || sign.face === 'zmax' ? sign.x === pad.x && Math.abs(sign.z - pad.z) === 1 : sign.z === pad.z && Math.abs(sign.x - pad.x) === 1);
+    s2.gateFace = sign?.face;
     return { rooms, brute: kinds.has('brute'), ticker: kinds.has('ticker'), shotgunAtSpawn, s2 };
   });
   check(opener.rooms <= 7 && !opener.brute && !opener.ticker && opener.shotgunAtSpawn,
     `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no tickers, shotgun in the spawn room`);
+  check(opener.s2.gate, `the exit pad sits against the back wall under the EXIT sign (${opener.s2.gateFace} wall)`);
   check(opener.s2.rooms >= 8 && opener.s2.rooms <= 9 && opener.s2.tickers >= 1 && opener.s2.maxPack === 1,
     `sector 2 steps up gently: ${opener.s2.rooms} rooms (8–9), ${opener.s2.tickers} lone ticker(s), no packs (largest ${opener.s2.maxPack})`);
   await new Promise((r) => setTimeout(r, 300));
@@ -545,7 +551,7 @@ try {
       const room = g.level.rooms.find((r) => r.kind === 'exit');
       let n = 0;
       for (let x = room.x; x < room.x + room.w; x++) {
-        for (let z = room.z; z < room.z + room.d; z++) if (g.world.get(x, 4, z) === 6) n++;
+        for (let z = room.z; z < room.z + room.d; z++) if (g.world.get(x, 4, z) === 31) n++; // PowerBarrier under the railing
       }
       return n;
     })();
@@ -557,7 +563,7 @@ try {
   });
   check(held.topY >= 3.9 && held.y > 4.3 && held.dx < 1 && held.dz < 1,
     `lift: strafing rider held on the deck to the top (y=${held.y.toFixed(2)}, off-center ${held.dx.toFixed(2)}/${held.dz.toFixed(2)})`);
-  check(held.rail >= 2, `lift: hazard rail guards the ledge edge (${held.rail} Trim blocks at y=4)`);
+  check(held.rail >= 2, `lift: the railing guards the ledge edge (${held.rail} barrier blocks at y=4)`);
 
   // --- 11. walking into a half-open door never launches the player ------------
   // Regression: with the door's bottom edge just below head height, Y was the

@@ -1,7 +1,7 @@
 import { VoxelWorld } from './world';
 import { Block } from './blocks';
 import { RNG } from '../core/rng';
-import {
+import { ExitSignSpec, LedgeRailSpec,
   DoorSpec, ElevatorSpec, EnemySpec, PickupSpec, Rect, RoomDef,
 } from '../types';
 
@@ -57,6 +57,9 @@ export interface LevelData {
   elevator: ElevatorSpec | null;
   /** center of the 2×2 exit pad on the ledge (y = its top surface) */
   exitPad: { x: number; y: number; z: number } | null;
+  /** the EXIT sign over the pad and the ledge's railing (generated sectors) */
+  exitSign?: ExitSignSpec | null;
+  ledgeRail?: LedgeRailSpec | null;
   secretRect: Rect | null;
   /** the cracked voxels that seal the secret room (the game glints them when a player is near) */
   secretWall?: Array<[number, number, number]>;
@@ -191,6 +194,13 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   }
   exitRoom.kind = 'exit';
   exitRoom.h = 6;
+  // A boarding apron frames the tall lift. The placement pass reserves a
+  // three-cell margin, allowing this one-cell growth on either side.
+  const growW = Math.max(0, 10 - exitRoom.w), growD = Math.max(0, 10 - exitRoom.d);
+  exitRoom.x -= Math.floor(growW / 2); exitRoom.z -= Math.floor(growD / 2);
+  exitRoom.w += growW; exitRoom.d += growD;
+  exitRoom.cx = exitRoom.x + Math.floor(exitRoom.w / 2);
+  exitRoom.cz = exitRoom.z + Math.floor(exitRoom.d / 2);
 
   // -- connect rooms with MST + a couple of loop edges ----------------------
   const edges: Edge[] = [];
@@ -409,7 +419,8 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   else ledgeSide = ndz > 0 ? 'zmin' : 'zmax';
 
   const ledgeCells: Array<[number, number]> = [];
-  // guard rail along the ledge's open edge (hazard Trim on top of the ledge),
+  // guard rail along the ledge's open edge (an invisible barrier on top of the
+  // ledge under the yellow tube railing drawn by ExitArt),
   // leaving the two cells where the lift docks open so stepping off the deck
   // walks straight onto the pad. Falling off the ledge meant a whole second
   // lift cycle; a 1-block rail still clears with a jump (1.5u) for anyone who
@@ -417,6 +428,8 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   const railCells: Array<[number, number]> = [];
   let elevator: ElevatorSpec | null = null;
   let exitPad: LevelData['exitPad'] = null;
+  let exitSign: ExitSignSpec | null = null;
+  let ledgeRail: LedgeRailSpec | null = null;
   {
     const r = exitRoom;
     const depth = 3;
@@ -427,7 +440,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
         for (let z = z0; z < z0 + depth; z++) ledgeCells.push([x, z]);
       }
       padCX = r.cx;
-      padCZ = ledgeSide === 'zmax' ? r.z + r.d - 2 : r.z + 1;
+      padCZ = ledgeSide === 'zmax' ? r.z + r.d - 1 : r.z + 1; // against the back wall: the door's threshold
       elevX = r.cx - 1;
       elevZ = ledgeSide === 'zmax' ? z0 - 2 : z0 + depth;
       const railZ = ledgeSide === 'zmax' ? z0 : z0 + depth - 1;
@@ -439,7 +452,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
       for (let z = r.z; z < r.z + r.d; z++) {
         for (let x = x0; x < x0 + depth; x++) ledgeCells.push([x, z]);
       }
-      padCX = ledgeSide === 'xmax' ? r.x + r.w - 2 : r.x + 1;
+      padCX = ledgeSide === 'xmax' ? r.x + r.w - 1 : r.x + 1;
       padCZ = r.cz;
       elevX = ledgeSide === 'xmax' ? x0 - 2 : x0 + depth;
       elevZ = r.cz - 1;
@@ -452,7 +465,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
       for (let y = 1; y <= 3; y++) world.set(x, y, z, Block.Metal);
     }
     for (const [x, z] of railCells) {
-      if (world.get(x, 4, z) === Block.Air) world.set(x, 4, z, Block.Trim);
+      if (world.get(x, 4, z) === Block.Air) world.set(x, 4, z, Block.PowerBarrier);
     }
     // exit pad blocks (their top faces glow green + emit light)
     for (let dx = -1; dx <= 0; dx++) {
@@ -465,6 +478,37 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
       walkAxis: ledgeSide === 'zmax' || ledgeSide === 'zmin' ? 'z' : 'x',
     };
     exitPad = { x: padCX, y: 4, z: padCZ };
+
+    // -- the way out reads as one (reference/exit-lift-red-room-v1.png): a
+    // green EXIT sign on the back wall over the pad (ExitArt), yellow tube
+    // railing on the ledge, a mechanical lift (Elevator).
+    const alongX = ledgeSide === 'zmin' || ledgeSide === 'zmax';
+    const out = ledgeSide === 'zmin' || ledgeSide === 'xmin' ? -1 : 1; // out of the room, toward the back wall
+    const wallC = ledgeSide === 'zmin' ? r.z - 1 : ledgeSide === 'zmax' ? r.z + r.d : ledgeSide === 'xmin' ? r.x - 1 : r.x + r.w;
+    const faceC = out < 0 ? wallC + 1 : wallC;
+    const mid = alongX ? padCX : padCZ;
+    const at = (a: number, y: number, c: number): [number, number, number] => (alongX ? [a, y, c] : [c, y, a]);
+    exitSign = alongX ? { x: mid, y: 4, z: faceC, face: ledgeSide } : { x: faceC, y: 4, z: mid, face: ledgeSide };
+    ledgeRail = { cells: railCells, y: 4, axis: alongX ? 'x' : 'z', inward: out };
+
+    // -- dressing: crate stacks in the corners at the ledge's foot
+    const frontC = ledgeSide === 'zmin' ? r.z + depth - 1 : ledgeSide === 'zmax' ? r.z + r.d - depth : ledgeSide === 'xmin' ? r.x + depth - 1 : r.x + r.w - depth;
+    const baseC = frontC - out; // the floor row in front of the ledge
+    const lo = alongX ? r.x : r.z, hi = alongX ? r.x + r.w - 1 : r.z + r.d - 1;
+    for (const [corner, inward] of [[lo, 1], [hi, -1]] as const) {
+      // never in front of a doorway: the side wall beside the corner stays solid
+      const side = corner - inward;
+      let clear = true;
+      for (let y = 1; y <= 2; y++) for (const c of [baseC, baseC - out]) {
+        const [sx, sy, sz] = at(side, y, c);
+        if (!world.isSolid(sx, sy, sz)) clear = false;
+      }
+      if (!clear) continue;
+      world.set(...at(corner, 1, baseC), Block.Crate);
+      world.set(...at(corner, 2, baseC), Block.Crate);
+      world.set(...at(corner + inward, 1, baseC), Block.Crate);
+      world.set(...at(corner, 1, baseC - out), Block.Crate);
+    }
   }
 
   // -- paint pass: type walls/floors/ceilings around air --------------------
@@ -630,21 +674,29 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     let lamp: Block;
     // the Biofoundry: violet emergency panels; the key room keeps its red,
     // the exit hall its teal (signal colours keep their meaning)
-    if (isBio) lamp = r.kind === 'key' ? Block.LampRed : r.kind === 'exit' ? Block.LampTeal : Block.LampViolet;
+    if (r.kind === 'exit') lamp = Block.LampWarm;
+    else if (isBio) lamp = r.kind === 'key' ? Block.LampRed : Block.LampViolet;
     else if (r.kind === 'key') lamp = Block.LampRed;
-    else if (r.kind === 'exit') lamp = Block.LampTeal;
     else if (r.kind === 'arena') lamp = rng.chance(0.5) ? Block.LampTeal : Block.LampRed;
     else lamp = rng.chance(0.28) ? Block.LampTeal : rng.chance(0.14) ? Block.LampRed : Block.LampWarm;
-    for (let x = r.x + 2; x < r.x + r.w - 1; x += 4) {
+    if (r.kind === 'exit' && elevator && exitPad) {
+      const fx = elevator.walkAxis === 'x' ? Math.sign(exitPad.x - elevator.x - 1) : 0;
+      const fz = elevator.walkAxis === 'z' ? Math.sign(exitPad.z - elevator.z - 1) : 0;
+      for (const side of [-2.5, 2.5]) {
+        const x = Math.floor(elevator.x + 1 - fx * .2 + fz * side);
+        const z = Math.floor(elevator.z + 1 - fz * .2 - fx * side);
+        if (world.isSolid(x, r.h + 1, z)) world.set(x, r.h + 1, z, lamp);
+      }
+    }
+    for (let x = r.x + 2; r.kind !== 'exit' && x < r.x + r.w - 1; x += 4) {
       for (let z = r.z + 2; z < r.z + r.d - 1; z += 4) {
         if (world.isSolid(x, r.h + 1, z)) world.set(x, r.h + 1, z, lamp);
       }
     }
     if (r.kind === 'exit') {
-      // green glow over the ledge
-      for (const [x, z] of ledgeCells) {
-        if ((x + z) % 3 === 0 && world.isSolid(x, r.h + 1, z)) world.set(x, r.h + 1, z, Block.LampGreen);
-      }
+      // green glow over the pad only (the whole ledge lit green washed the
+      // room; the mockup keeps green for the destination)
+      if (exitPad) world.set(Math.floor(exitPad.x), r.h + 1, Math.floor(exitPad.z), Block.LampGreen);
     }
     // hanging fixtures in tall rooms: a chain stem with a lamp swinging below
     // the ceiling (skip the exit room — a fixture over the ledge walkway
@@ -959,8 +1011,43 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   // plain surfaces change; vents, pipe columns, trim and metal stay)
   if (isBio) reskinLab(world, dhash);
 
+  // Give the exit hall its reference surfaces, including the vertical ledge
+  // face. This is local to the room; corridor and sector palettes stay intact.
+  const lightOverrides = new Map<number, { color: [number, number, number]; range: number }>();
+  for (let x = exitRoom.x - 1; x <= exitRoom.x + exitRoom.w; x++) {
+    for (let z = exitRoom.z - 1; z <= exitRoom.z + exitRoom.d; z++) {
+      for (let y = 0; y <= exitRoom.h + 1; y++) {
+        const b = world.get(x, y, z);
+        if ([Block.Wall, Block.WallRust, Block.WallVent, Block.WallPipes, Block.WallWorn,
+          Block.LabWall, Block.LabWallRust, Block.Metal].includes(b)) {
+          world.set(x, y, z, dhash(x, y, z) < .28 ? Block.ServiceWallRust : Block.ServiceWall);
+        } else if (b === Block.Floor || b === Block.LabFloor) world.set(x, y, z, Block.ServiceFloor);
+        else if ([Block.Ceil, Block.CeilVent, Block.CeilPipes, Block.CeilPipesZ, Block.LabCeil, Block.LabCeilGrate].includes(b)) world.set(x, y, z, Block.ServiceCeil);
+        else if (b === Block.ExitPad || b === Block.LampGreen) {
+          // Green identifies the landing, with a short throw instead of a room-wide wash.
+          lightOverrides.set(world.index(x, y, z), { color: b === Block.ExitPad ? [60, 200, 90] : [90, 220, 120], range: 3.2 });
+          if (b === Block.LampGreen) world.set(x, y, z, Block.ServiceLampGreen);
+        }
+        else if (b === Block.LampWarm) {
+          world.set(x, y, z, Block.ServiceLampWarm);
+          lightOverrides.set(world.index(x, y, z), { color: [255, 225, 185], range: 11 });
+        }
+      }
+    }
+  }
+
+  // Small amber pools from the two actual boarding lamps on the lift frame.
+  if (elevator && exitPad) {
+    const fx = elevator.walkAxis === 'x' ? Math.sign(exitPad.x - elevator.x - 1) : 0;
+    const fz = elevator.walkAxis === 'z' ? Math.sign(exitPad.z - elevator.z - 1) : 0;
+    for (const side of [-1.27, 1.27]) {
+      const x = Math.floor(elevator.x + 1 - fx * .1 + fz * side);
+      const z = Math.floor(elevator.z + 1 - fz * .1 - fx * side);
+      lightOverrides.set(world.index(x, 0, z), { color: [255, 175, 70], range: 3 });
+    }
+  }
   // -- bake lights & finish -------------------------------------------------
-  world.bakeLighting(isBio ? BIO_AMBIENT : undefined);
+  world.bakeLighting(isBio ? BIO_AMBIENT : undefined, lightOverrides);
 
   return {
     world,
@@ -971,6 +1058,8 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     enemies,
     elevator,
     exitPad,
+    exitSign,
+    ledgeRail,
     secretRect,
     secretWall: crackCells.filter(([x, y, z]) => world.get(x, y, z) === Block.Cracked),
     seed,

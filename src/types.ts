@@ -66,6 +66,30 @@ export interface Rect {
   d: number;
 }
 
+/**
+ * The green EXIT sign on the exit ledge's back wall, over the pad. (x, z) is
+ * the middle of the wall face behind the pad, y the ledge top; `face` names
+ * the wall.
+ */
+export interface ExitSignSpec {
+  x: number;
+  y: number;
+  z: number;
+  face: 'xmin' | 'xmax' | 'zmin' | 'zmax';
+}
+
+/**
+ * The exit ledge's railing: the cells of its invisible rail barrier (at
+ * height y), the axis the rail runs along, and which way the ledge's walkable
+ * side lies across it (+1 / -1) — the yellow tubes are drawn on that face.
+ */
+export interface LedgeRailSpec {
+  cells: Array<[number, number]>;
+  y: number;
+  axis: 'x' | 'z';
+  inward: 1 | -1;
+}
+
 export interface ElevatorSpec {
   /** min corner of the 2x2 platform */
   x: number;

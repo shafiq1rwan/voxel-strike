@@ -10,7 +10,8 @@ import { ChunkManager } from './world/mesher';
 import { generateLevel, LevelData, type LevelTheme } from './world/levelgen';
 import { Block, isDestructible } from './world/blocks';
 import { Player } from './entities/player';
-import { Door, Elevator, ExitBeacon } from './entities/door';
+import { Door, Elevator, ExitArt } from './entities/door';
+import { ExitRoomProps } from './entities/exit-room-props';
 import { Enemy, EnemyManager } from './entities/enemies';
 import { PickupManager } from './entities/pickups';
 import { ProjectilePool } from './entities/projectiles';
@@ -159,6 +160,7 @@ function reloadToTitle(): void {
 }
 
 export class Game {
+  private readonly exitRoomReview = !POKI && new URLSearchParams(location.search).has('exitroom');
   readonly rendererSys: Renderer;
   readonly camera: THREE.PerspectiveCamera;
   readonly input: Input;
@@ -518,10 +520,15 @@ export class Game {
       this.elevator.dispose();
       this.elevator = null;
     }
-    if (this.exitBeacon) {
-      scene.remove(this.exitBeacon.mesh);
-      this.exitBeacon.dispose();
-      this.exitBeacon = null;
+    if (this.exitArt) {
+      scene.remove(this.exitArt.group);
+      this.exitArt.dispose();
+      this.exitArt = null;
+    }
+    if (this.exitProps) {
+      scene.remove(this.exitProps.group);
+      this.exitProps.dispose();
+      this.exitProps = null;
     }
     if (this.pickups) {
       scene.remove(this.pickups.group);
@@ -542,6 +549,7 @@ export class Game {
     const theme = this.themeFor(this.levelIndex);
     this.level = authored ? authored.generate(seed) : generateLevel(seed, this.levelIndex, theme, this.bossFor(this.levelIndex));
     this.world = this.level.world;
+    this.solidBoxFrame = -1;
     const scene = this.rendererSys.scene;
 
     this.chunks = new ChunkManager(
@@ -562,12 +570,24 @@ export class Game {
       scene.add(door.mesh);
     }
     if (this.level.elevator) {
-      this.elevator = new Elevator(this.level.elevator);
+      // the lift's masts and brace face the boarding side: toward the pad
+      const el = this.level.elevator, pad = this.level.exitPad;
+      let toLedge: { x: number; z: number } | undefined;
+      if (pad) {
+        const along = el.walkAxis ?? (Math.abs(pad.x - (el.x + 1)) > Math.abs(pad.z - (el.z + 1)) ? 'x' : 'z');
+        toLedge = along === 'x' ? { x: Math.sign(pad.x - (el.x + 1)) || 1, z: 0 } : { x: 0, z: Math.sign(pad.z - (el.z + 1)) || 1 };
+      }
+      this.elevator = new Elevator(el, toLedge);
       scene.add(this.elevator.group);
     }
-    if (this.level.exitPad) {
-      this.exitBeacon = new ExitBeacon(this.level.exitPad);
-      scene.add(this.exitBeacon.mesh);
+    if (this.level.exitSign || this.level.ledgeRail) {
+      this.exitArt = new ExitArt(this.level.exitSign, this.level.ledgeRail);
+      scene.add(this.exitArt.group);
+    }
+    if (this.elevator) {
+      this.exitProps = new ExitRoomProps(this.level);
+      this.exitProps.update(this.elevator);
+      scene.add(this.exitProps.group);
     }
 
     // a boss carries the red keycard: it drops at the spec's spot when it dies
@@ -628,6 +648,22 @@ export class Game {
     const other = this.level.rooms.find((r) => r.dist === 1) ?? this.level.rooms[1];
     this.player.yaw = Math.atan2(-(other.cx - spawnRoom.cx), -(other.cz - spawnRoom.cz));
     // Web-only shortcut for hands-on testing; ordinary campaign spawns stay intact.
+    if (this.exitRoomReview && !this.net && !this.preview && this.levelIndex === 1) {
+      const e = this.level.elevator, p = this.level.exitPad;
+      const r = this.level.rooms.find(room => room.kind === 'exit');
+      if (e && p && r) {
+        const fx = e.walkAxis === 'x' ? Math.sign(p.x - e.x - 1) : 0;
+        const fz = e.walkAxis === 'z' ? Math.sign(p.z - e.z - 1) : 0;
+        const x = Math.min(r.x + r.w - .9, Math.max(r.x + .9, e.x + 1 - fx * 4.5));
+        const z = Math.min(r.z + r.d - .9, Math.max(r.z + .9, e.z + 1 - fz * 4.5));
+        this.player.spawnAt(x, 1.88, z);
+        this.player.yaw = Math.atan2(-(e.x + 1 - x), -(e.z + 1 - z));
+        this.player.pitch = Math.atan2(3.35 - this.player.eyeY(), Math.hypot(e.x + 1 - x, e.z + 1 - z));
+        this.player.keys.add('red');
+        const door = this.doors.find(d => d.spec.locked === 'red');
+        if (door) door.locked = null;
+      }
+    }
     if (!POKI && !this.net && this.overload && this.levelIndex === 1 && new URLSearchParams(location.search).has('overload')) {
       this.player.spawnAt(this.overload.x, 1.88, this.overload.z + 2);
       this.player.yaw = 0;
@@ -797,7 +833,9 @@ export class Game {
   private tipStep = -1;
   /** current objective step; null forces a refresh (new sector) */
   private objStage: ObjectiveStage | null = null;
-  private exitBeacon: ExitBeacon | null = null;
+  /** the EXIT sign over the pad and the ledge railing (generated sectors) */
+  private exitArt: ExitArt | null = null;
+  private exitProps: ExitRoomProps | null = null;
   /** last spot the player stood on open ground (guardPlayerInWorld) */
   private safePos = new THREE.Vector3();
   private embedTime = 0;
@@ -1582,6 +1620,7 @@ export class Game {
       if (d.openT < 0.98) this.solidBoxCache.push(d.box());
     }
     if (this.elevator) this.solidBoxCache.push(this.elevator.box());
+    if (this.exitProps) this.solidBoxCache.push(...this.exitProps.boxes);
     if (this.overload && !this.net) this.solidBoxCache.push(this.overload.box);
     // the Broodkeeper's cradle is a wall while it lives
     const bk = this.bossEnemy;
@@ -2287,7 +2326,7 @@ export class Game {
 
     if (this.state === 'title') {
       // slow orbit of the spawn room behind the title
-      this.player.yaw += dt * 0.1;
+      if (!this.exitRoomReview) this.player.yaw += dt * 0.1;
       this.player.applyToCamera(this.camera, this.time);
       this.updateOperativeBody(dt);
       this.dynLights.update(dt, this.camera.position);
@@ -2425,10 +2464,11 @@ export class Game {
     this.tracers.update(dt);
     this.pickups.update(dt, this.time, this);
     this.elevator?.animate(dt, this.time);
+    if (this.elevator) this.exitProps?.update(this.elevator);
     this.updateObjective();
     this.updateBossBar();
     this.updateUnlocks(dt);
-    this.exitBeacon?.animate(dt, this.objStage === 'pad');
+
     this.hud.updateAmmo(this.player, this.weapons);
     this.hud.updateBuffs(this.player);
     this.automap.update(dt, this);
