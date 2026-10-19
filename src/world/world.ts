@@ -130,7 +130,8 @@ export class VoxelWorld {
    * Bake static lighting: dim ambient everywhere, then BFS colored light
    * outward through air from every lamp block.
    */
-  bakeLighting(ambient: [number, number, number] = [16, 17, 22]): void {
+  bakeLighting(ambient: [number, number, number] = [16, 17, 22],
+    overrides?: ReadonlyMap<number, { color: [number, number, number]; range: number }>): void {
     const { light, blocks, sx, sy, sz } = this;
     // ambient (the campaign's dark default; authored levels may tint it)
     for (let i = 0; i < blocks.length; i++) {
@@ -145,9 +146,10 @@ export class VoxelWorld {
       for (let z = 0; z < sz; z++) {
         for (let x = 0; x < sx; x++) {
           const b = blocks[this.index(x, y, z)] as Block;
-          const col = LAMP_COLORS[b];
+          const source = overrides?.get(this.index(x, y, z));
+          const col = source?.color ?? LAMP_COLORS[b];
           if (!col) continue;
-          this.floodFrom(x, y, z, col, 235, FALLOFF);
+          this.floodFrom(x, y, z, col, 235, source ? 235 / source.range : FALLOFF);
         }
       }
     }
@@ -169,7 +171,8 @@ export class VoxelWorld {
     // seed from air neighbors of the lamp
     for (const [dx, dy, dz] of dirs) {
       const x = lx + dx, y = ly + dy, z = lz + dz;
-      if (this.inBounds(x, y, z) && this.get(x, y, z) === Block.Air) {
+      const block = this.get(x, y, z);
+      if (this.inBounds(x, y, z) && (block === Block.Air || block === Block.PowerBarrier)) {
         const idx = this.index(x, y, z);
         if ((visited.get(idx) ?? -1) < start) {
           visited.set(idx, start);
@@ -194,7 +197,9 @@ export class VoxelWorld {
       for (const [dx, dy, dz] of dirs) {
         const nx2 = x + dx, ny2 = y + dy, nz2 = z + dz;
         if (!this.inBounds(nx2, ny2, nz2)) continue;
-        if (this.get(nx2, ny2, nz2) !== Block.Air) continue;
+        const block = this.get(nx2, ny2, nz2);
+        // Invisible collision rails must not cast opaque black squares on walls.
+        if (block !== Block.Air && block !== Block.PowerBarrier) continue;
         const nidx = this.index(nx2, ny2, nz2);
         if ((visited.get(nidx) ?? -1) >= next) continue;
         visited.set(nidx, next);

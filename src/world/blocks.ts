@@ -39,14 +39,22 @@ export const enum Block {
   PowerBarrier = 31, // invisible collision behind the preview's animated supply cage
   GeothermalHeat = 32,
   Basalt = 33,
+  ServiceWall = 34,
+  ServiceWallRust = 35,
+  ServiceFloor = 36,
+  ServiceCeil = 37,
+  ServiceLampWarm = 38,
+  ServiceLampGreen = 39,
 }
 
-export const BLOCK_COUNT = 34;
+export const BLOCK_COUNT = 40;
 
 /** Which lamp blocks emit light, and their color (0-255 per channel). */
 export const LAMP_COLORS: Partial<Record<Block, [number, number, number]>> = {
   [Block.GeothermalHeat]: [255, 108, 28],
   [Block.LampWarm]: [255, 214, 150],
+  [Block.ServiceLampWarm]: [255, 225, 185],
+  [Block.ServiceLampGreen]: [90, 220, 120],
   [Block.LampRed]: [255, 64, 40],
   [Block.LampTeal]: [70, 205, 255],
   [Block.LampGreen]: [90, 255, 120],
@@ -112,15 +120,31 @@ export const enum Tile {
   LabCeilGrate = 32,
   GeothermalHeat = 33,
   Basalt = 34,
+  ServiceWall = 35,
+  ServiceWallRust = 36,
+  ServiceFloor = 37,
+  ServiceCeil = 38,
+  ServiceLampWarm = 39,
+  ServiceLampGreen = 40,
 }
 
-export const TILE_COUNT = 35;
+export const TILE_COUNT = 41;
 
 /** Face dirs: 0:+x 1:-x 2:+y(top) 3:-y(bottom) 4:+z 5:-z */
 export function tileFor(block: Block, dir: number): Tile {
   const top = dir === 2;
   const bottom = dir === 3;
   switch (block) {
+    case Block.ServiceLampWarm: return Tile.ServiceLampWarm;
+    case Block.ServiceLampGreen: return Tile.ServiceLampGreen;
+    case Block.ServiceWall:
+      return top ? Tile.ServiceFloor : bottom ? Tile.ServiceCeil : Tile.ServiceWall;
+    case Block.ServiceWallRust:
+      return top ? Tile.ServiceFloor : bottom ? Tile.ServiceCeil : Tile.ServiceWallRust;
+    case Block.ServiceFloor:
+      return top ? Tile.ServiceFloor : Tile.ServiceWall;
+    case Block.ServiceCeil:
+      return bottom ? Tile.ServiceCeil : Tile.ServiceWall;
     case Block.GeothermalHeat: return Tile.GeothermalHeat;
     case Block.Basalt: return Tile.Basalt;
     case Block.Rock:
@@ -229,6 +253,49 @@ function drawTile(ctx: Ctx2D, tile: Tile): void {
   const ox = (tile % ATLAS_TILES) * TILE_PX;
   const oy = Math.floor(tile / ATLAS_TILES) * TILE_PX;
   switch (tile) {
+    case Tile.ServiceLampWarm:
+    case Tile.ServiceLampGreen: {
+      fillNoise(ctx, ox, oy, [39, 43, 47], .25, 731);
+      ctx.fillStyle = '#1c211f'; ctx.fillRect(ox + 3, oy + 5, 10, 6);
+      ctx.fillStyle = '#817a62'; ctx.fillRect(ox + 4, oy + 5, 8, 5);
+      ctx.fillStyle = tile === Tile.ServiceLampWarm ? '#ffbc46' : '#2cb34c';
+      ctx.fillRect(ox + 5, oy + 6, 6, 3);
+      ctx.fillStyle = tile === Tile.ServiceLampWarm ? '#fff0ad' : '#72ff96';
+      ctx.fillRect(ox + 5, oy + 6, 6, 2);
+      break;
+    }
+    case Tile.ServiceWall:
+    case Tile.ServiceWallRust: {
+      // One large, riveted steel panel per metre, matching the exit-lift reference.
+      fillNoise(ctx, ox, oy, [84, 92, 102], .25, 701);
+      for (let i = 0; i < TILE_PX; i++) {
+        px(ctx, ox, oy, i, 0, '#282a27'); px(ctx, ox, oy, 0, i, '#282a27');
+        px(ctx, ox, oy, i, 15, '#737a81'); px(ctx, ox, oy, 15, i, '#737a81');
+      }
+      for (const [x, y] of [[3, 3], [12, 3], [3, 12], [12, 12]]) {
+        px(ctx, ox, oy, x, y, '#aaa898'); px(ctx, ox, oy, x + 1, y + 1, '#393a33');
+      }
+      for (const [x, y] of [[6, 8], [10, 6], [8, 13]]) px(ctx, ox, oy, x, y, '#55564b');
+      if (tile === Tile.ServiceWallRust) for (let y = 4; y < 14; y++) {
+        px(ctx, ox, oy, 12, y, shade([133, 72, 32], .8 + hnoise(12, y, 702) * .4));
+        if (y < 10) px(ctx, ox, oy, 11, y, '#6f492e');
+      }
+      break;
+    }
+    case Tile.ServiceFloor:
+    case Tile.ServiceCeil: {
+      const floor = tile === Tile.ServiceFloor;
+      fillNoise(ctx, ox, oy, floor ? [58, 64, 70] : [36, 40, 44], .3, floor ? 711 : 721);
+      for (let i = 0; i < TILE_PX; i++) {
+        px(ctx, ox, oy, 0, i, '#20221f'); px(ctx, ox, oy, i, 0, '#20221f');
+        px(ctx, ox, oy, 15, i, '#68675d'); px(ctx, ox, oy, i, 15, '#68675d');
+      }
+      for (const [x, y] of [[2, 2], [13, 13]]) {
+        px(ctx, ox, oy, x, y, '#8b8979'); px(ctx, ox, oy, x + 1, y + 1, '#262924');
+      }
+      if (floor) for (let y = 7; y < 12; y++) px(ctx, ox, oy, 10, y, '#745038');
+      break;
+    }
     case Tile.Rock: {
       fillNoise(ctx, ox, oy, [82, 78, 88], 0.5, 11);
       // horizontal strata cracks

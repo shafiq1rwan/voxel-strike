@@ -43,6 +43,14 @@ off the core. The per-file rules and known gotchas live in
 | Co-op | `net/netplay.ts`, `net/transport.ts` | Host-authoritative sync; PeerJS or BroadcastChannel transport |
 | Platform | `platform/poki.ts` | Poki SDK wrapper, compiled out of the web build ([POKI.md](../POKI.md)) |
 
+`entities/exit-room-props.ts` owns the generated exit hall's instanced service
+equipment, cabinet/toolbox collision boxes and three-state lift status atlas.
+`Game` creates and disposes it with the level, and includes its boxes in the
+shared collision list. Exit-only surface tiles live in `world/blocks.ts`;
+`levelgen.ts` supplies local light-source colour/range overrides to the bake.
+Invisible collision rails transmit baked light. Web `?exitroom` places the
+player on the boarding apron for visual review; ordinary spawns are unchanged.
+
 ## Game states
 
 ```

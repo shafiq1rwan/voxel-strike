@@ -43,6 +43,12 @@ changed (when in doubt, all of them).
 | `perf.mjs` | Render-cost guard for 60 fps on phones: each gun is ≤ 12 draws (baked), every-enemy-awake stays < 250 world draws (occlusion cull), an enemy in plain sight is still drawn, and no shader compiles after the level starts (warm-up); then the same draw budget and shader check in the Biofoundry at its heaviest (sector 5) with every enemy awake |
 | `poki.mjs` | **Poki mode only:** stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, `measure()` events (level 1 fresh-start, level complete / fail, `endless N` complete / fail capped at 20), Armory skin unlock by rewarded video (Watch ad + icon, not primary, no video = nothing, muted during, watched = unlocked + equipped, absent without the SDK), rewarded revive (ad icon, equal-size beside retry, muted, pays only on a watched video, once per attempt, hidden without the SDK), hidden co-op, boots with the SDK blocked ([POKI.md](../POKI.md)), a double perk pick plays one ad and takes one perk |
 
+`node scripts/exit-room-props.mjs [url]` checks all seven exit-room props,
+clear routes and boarding clearance across 24 facility/Biofoundry seeds and
+all four lift directions, repeated teardown/rebuild, live status changes,
+the real lift ride and exit progression, and the `?exitroom` shortcut. It
+saves ready/docked screenshots from one viewpoint in `scripts/shots/`.
+
 Tool scripts (not tests): `gen-icons.mjs` regenerates PWA icons,
 `shot-pickups.mjs` renders the pickups for a look check,
 `itch-download.mjs` downloads a free itch.io project, `zip-poki.ps1` builds
