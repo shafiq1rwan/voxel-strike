@@ -1270,13 +1270,14 @@ export class HUD {
   setObjective(
     sector: number, total: number, text: string, color: string, flash: boolean,
     icon: 'keycard' | 'door' | 'lift' | 'pad' | 'boss' = 'keycard',
+    preview = false,
   ): void {
     // past the campaign it's endless: DEPTH n, no "of N"
-    const endless = sector > total;
+    const endless = !preview && sector > total;
     (this.root.querySelector('#obj-label') as HTMLElement).textContent = endless ? 'DEPTH' : 'SECTOR';
     (this.root.querySelector('#obj-sector') as HTMLElement).textContent = String(sector);
     (this.root.querySelector('#obj-total') as HTMLElement).textContent = String(total);
-    (this.root.querySelector('#obj-of') as HTMLElement).style.display = endless ? 'none' : '';
+    (this.root.querySelector('#obj-of') as HTMLElement).style.display = endless || preview ? 'none' : '';
     this.objTextEl.textContent = text;
     if (icon !== this.objIconCache) {
       this.objIconCache = icon;

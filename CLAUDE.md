@@ -50,7 +50,7 @@ node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consi
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener, Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit)
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + gentle sector 2 (8–9 rooms, lone tickers), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit)
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
 node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull with every enemy awake, in-sight enemy drawn, no shader compile after level start; the same budget in the Biofoundry at its heaviest (sector 5)
@@ -216,6 +216,13 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   Difficulty = sector/depth number. Sector 1 is a short OPENER (6–7 rooms,
   shotgun in the spawn room, no ticker nests, no brute — 1 brute at 2, 2
   from 3 — plus a hashed barrel pair in the first room; e2e needs a barrel).
+  Sectors 2–3 RAMP gently (Player Fit Test 2026-10-19: sector 2 lost ~74%
+  of players when it jumped to 11–13 rooms and ~4× sector 1's enemies):
+  sector 2 is 8–9 rooms with lone tickers only (25% of rooms, plus one
+  guaranteed in a far room to introduce them) and no extra far-room enemy;
+  sector 3 is 10–11 rooms, ticker pairs at most (35%), the far-room +1
+  starts here; sector 4 on is unchanged (12–14 rooms, full packs). Enemies
+  per sector average ~12 → ~20 → ~39 → ~61; `features.mjs` checks sector 2.
   `generateLevel(seed, n, theme, withBoss)`: with a boss, `placeBoss` puts
   the Broodkeeper on a doorway-free N/S (then W/E) wall of the arena with a
   clear 3.4×3.4 footprint (crates/barrels cleared), empties the arena's

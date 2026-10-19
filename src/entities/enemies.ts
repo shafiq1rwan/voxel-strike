@@ -5,6 +5,7 @@ import { moveBody, rayBox } from '../core/physics';
 import { SEEN_HOLD, seenFrom } from '../core/occlusion';
 import type { VoxelWorld } from '../world/world';
 import type { Game, PlayerTarget } from '../game';
+import { GeothermalMonster, isGeothermalKind, GEO_SCHEDULE } from './geothermal-monsters';
 
 export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'charge' | 'pain' | 'dead';
 
@@ -29,6 +30,9 @@ interface Sched {
 
 /** reference/enemy-upgrades.md timings */
 const SCHED: Record<EnemySpec['kind'], { attack: Sched; charge: Sched }> = {
+  cinderHulk: GEO_SCHEDULE.cinderHulk,
+  ventStalker: GEO_SCHEDULE.ventStalker,
+  kilnDrone: GEO_SCHEDULE.kilnDrone,
   husk: {
     attack: { prep: 0.4, lock: 0.2, commit: 0.12, recover: 0.6 },
     charge: { prep: 0.5, lock: 0.3, commit: 0.3, recover: 0.85 },
@@ -104,6 +108,9 @@ interface EnemyTuning {
 }
 
 const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
+  cinderHulk: { hp: 190, speed: 1.8, halfX: 0.74, halfY: 1.35, painChance: 0.08, bloodColor: [1, 0.43, 0.08] },
+  ventStalker: { hp: 50, speed: 3.6, halfX: 0.58, halfY: 0.43, painChance: 0.25, bloodColor: [1, 0.3, 0.05] },
+  kilnDrone: { hp: 85, speed: 2.1, halfX: 0.3, halfY: 0.46, painChance: 0.15, bloodColor: [1, 0.6, 0.08] },
   husk: { hp: 45, speed: 5.0, halfX: 0.38, halfY: 0.82, painChance: 0.4, bloodColor: [0.9, 0.45, 0.1] },
   sentinel: { hp: 60, speed: 2.7, halfX: 0.45, halfY: 0.45, painChance: 0.25, bloodColor: [0.25, 0.85, 1] },
   // fragile suicide crawler: sprints at the player and self-destructs — and
@@ -122,6 +129,7 @@ const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
 const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'tickerAlert' | 'bruteRoar'> = {
   husk: 'huskAlert', sentinel: 'sentinelAlert', ticker: 'tickerAlert', brute: 'bruteRoar', vatborn: 'bruteRoar',
   broodkeeper: 'bruteRoar',
+  cinderHulk: 'bruteRoar', ventStalker: 'huskAlert', kilnDrone: 'sentinelAlert',
 };
 
 /** husk-skeleton walkers: the jointed rig + walker gait/attack animation drive them */
@@ -285,6 +293,7 @@ export class Enemy {
   /** the player this enemy is currently hunting (local or co-op partner) */
   private tgt: PlayerTarget | null = null;
   private growlCd = 2 + Math.random() * 4;
+  private geothermal: GeothermalMonster | null = null;
 
   constructor(spec: EnemySpec, room: RoomDef | null, groundY: number, startPatrolling: boolean) {
     this.kind = spec.kind;
@@ -292,11 +301,12 @@ export class Enemy {
     this.hp = this.tuning.hp;
     this.maxHp = this.hp;
     this.half.set(this.tuning.halfX, this.tuning.halfY, this.tuning.halfX);
-    this.pos.set(spec.x, groundY + this.half.y + (spec.kind === 'sentinel' ? 1.0 : 0.05), spec.z);
+    this.pos.set(spec.x, groundY + this.half.y + (spec.kind === 'sentinel' || spec.kind === 'kilnDrone' ? 1.0 : 0.05), spec.z);
     this.room = room;
     this.body = new THREE.Group();
     this.mesh.add(this.body);
-    if (spec.kind === 'husk') this.buildHusk();
+    if (isGeothermalKind(spec.kind)) this.geothermal = new GeothermalMonster(this, this.body, spec.kind);
+    else if (spec.kind === 'husk') this.buildHusk();
     else if (spec.kind === 'ticker') this.buildTicker();
     else if (spec.kind === 'brute') this.buildBrute();
     else if (spec.kind === 'vatborn') this.buildVatborn();
@@ -1024,7 +1034,7 @@ export class Enemy {
     if (this.state === 'attack' || this.state === 'charge') this.cancelAttack();
     this.stunTime = 0.7;
     this.setState('pain');
-    const push = (this.kind === 'brute' ? 2 : 6) * (1 - Math.min(1, d / 7)) + 2;
+    const push = (this.kind === 'brute' || this.kind === 'cinderHulk' ? 2 : 6) * (1 - Math.min(1, d / 7)) + 2;
     this.vel.x += (dx / d) * push;
     this.vel.z += (dz / d) * push;
   }
@@ -1044,6 +1054,11 @@ export class Enemy {
   damage(dmg: number, dx: number, dz: number, game: Game): void {
     if (!this.alive) return;
     let armored = false;
+    if (this.geothermal && this.kind !== 'ventStalker') {
+      armored = !this.coreOpen;
+      dmg *= this.coreOpen ? (this.lastHitCore ? 2 : 1) : 0.75;
+      this.lastHitCore = false;
+    }
     if (this.kind === 'broodkeeper') {
       // closed plates: 25%; open: the body 60%, the core zone double — the
       // opening rewards aim, not just pointing at it
@@ -1081,7 +1096,7 @@ export class Enemy {
     }
     // micro-stagger + knockback: the hit interrupts momentum, then shoves
     // (brutes are too heavy to shove far; a committed move keeps its momentum)
-    const mass = this.kind === 'brute' ? 0.25 : 1;
+    const mass = this.kind === 'brute' || this.kind === 'cinderHulk' ? 0.25 : 1;
     const committed = this.state === 'charge' && this.phase === 'move';
     if (!committed) {
       this.vel.x *= 0.6;
@@ -1196,6 +1211,16 @@ export class Enemy {
       if (dist < 12 && game.hasLOS(this.pos.x, this.pos.y + 0.3, this.pos.z, pl.pos.x, pl.eyeY(), pl.pos.z)) {
         this.wake(game);
       }
+    }
+
+    if (this.geothermal) {
+      if (this.state === 'pain' && this.stateTime > this.stunTime) this.setState('chase');
+      this.geothermal.update(dt, game, pl);
+      this.mesh.position.copy(this.pos);
+      this.mesh.scale.setScalar(1 + this.flashTime * 0.7);
+      this.mesh.rotation.z = this.flashTime * this.flinchSign * 0.4;
+      this.updateLighting(game, dt);
+      return;
     }
 
     switch (this.state) {
@@ -1967,6 +1992,7 @@ export class Enemy {
   // ---------------------------------------------------------------------------
 
   private animate(dt: number, game: Game): void {
+    if (this.geothermal) { this.geothermal.pose(dt); return; }
     const speed = Math.hypot(this.vel.x, this.vel.z);
     this.animPhase += dt * 2;
     if (this.kind === 'husk') this.animateHusk(dt, game);
@@ -2346,6 +2372,8 @@ export class Enemy {
     else if (!on && attached) this.mesh.remove(this.body);
   }
 
+  disposeArt(): void { this.geothermal?.dispose(); }
+
   /** the CPU-lit parts (not fullBright), gathered once: the rig never changes */
   private litCache: THREE.Mesh[] | null = null;
   private get litParts(): THREE.Mesh[] {
@@ -2398,6 +2426,7 @@ export class EnemyManager {
   /** remove all enemies (level teardown), freeing their geometry/materials */
   reset(): void {
     for (const e of this.list) {
+      e.disposeArt();
       this.group.remove(e.mesh);
       e.attachBody(true); // culled rigs are detached: dispose them too
       e.mesh.traverse((o) => {

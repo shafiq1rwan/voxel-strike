@@ -53,10 +53,17 @@ try {
     g.buildLevel();
     g.state = 'playing';
     g.input.locked = true;
-    return { rooms, brute: kinds.has('brute'), ticker: kinds.has('ticker'), shotgunAtSpawn };
+    // sector 2 steps up gently (it lost ~74% of players as a 12-room jump)
+    const tickers = g.level.enemies.filter((e) => e.kind === 'ticker');
+    const perRoom = {};
+    for (const t of tickers) perRoom[t.roomId] = (perRoom[t.roomId] ?? 0) + 1;
+    const s2 = { rooms: g.level.rooms.length, tickers: tickers.length, maxPack: Math.max(0, ...Object.values(perRoom)) };
+    return { rooms, brute: kinds.has('brute'), ticker: kinds.has('ticker'), shotgunAtSpawn, s2 };
   });
   check(opener.rooms <= 7 && !opener.brute && !opener.ticker && opener.shotgunAtSpawn,
     `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no tickers, shotgun in the spawn room`);
+  check(opener.s2.rooms >= 8 && opener.s2.rooms <= 9 && opener.s2.tickers >= 1 && opener.s2.maxPack === 1,
+    `sector 2 steps up gently: ${opener.s2.rooms} rooms (8–9), ${opener.s2.tickers} lone ticker(s), no packs (largest ${opener.s2.maxPack})`);
   await new Promise((r) => setTimeout(r, 300));
 
   // --- 1a. ticker charges the player and self-destructs -----------------------

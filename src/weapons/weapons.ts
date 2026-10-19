@@ -1079,9 +1079,12 @@ export class WeaponSystem {
       const hitY = origin.y + dir.y * t;
       // headshot: creatures with heads take double damage in the top slice
       const headshot = (e.kind === 'husk' || e.kind === 'brute' || e.kind === 'vatborn') && hitY > e.pos.y + e.half.y * 0.45;
-      // boss: the orange core band while its chest plates are open (×2 in damage())
-      const core = e.kind === 'broodkeeper' && e.coreOpen &&
-        hitY > e.pos.y + BOSS_CORE_Y[0] && hitY < e.pos.y + BOSS_CORE_Y[1];
+      // Open orange core bands on the boss and geothermal armor rigs (×2 in damage()).
+      const core = e.coreOpen && (e.kind === 'broodkeeper'
+        ? hitY > e.pos.y + BOSS_CORE_Y[0] && hitY < e.pos.y + BOSS_CORE_Y[1]
+        : e.kind === 'cinderHulk' ? hitY > e.pos.y - 0.15 && hitY < e.pos.y + 0.65
+          // the sentinel-sized drone's furnace window (DRONE_SCALE × its rig)
+          : e.kind === 'kilnDrone' && hitY > e.pos.y - 0.28 && hitY < e.pos.y + 0.08);
       if (core) e.lastHitCore = true;
       game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, origin.x + dir.x * t, hitY, origin.z + dir.z * t);
       if (headshot || core) {

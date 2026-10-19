@@ -12,7 +12,8 @@ export type PickupKind =
   | 'powerQuad' | 'powerShield' | 'powerHaste';
 
 /** 'vatborn' is sector 4 preview only — levelgen never places it */
-export type EnemyKind = 'husk' | 'sentinel' | 'ticker' | 'brute' | 'vatborn' | 'broodkeeper';
+export type EnemyKind = 'husk' | 'sentinel' | 'ticker' | 'brute' | 'vatborn' | 'broodkeeper'
+  | 'cinderHulk' | 'ventStalker' | 'kilnDrone';
 
 export type WeaponId = 'pistol' | 'shotgun' | 'smg' | 'rocket' | 'arc';
 
@@ -42,6 +43,8 @@ export interface DoorSpec {
 }
 
 export interface PickupSpec {
+  /** Visible supplies in a puzzle cache cannot drift or be collected until opened. */
+  sealed?: boolean;
   kind: PickupKind;
   x: number;
   y: number;

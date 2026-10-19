@@ -18,7 +18,7 @@ import type { VoxelWorld } from '../world/world';
 
 /** see-through blocks: everything else is drawn as an opaque cube */
 function opaque(b: Block): boolean {
-  return b !== Block.Air && b !== Block.TankGlass;
+  return b !== Block.Air && b !== Block.TankGlass && b !== Block.PowerBarrier;
 }
 
 /**

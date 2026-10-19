@@ -36,12 +36,16 @@ export const enum Block {
   LampViolet = 28, // magenta emergency panel (emits)
   TankGlass = 29, // specimen tank volume: solid + emits green, never meshed (shell is decoration)
   LabCeilGrate = 30, // square extraction grate in the ceiling
+  PowerBarrier = 31, // invisible collision behind the preview's animated supply cage
+  GeothermalHeat = 32,
+  Basalt = 33,
 }
 
-export const BLOCK_COUNT = 31;
+export const BLOCK_COUNT = 34;
 
 /** Which lamp blocks emit light, and their color (0-255 per channel). */
 export const LAMP_COLORS: Partial<Record<Block, [number, number, number]>> = {
+  [Block.GeothermalHeat]: [255, 108, 28],
   [Block.LampWarm]: [255, 214, 150],
   [Block.LampRed]: [255, 64, 40],
   [Block.LampTeal]: [70, 205, 255],
@@ -106,15 +110,19 @@ export const enum Tile {
   LampViolet = 30,
   TankGlass = 31,
   LabCeilGrate = 32,
+  GeothermalHeat = 33,
+  Basalt = 34,
 }
 
-export const TILE_COUNT = 33;
+export const TILE_COUNT = 35;
 
 /** Face dirs: 0:+x 1:-x 2:+y(top) 3:-y(bottom) 4:+z 5:-z */
 export function tileFor(block: Block, dir: number): Tile {
   const top = dir === 2;
   const bottom = dir === 3;
   switch (block) {
+    case Block.GeothermalHeat: return Tile.GeothermalHeat;
+    case Block.Basalt: return Tile.Basalt;
     case Block.Rock:
       return top ? Tile.RockTop : bottom ? Tile.Ceil : Tile.Rock;
     case Block.Wall:
@@ -270,11 +278,18 @@ function drawTile(ctx: Ctx2D, tile: Tile): void {
       }
       break;
     }
+    case Tile.Basalt: {
+      fillNoise(ctx, ox, oy, [34, 37, 43], 0.3, 601);
+      for (let y = 0; y < TILE_PX; y++) px(ctx, ox, oy, (y < 8 ? 5 : 6), y, shade([17, 20, 25], 1));
+      break;
+    }
+    case Tile.GeothermalHeat:
     case Tile.LampWarm:
     case Tile.LampRed:
     case Tile.LampTeal:
     case Tile.LampGreen: {
       const cols: Record<number, [number, number, number]> = {
+        [Tile.GeothermalHeat]: [255, 108, 24],
         [Tile.LampWarm]: [255, 224, 170],
         [Tile.LampRed]: [255, 80, 56],
         [Tile.LampTeal]: [110, 220, 255],

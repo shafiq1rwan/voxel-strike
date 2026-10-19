@@ -14,12 +14,14 @@ if (POKI) {
     poki.loadingFinished();
   });
 } else {
-  // ?sector4 opens the Biofoundry alone, ?operative the main-character
+  // ?sector6 opens the geothermal preview, ?sector4 the Biofoundry, ?operative the main-character
   // viewer (web builds only — never Poki); the viewer is lazy-loaded, so
   // ordinary visits never download it
   const params = new URLSearchParams(location.search);
   if (params.has('operative')) {
     void import('./preview/operative-viewer').then(({ startOperativeViewer }) => startOperativeViewer(app));
+  } else if (params.has('sector6')) {
+    void import('./preview/geothermal').then(({ geothermal }) => new Game(app, geothermal));
   } else if (params.has('sector4')) {
     // the Biofoundry is campaign content now (sector 4), so it is already in
     // the bundle; ?sector4 just opens it alone

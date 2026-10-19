@@ -15,6 +15,20 @@ Conversion is fine. Playtime and the category click-through are the two gaps,
 so everything below is ordered by how much it lengthens a run or sells the
 tile. Re-submit when the playtime items are in.
 
+### Player Fit Tests since
+
+| Date | Average playtime | Notes |
+|---|---|---|
+| (earlier) | 3:33 | before the 2026-10-18 content wave |
+| 2026-10-19 | 5:00 | after the five-sector campaign, endless, perks, skins |
+| 2026-10-19 | 4:42 | after the simpler title + Broodkeeper retune |
+
+Level events in the 4:42 test (all actions added together, so not player
+counts): level 1 → 1,185, level 2 → 548, level 3 → 142, level 4 → 59,
+level 5 → 28, endless 6 → 13. Every step loses about half except sector 2
+→ 3, which lost ~74%: sector 2 was a wall (11–13 rooms vs 6–7, ~4× sector
+1's enemies, ticker packs, the first brute). Fixed below (gentler ramp).
+
 ## Planned
 
 ### 1. Store thumbnails
@@ -40,6 +54,13 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 - Difficulty choice and per-sector star ratings.
 
 ## Done
+
+- 2026-10-19 — Gentler sector 1 → 3 ramp (Player Fit Test: sector 2 lost
+  ~74%). Sector 2: 8–9 rooms (was 11–13), lone tickers in ~25% of rooms plus
+  one guaranteed to introduce them, no extra far-room enemy. Sector 3:
+  10–11 rooms (was 12–14), ticker pairs at most. Sector 4 on unchanged.
+  Average enemies per sector over 30 seeds: 12 → 20 → 39 → 61 (was 12 → 46
+  → 57 → 61). Next test: the level 2 → 3 step should look like the others.
 
 - 2026-10-19 — Broodkeeper retune (owner: "too easy to kill"). Held SMG
   fire at the core killed it in ~8 s, inside its first opening: 600 HP,

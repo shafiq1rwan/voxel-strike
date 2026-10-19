@@ -33,6 +33,37 @@ npm run build:poki # Poki web-portal build in dist-poki/ — see POKI.md
 Every page load generates a new level. Append `?seed=12345` to the URL to
 replay a specific layout — the same seed always produces the same dungeon.
 
+## Geothermal development preview
+
+Open `?sector6` on a web build (for example `http://localhost:5173/?sector6`).
+This standalone Sector 6 preview contains an authored geothermal heat-exchanger
+hall, recessed orange heat channels, basalt walls, coolant ducts, four enemies,
+and the standard red keycard → locked door → transit lift route. All weapons
+are supplied. The hall follows `reference/sector5-geothermal-core.png`: a ribbed
+furnace on the left of a straight bridge, metal stairs and upper galleries,
+hazard-striped columns, ceiling trusses, vented machinery, cyan work lights,
+and steam. The guarded channels are cosmetic lava in this preview.
+
+Its own enemy roster follows `reference/geothermal-monsters-v1.png`:
+**Cinder Hulk** raises both hammer fists before a marked ground slam;
+**Vent Stalker** crouches and brightens before a committed leap;
+**Kiln Drone** opens two teal shutters before firing a molten projectile.
+Hulk and Drone cores take double hitscan damage while exposed. Sidestep or
+jump the Hulk's slam, dodge the Stalker's locked leap, and punish recovery.
+The red-key response adds two enemies from this roster.
+
+The optional **Power Link** supply cage is in the main hall. Follow its amber
+cable and shoot the square node: the cable turns green, the grille rises, and
+the armor and ammunition become collectible. It never blocks the exit route.
+Retry and Explore again reset the puzzle. Campaign saves remain untouched;
+this preview does not add a sixth campaign sector or appear in Poki builds.
+
+With a web dev server running, `node scripts/sector6.mjs <url>` verifies the
+puzzle, sealed supplies, retry, exit progression, save isolation, and touch
+layout. Against a Poki-mode server, append `--poki` to verify the flag is ignored.
+`node scripts/geothermal-monsters.mjs <url>` verifies attack warnings, dodges,
+projectile damage/obstruction, core shots, deaths, reset, and model part counts.
+
 ## Biofoundry development preview
 
 Add `?sector4` to the game's URL — on the deployed site or a dev server

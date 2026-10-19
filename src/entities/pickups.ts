@@ -373,6 +373,7 @@ export class PickupManager {
     for (const p of this.items) {
       if (p.taken) continue;
       p.update(dt, time);
+      if (p.spec.sealed) continue;
       const dx = pl.pos.x - p.obj.position.x;
       const dy = pl.pos.y - p.obj.position.y;
       const dz = pl.pos.z - p.obj.position.z;

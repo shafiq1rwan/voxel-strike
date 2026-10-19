@@ -51,6 +51,9 @@ export interface LevelData {
   doors: DoorSpec[];
   pickups: PickupSpec[];
   enemies: EnemySpec[];
+  /** An authored sector can keep the keycard response within its own roster. */
+  responseKinds?: EnemySpec['kind'][];
+  responseCount?: number;
   elevator: ElevatorSpec | null;
   /** center of the 2×2 exit pad on the ledge (y = its top surface) */
   exitPad: { x: number; y: number; z: number } | null;
@@ -145,8 +148,13 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   }
 
   // sector 1 is a short opener (a first clear within a few minutes); the
-  // rest grow with depth. Same single draw either way.
-  const targetRooms = difficulty === 1 ? rng.int(6, 7) : rng.int(10, 12) + Math.min(2, difficulty - 1);
+  // rest grow with depth. Sectors 2 and 3 step up gently: the Player Fit Test
+  // lost ~74% of players in sector 2 when it jumped straight from 6–7 rooms
+  // to 11–13. Sector 4 on keeps 12–14. Same single draw either way.
+  const targetRooms = difficulty === 1 ? rng.int(6, 7)
+    : difficulty === 2 ? rng.int(8, 9)
+    : difficulty === 3 ? rng.int(10, 11)
+    : rng.int(10, 12) + Math.min(2, difficulty - 1);
   for (let attempt = 0; attempt < 300 && rooms.length < targetRooms; attempt++) {
     const w = rng.int(8, 15);
     const d = rng.int(8, 15);
@@ -887,8 +895,8 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     else if (r.dist === 2) count = 2;
     else count = rng.int(2, 3);
     if (r.kind === 'key' || r.kind === 'exit') count += 1;
-    // later sectors push harder
-    if (difficulty >= 2 && r.dist >= 2) count += 1;
+    // later sectors push harder (from sector 3: sector 2 was a wall)
+    if (difficulty >= 3 && r.dist >= 2) count += 1;
     if (difficulty >= 3 && r.kind !== 'normal') count += 1;
     // the deep Biofoundry (sector 5): the other curves are capped by now, so
     // the far rooms get one more body (sectors 1–4 are untouched)
@@ -903,9 +911,12 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
       addEnemy({ kind: ranged ? 'sentinel' : 'husk', x, z, roomId: r.id });
     }
     // ticker nests: packs of suicide crawlers, more common deeper in (none in
-    // the sector 1 opener)
-    if (difficulty >= 2 && r.dist >= 1 && rng.chance(0.3 + (difficulty - 1) * 0.15)) {
-      const pack = rng.int(1, Math.min(3, 1 + difficulty));
+    // the sector 1 opener). Sector 2 only meets lone tickers, in about a
+    // quarter of the rooms; sector 3 pairs at most; full packs from sector 4.
+    // Enemies per sector now climb ~12 → ~20 → ~38 → ~61 (it was 12 → 46).
+    const tickerP = difficulty === 2 ? 0.25 : difficulty === 3 ? 0.35 : 0.3 + (difficulty - 1) * 0.15;
+    if (difficulty >= 2 && r.dist >= 1 && rng.chance(tickerP)) {
+      const pack = difficulty === 2 ? 1 : rng.int(1, Math.min(difficulty === 3 ? 2 : 3, 1 + difficulty));
       for (let i = 0; i < pack; i++) {
         const [x, z] = freeSpot(r);
         addEnemy({ kind: 'ticker', x, z, roomId: r.id });
@@ -919,6 +930,17 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
         const [x, z] = freeSpot(r);
         addEnemy({ kind: 'brute', x, z, roomId: r.id });
       }
+    }
+  }
+
+  // sector 2 introduces the ticker: always at least one, alone, in a room two
+  // or more steps from spawn (the rolls above can miss every room)
+  if (difficulty === 2 && !enemies.some((e) => e.kind === 'ticker')) {
+    const far = rooms.filter((r) => r.kind !== 'spawn' && r.dist >= 2 && !(boss && r.id === boss.roomId));
+    const r = far.length ? far[rng.int(0, far.length - 1)] : null;
+    if (r) {
+      const [x, z] = freeSpot(r);
+      addEnemy({ kind: 'ticker', x, z, roomId: r.id });
     }
   }
 

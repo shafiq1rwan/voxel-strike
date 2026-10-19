@@ -33,11 +33,12 @@ import { biofoundryTerminal, decorateBiofoundry } from './preview/biofoundry';
 
 type GameState = 'title' | 'playing' | 'paused' | 'overload' | 'dead' | 'intermission' | 'won';
 
-/** Injected by main.ts for `?sector4` (web builds only; lazy-loaded, never on Poki). */
 /** what a preview's decorate() hands back: scenery plus optional live hooks */
 export interface PreviewArt {
   group: THREE.Group;
   dispose(): void;
+  /** Return true when preview machinery consumes a voxel hit. */
+  voxelHit?(x: number, y: number, z: number, game: Game): boolean;
   /** per frame while the sim runs (authority only) */
   update?(dt: number, game: Game): void;
   /** a shot or blast hit a TankGlass voxel */
@@ -47,6 +48,9 @@ export interface PreviewArt {
 }
 
 export interface LevelPreview {
+  /** Authored previews default to the original Biofoundry's sector number/name. */
+  sector?: number;
+  name?: string;
   generate(seed: number): LevelData;
   decorate(level: LevelData): PreviewArt;
   showScreen(onStart: () => void, onLeave: () => void, cleared?: boolean): () => void;
@@ -237,7 +241,7 @@ export class Game {
   private fpWasGround = true;
 
   constructor(parent: HTMLElement, private readonly preview?: LevelPreview) {
-    if (preview) this.levelIndex = 4;
+    if (preview) this.levelIndex = preview.sector ?? 4;
     this.rendererSys = new Renderer(parent);
     this.camera = this.rendererSys.camera;
     this.input = new Input(this.rendererSys.renderer.domElement);
@@ -581,7 +585,7 @@ export class Game {
       this.bossEnemy.setBossFacing(b.yaw);
     }
     // endless depths: every enemy is a little tougher (+8% a depth, up to +80%)
-    if (this.levelIndex > TOTAL_SECTORS) {
+    if (this.endless) {
       const k = Math.min(1.8, 1 + 0.08 * (this.levelIndex - TOTAL_SECTORS));
       for (const e of this.enemies.list) e.maxHp = e.hp = Math.round(e.hp * k);
       if (!this.preview && this.levelIndex > Number(storageGet(BEST_DEPTH_KEY) ?? 0)) {
@@ -905,7 +909,7 @@ export class Game {
   private resetRun(): void {
     this.baseSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
     this.applyCheckpoint({
-      v: 1, seed: this.baseSeed, sector: (this.preview) ? 4 : 1, score: 0, health: 100, armor: 0,
+      v: 1, seed: this.baseSeed, sector: this.preview ? (this.preview.sector ?? 4) : 1, score: 0, health: 100, armor: 0,
       ammo: { bullets: 48, shells: 0, rockets: 0, cells: 0 },
       owned: ['pistol'], current: 'pistol',
       totalKills: 0, totalEnemies: 0, totalSecretsFound: 0, totalSecrets: 0, totalTime: 0,
@@ -1052,7 +1056,7 @@ export class Game {
     else this.resetRun();
     this.buildLevel();
     this.captureCheckpoint();
-    this.enterSector((this.preview) ? 'BIOFOUNDRY PREVIEW: second attempt.' : `SECTOR ${this.levelIndex} of ${this.totalSectors} — second attempt. Follow the arrow.`, adShown);
+    this.enterSector(this.preview ? `${this.preview.name ?? 'BIOFOUNDRY'} PREVIEW: second attempt.` : `SECTOR ${this.levelIndex} of ${this.totalSectors} — second attempt. Follow the arrow.`, adShown);
   }
 
   /**
@@ -1254,7 +1258,7 @@ export class Game {
       this.hud.updateStats(this.player);
       this.hud.updateWeapon(this.weapons);
       this.captureCheckpoint();
-      this.enterSector('BIOFOUNDRY PREVIEW — find the red keycard. Campaign saves are untouched.', false);
+      this.enterSector(`${this.preview.name ?? 'BIOFOUNDRY'} PREVIEW — find the red keycard. Campaign saves are untouched.`, false);
       return;
     }
     this.captureCheckpoint();
@@ -1326,7 +1330,7 @@ export class Game {
 
   /** past the campaign: endless depths (solo) */
   private get endless(): boolean {
-    return this.levelIndex > TOTAL_SECTORS;
+    return !this.preview && this.levelIndex > TOTAL_SECTORS;
   }
 
   /**
@@ -1350,7 +1354,7 @@ export class Game {
     return n > TOTAL_SECTORS ? `depth ${n}` : `sector ${n}`;
   }
 
-  /** a hand-built level replaces levelgen only in a preview run (`?sector4`) */
+  /** A hand-built level replaces levelgen only in an explicitly selected preview. */
   private authoredLevel(): LevelPreview | null {
     return this.preview ?? null;
   }
@@ -1643,6 +1647,7 @@ export class Game {
       this.net?.sendVoxelDamage(x, y, z, dmg);
       return;
     }
+    if (dmg > 0 && this.previewArt?.voxelHit?.(x, y, z, this)) return;
     // a specimen tank isn't destructible, but shooting it wakes what's inside
     if (this.previewArt?.tankHit && this.world.get(x, y, z) === Block.TankGlass) {
       this.previewArt.tankHit(x, y, z, this);
@@ -1804,7 +1809,7 @@ export class Game {
     if (this.weapons.bashing) this.skinStat('bashKills');
     this.punchFOV(0.8);
     // score: kill value scaled by the combo chain (kills within 2.5s of each other)
-    let points = e.kind === 'broodkeeper' ? 2500 : e.kind === 'brute' ? 300 : e.kind === 'sentinel' ? 150 : e.kind === 'ticker' ? 75 : 100;
+    let points = e.kind === 'broodkeeper' ? 2500 : e.kind === 'brute' || e.kind === 'cinderHulk' ? 300 : e.kind === 'sentinel' || e.kind === 'kilnDrone' ? 150 : e.kind === 'ticker' ? 75 : 100;
     if (e.lastHitHead) points += 50; // headshot kill bonus
     this.comboChain = this.comboTimer > 0 ? this.comboChain + 1 : 1;
     this.comboTimer = 2.5;
@@ -1863,7 +1868,7 @@ export class Game {
     const keyRoom = this.level.rooms.find((r) => r.kind === 'key');
     if (!keyRoom) return;
     const specs: EnemySpec[] = [];
-    const want = Math.min(5, 2 + this.levelIndex);
+    const want = Math.min(5, this.level.responseCount ?? 2 + this.levelIndex);
     for (let tries = 0; tries < 80 && specs.length < want; tries++) {
       const x = keyRoom.x + 1 + Math.floor(Math.random() * (keyRoom.w - 2));
       const z = keyRoom.z + 1 + Math.floor(Math.random() * (keyRoom.d - 2));
@@ -1872,10 +1877,11 @@ export class Game {
       const dz = z + 0.5 - this.player.pos.z;
       if (dx * dx + dz * dz < 3.5 * 3.5) continue; // never inside the player's face
       const kind: EnemySpec['kind'] =
-        specs.length === 0 ? 'husk'
-        : Math.random() < 0.45 ? 'ticker'
-        : this.levelIndex >= 2 && Math.random() < 0.4 ? 'sentinel'
-        : 'husk';
+        this.level.responseKinds?.[specs.length % this.level.responseKinds.length] ?? (
+          specs.length === 0 ? 'husk'
+          : Math.random() < 0.45 ? 'ticker'
+          : this.levelIndex >= 2 && Math.random() < 0.4 ? 'sentinel'
+          : 'husk');
       specs.push({ kind, x: x + 0.5, z: z + 0.5, roomId: keyRoom.id });
     }
     if (!specs.length) return;
@@ -1936,7 +1942,7 @@ export class Game {
       const changed = this.objStage !== null;
       this.objStage = stage;
       const o = OBJECTIVES[stage];
-      this.hud.setObjective(this.levelIndex, this.totalSectors, o.text, o.color, changed, o.icon);
+      this.hud.setObjective(this.levelIndex, this.totalSectors, o.text, o.color, changed, o.icon, !!this.preview);
     }
     const t = this.objectiveTarget(stage);
     if (!t) {
