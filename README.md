@@ -4,6 +4,8 @@ An original browser FPS in the spirit of 1990s shooters — dark sci-fi
 industrial dungeons, chunky voxel geometry, colored lighting, and pixelated
 retro rendering. Built with **TypeScript + Three.js + Vite**.
 
+![VOXELSTRIKE main screen: the voxel wordmark, "Escape the facility", the three goal steps (find the red keycard, open the red door, ride the lift out) and the PLAY button](docs/images/title-screen.png)
+
 Everything is generated procedurally at runtime: the level layout, the
 texture atlas, the enemy and weapon models, and every sound effect (WebAudio
 synthesis). There are no external or copied assets.
