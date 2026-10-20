@@ -79,13 +79,18 @@ function makeKey(color: number): THREE.Object3D {
 /** size of a floor weapon relative to the held one, so it reads across a room */
 const WEAPON_PICKUP_SCALE = 1.15;
 
+/** which gun a thrown-gun pickup gives back (weapons/thrown.ts drops them) */
+const THROWN_GUN: Partial<Record<PickupKind, WeaponId>> = {
+  weaponShotgun: 'shotgun', weaponSMG: 'smg', weaponRocket: 'rocket', weaponArc: 'arc',
+};
+
 /**
  * A weapon pickup is the same box model as the first-person gun
  * (`buildWeaponModel`), so what you see on the floor is what you get. It
  * spins around its own middle, and unlike the view model it sits in the
  * world, so it takes fog.
  */
-function weaponPickup(id: WeaponId): THREE.Object3D {
+export function weaponPickup(id: WeaponId): THREE.Object3D {
   const gun = buildWeaponModel(id).group;
   gun.scale.setScalar(WEAPON_PICKUP_SCALE); // drop the view model's own scale/offset
   gun.position.set(0, 0, 0);
@@ -345,6 +350,26 @@ export class PickupManager {
     this.group.add(p.glow);
   }
 
+  /** a thrown gun comes back only if it isn't in hand again already */
+  private wants(p: Pickup, game: Game): boolean {
+    if (p.spec.thrown) {
+      const id = THROWN_GUN[p.spec.kind];
+      return !!id && !game.weapons.has(id);
+    }
+    return this.wouldCollect(p.spec.kind, game);
+  }
+
+  /** take a thrown gun back: the gun only (its ammo was spent), no switch */
+  private reclaim(p: Pickup, game: Game): boolean {
+    const id = THROWN_GUN[p.spec.kind];
+    if (!id || game.weapons.has(id)) return false;
+    game.weapons.reclaim(id, game);
+    game.audio.play('pickupWeapon');
+    game.hud.message('Picked your gun back up. It needs ammo.');
+    game.hud.pickupFlash();
+    return true;
+  }
+
   /** would collecting this item do anything right now? (drives magnetism) */
   private wouldCollect(kind: PickupKind, game: Game): boolean {
     const pl = game.player;
@@ -379,7 +404,7 @@ export class PickupManager {
       const dz = pl.pos.z - p.obj.position.z;
       const d2 = dx * dx + dy * dy + dz * dz;
       // magnetism: useful items drift toward the player
-      if (d2 < 6.25 && d2 > 0.5 && this.wouldCollect(p.spec.kind, game)) {
+      if (d2 < 6.25 && d2 > 0.5 && this.wants(p, game)) {
         const d = Math.sqrt(d2);
         const pull = (7.5 * dt) / d;
         p.obj.position.x += dx * pull;
@@ -393,7 +418,7 @@ export class PickupManager {
         if (game.isNetClient) {
           // the host owns pickups: ask for it, apply on the echo
           if (this.wouldCollect(p.spec.kind, game)) game.net?.claimPickup(this.items.indexOf(p));
-        } else if (this.tryCollect(p.spec.kind, game)) {
+        } else if (p.spec.thrown ? this.reclaim(p, game) : this.tryCollect(p.spec.kind, game)) {
           this.take(p);
           game.net?.sendPickupTaken(this.items.indexOf(p), false, p.spec.kind);
         }

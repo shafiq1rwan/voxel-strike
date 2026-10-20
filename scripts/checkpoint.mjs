@@ -258,7 +258,7 @@ try {
   check(!restored.overlay && restored.pause, 'context restored → overlay gone, pause menu shown');
 
   // --- 8. finish the campaign → save cleared → new layout in place ------------
-  await g(() => { const game = window.__voxelstrike; game.state = 'playing'; game.hud.hideScreen(); game.levelIndex = 5; game.win(); });
+  await g(() => { const game = window.__voxelstrike; game.state = 'playing'; game.hud.hideScreen(); game.levelIndex = 7; game.win(); });
   await sleep(200);
   check((await save()) === null, 'campaign complete clears the save');
   // the last sector's clear screen ends in the results + buttons (armed after the tally)

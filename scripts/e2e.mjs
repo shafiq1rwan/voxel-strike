@@ -136,7 +136,7 @@ try {
   }
   await page.screenshot({ path: `${OUT}/e2e-2-barrel.png` });
 
-  // --- play all five sectors -------------------------------------------------
+  // --- play all seven sectors ------------------------------------------------
   const completeLevel = async (sector) => {
     // a boss sector: the Broodkeeper carries the keycard — kill it first
     const boss = await page.evaluate(async () => {
@@ -234,9 +234,9 @@ try {
   };
 
   let sector4Occupied = 0;
-  for (let sector = 1; sector <= 5; sector++) {
+  for (let sector = 1; sector <= 7; sector++) {
     const endState = await completeLevel(sector);
-    if (sector < 5) {
+    if (sector < 7) {
       check(endState === 'intermission', `sector ${sector}: reached exit → intermission (state=${endState})`);
       // the sector-clear moment: a click skips the tally, then a perk card descends
       const clear = await page.evaluate(() => ({
@@ -304,6 +304,9 @@ try {
           occupied: g.level.bio?.tanks.filter((t) => t.occupied).length ?? 0,
           dormant: g.enemies.list.filter((e) => e.kind === 'vatborn' && e.dormant).length,
           labFloor: g.world.get(Math.floor(g.level.spawn.x), 0, Math.floor(g.level.spawn.z)) === 24,
+          kinds: [...new Set(g.enemies.list.map((e) => e.kind))],
+          heat: (() => { let n = 0; for (let z = 0; z < g.world.sz; z++) for (let x = 0; x < g.world.sx; x++) if (g.world.get(x, 0, z) === 32) n++; return n; })(),
+          banner: localStorage.getItem('voxelstrike-geothermal-seen'),
           termTanks: [...document.querySelectorAll('.term-line')].map((l) => l.textContent).find((t) => t.includes('TANKS')) ?? '',
         };
       });
@@ -327,8 +330,18 @@ try {
         check(info.save?.sector === 5, `progress saved at sector 5 (${info.save?.sector})`);
         await page.screenshot({ path: `${OUT}/e2e-3d-sector5.png` });
       }
+      if (sector === 5 || sector === 6) {
+        // sectors 6-7: the Geothermal Core, generated like the rest, with its own monsters
+        const n = sector + 1;
+        check(info.theme === 'geothermal' && info.heat > 0, `sector ${n} is a generated Geothermal Core (theme=${info.theme}, ${info.heat} heat seam cells)`);
+        check(['ventStalker', 'kilnDrone', 'cinderHulk'].every((k) => info.kinds.includes(k)),
+          `sector ${n} fields the core's monsters (${info.kinds.join(', ')})`);
+        check(info.save?.sector === n, `progress saved at sector ${n} (${info.save?.sector})`);
+        if (n === 6) check(info.banner === '1', 'entering the core ends the NEW SECTOR banner');
+        await page.screenshot({ path: `${OUT}/e2e-3e-sector${n}.png` });
+      }
     } else {
-      check(endState === 'won', `sector 5: campaign complete (state=${endState})`);
+      check(endState === 'won', `sector 7: campaign complete (state=${endState})`);
       const fin = await page.evaluate(() => ({
         head: document.querySelector('#sector-clear h1')?.textContent ?? '',
         rank: document.querySelector('.sc-rank-letter')?.textContent ?? '',
@@ -337,12 +350,12 @@ try {
       }));
       check(fin.head.includes('CAMPAIGN COMPLETE') && /^[SABC]$/.test(fin.rank) && fin.perks === 0,
         `the last clear is CAMPAIGN COMPLETE, ranked ${fin.rank}, no perk offer`);
-      check(fin.owned === 4, `four perks were collected over the run (${fin.owned})`);
+      check(fin.owned === 6, `six perks were collected over the run (${fin.owned})`);
       await page.screenshot({ path: `${OUT}/e2e-4-campaign.png` });
     }
   }
 
-  // --- endless: Keep descending → depth 6, then a depth clear offers perks ----
+  // --- endless: Keep descending → depth 8, then a depth clear offers perks ----
   let descendReady = false;
   for (let i = 0; i < 60 && !descendReady; i++) {
     await new Promise((r) => setTimeout(r, 100));
@@ -361,12 +374,12 @@ try {
       best: Number(localStorage.getItem('voxelstrike-best-depth') || 0),
     };
   });
-  check(depth6.idx === 6 && depth6.state === 'playing' && depth6.theme === 'facility',
-    `Keep descending → depth 6 (${depth6.theme}, state ${depth6.state})`);
-  check(depth6.label === 'DEPTH' && depth6.num === '6', `the HUD reads DEPTH 6 (${depth6.label} ${depth6.num})`);
-  check(depth6.save?.sector === 6 && depth6.best >= 6, `depth 6 is saved and recorded as the deepest (${depth6.save?.sector}, best ${depth6.best})`);
-  await page.screenshot({ path: `${OUT}/e2e-5-depth6.png` });
-  const endState6 = await completeLevel(6);
+  check(depth6.idx === 8 && depth6.state === 'playing' && depth6.theme === 'facility',
+    `Keep descending → depth 8 (${depth6.theme}, state ${depth6.state})`);
+  check(depth6.label === 'DEPTH' && depth6.num === '8', `the HUD reads DEPTH 8 (${depth6.label} ${depth6.num})`);
+  check(depth6.save?.sector === 8 && depth6.best >= 8, `depth 8 is saved and recorded as the deepest (${depth6.save?.sector}, best ${depth6.best})`);
+  await page.screenshot({ path: `${OUT}/e2e-5-depth8.png` });
+  const endState6 = await completeLevel(8);
   const clear6 = await page.evaluate(() => ({
     rank: document.querySelector('.sc-rank-letter')?.textContent ?? '',
     cards: document.querySelectorAll('.sc-perk').length,

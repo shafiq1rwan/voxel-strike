@@ -55,6 +55,37 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-20 — Safe area on notched phones (owner asked): the page was
+  already edge to edge (`viewport-fit=cover`) with nothing keeping the HUD
+  out from under the notch and home bar. Touch buttons, MAP/pause, the HUD
+  corners, the title's corner buttons and the menus now add
+  `env(safe-area-inset-*)` (remapped for the rotated portrait mode). No
+  change on desktop or notch-less phones; Poki's iframe reports 0.
+
+- 2026-10-20 — Thrown guns (owner): pull the trigger on an empty gun with
+  another one loaded and you throw it — end over end at what you aim at,
+  a melee-weight hit with a shove — and the next loaded gun comes up on
+  every device. It lands as a pickup that gives the gun back empty. The
+  sidearm is never thrown (it just switches); nothing loaded is still a
+  dry click.
+
+- 2026-10-20 — The Geothermal Core's Power Link puzzle in the generated
+  sectors 6–7 (owner: "i want that puzzles", from Codex's `?sector6`
+  preview): every core sector has a sealed SUPPLY CACHE (health, armor,
+  ammo) in a normal room and a POWER LINK node in that room's wall, joined
+  by an amber cable around the walls; shoot the node, the cable turns green
+  and the gate sinks. Optional, never on the route. Also steam over the heat
+  seams and a GEOTHERMAL CORE sign in the spawn room.
+
+- 2026-10-20 — Geothermal Core as sectors 6–7 (owner): the campaign is 7
+  sectors; endless starts at depth 8 and rotates facility / Biofoundry /
+  core every two depths; the Broodkeeper stays at sector 5 and every 5th
+  depth. A generated `'geothermal'` theme: basalt walls, flush molten heat
+  seams, warm lamps, Vent Stalkers / Kiln Drones / a Cinder Hulk mixed into
+  the roster, tuned so sector 6 is no harder than 5. The NEW SECTOR banner
+  now advertises it to returning players. Poki: levels 6–7 are `level`
+  events, `endless` starts at 8.
+
 - 2026-10-19 — Exit-room reference pass: riveted gray/rusted panels on walls
   and ledge, steel floor and dark ceiling, two warm work lights, local green
   exit glow, worn/bolted lift steel and framed green threshold. Added motor

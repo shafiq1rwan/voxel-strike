@@ -156,6 +156,33 @@ try {
   check(bio.scene < SCENE_MAX_DRAWS, `Biofoundry, all awake: ${bio.scene.toFixed(0)} world draws per frame (< ${SCENE_MAX_DRAWS})`);
   check(bioInfo.after === bioInfo.before, `Biofoundry: shader programs stable after level start (${bioInfo.before} -> ${bioInfo.after})`);
 
+  // 6. the Geothermal Core at its heaviest (sector 7): its monsters are
+  // bigger rigs than the old roster — same budget, no late shader compiles
+  await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.levelIndex = 7;
+    g.buildLevel();
+    g.state = 'playing';
+    g.player.health = 99999;
+    g.input.locked = true;
+  });
+  await sleep(600);
+  await page.evaluate(() => {
+    window.__programs7 = window.__voxelstrike.rendererSys.renderer.info.programs.length;
+    const g = window.__voxelstrike;
+    for (const e of g.enemies.list) e.wake(g);
+  });
+  await sleep(1500);
+  const geo = await drawsOver(30);
+  const geoInfo = await page.evaluate(() => ({
+    theme: window.__voxelstrike.level.theme,
+    before: window.__programs7,
+    after: window.__voxelstrike.rendererSys.renderer.info.programs.length,
+  }));
+  check(geoInfo.theme === 'geothermal', 'sector 7 is built as the Geothermal Core');
+  check(geo.scene < SCENE_MAX_DRAWS, `Geothermal Core, all awake: ${geo.scene.toFixed(0)} world draws per frame (< ${SCENE_MAX_DRAWS})`);
+  check(geoInfo.after === geoInfo.before, `Geothermal Core: shader programs stable after level start (${geoInfo.before} -> ${geoInfo.after})`);
+
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {
   await browser.close();

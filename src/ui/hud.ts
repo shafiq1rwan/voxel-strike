@@ -31,6 +31,21 @@ const CSS = `
 .screen.overload-screen .offer-summary { font-size:16px; line-height:1.6; color:#cfd6e4; margin:16px 0 24px; }
 .overload-screen button:disabled { opacity:.4; cursor:default; }
 @media(max-height:450px) { .overload-screen .panel { padding:14px; } .screen.overload-screen h1 { font-size:22px; } .overload-screen p { font-size:12px; } .overload-screen .reward { width:170px; padding:8px; font-size:12px; } .overload-screen small { margin-top:4px; } }
+/* safe area: index.html asks for viewport-fit=cover (edge to edge, under the
+   notch / rounded corners / home bar), so everything pinned to an edge adds
+   these. They are 0 on desktops, notch-less phones and inside Poki's iframe.
+   The crosshair, automap and centred panels never move. */
+body {
+  --sat: env(safe-area-inset-top, 0px); --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px); --sal: env(safe-area-inset-left, 0px);
+}
+/* a portrait phone rotated into landscape (body.force-landscape, 90° clockwise):
+   the game's top is the device's right, its right the bottom, its bottom the
+   left, its left the top (the notch) */
+body.force-landscape {
+  --sat: env(safe-area-inset-right, 0px); --sar: env(safe-area-inset-bottom, 0px);
+  --sab: env(safe-area-inset-left, 0px); --sal: env(safe-area-inset-top, 0px);
+}
 #hud, #hud * { box-sizing: border-box; font-family: 'Courier New', Courier, monospace; }
 #hud {
   position: fixed; inset: 0; pointer-events: none; color: #cfd6e4;
@@ -63,7 +78,8 @@ const CSS = `
 /* ---------------- facility terminal (sector 3 -> 4 descent) ---------------- */
 .term-screen {
   position: fixed; inset: 0; z-index: 12; background: #05060a; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; padding: 16px;
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));
   font-family: 'Courier New', Courier, monospace;
 }
 .term {
@@ -272,7 +288,7 @@ const CSS = `
   .term-foot { font-size: 9px; padding: 3px 10px 6px; }
 }
 /* top-left: vitals */
-#vitals { position: absolute; top: 12px; left: 14px; display: flex; gap: 8px; }
+#vitals { position: absolute; top: calc(12px + var(--sat)); left: calc(14px + var(--sal)); display: flex; gap: 8px; }
 .pill { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 10px; }
 .pill .value { font-size: 22px; font-weight: bold; line-height: 1; color: #f0f2f6; }
 .pill .unit { font-size: 13px; font-weight: bold; letter-spacing: 1px; color: #cfd6e4; }
@@ -280,7 +296,7 @@ const CSS = `
 #hp.low .value { color: #ff4030; animation: pulse .5s infinite alternate; }
 /* top-right: sector, map + pause, score */
 #topright {
-  position: absolute; top: 12px; right: 14px; display: flex; flex-direction: column;
+  position: absolute; top: calc(12px + var(--sat)); right: calc(14px + var(--sar)); display: flex; flex-direction: column;
   align-items: flex-end; gap: 8px;
 }
 #obj-head { font-size: 15px; font-weight: bold; letter-spacing: 3px; color: #cfd6e4; }
@@ -313,7 +329,7 @@ const CSS = `
 body.touch-mode #bossbar { width: min(300px, 40vw); }
 body.touch-mode #boss-head { font-size: 10px; }
 #objective {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: calc(12px + var(--sat)); left: 50%; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   max-width: 46vw; text-align: center;
 }
@@ -354,7 +370,7 @@ body.touch-mode #boss-head { font-size: 10px; }
 #obj-nav.here #obj-dial { border-color: #ffd028; box-shadow: 0 0 10px rgba(255,208,40,.5); }
 /* bottom-center: weapon slots + keycards */
 #weaponbar {
-  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: calc(18px + var(--sab)); transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px;
 }
 #slots { display: flex; gap: 10px; }
@@ -377,19 +393,19 @@ body.touch-mode #boss-head { font-size: 10px; }
 .key.blue { color: #3878ff; } .key.yellow { color: #ffd028; }
 .key.have { display: flex; opacity: 1; border-color: currentColor; box-shadow: 0 0 8px rgba(0,0,0,.4), inset 0 0 6px rgba(255,255,255,.08); }
 /* bottom-right: weapon + ammo */
-#ammo-block { position: absolute; right: 18px; bottom: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+#ammo-block { position: absolute; right: calc(18px + var(--sar)); bottom: calc(14px + var(--sab)); display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 #weaponname { font-size: 14px; font-weight: bold; letter-spacing: 3px; color: #cfd6e4; }
 #ammo { display: flex; align-items: center; gap: 12px; }
 #ammo .value { font-size: 34px; font-weight: bold; line-height: 1; color: #f0f2f6; min-width: 2ch; text-align: right; }
 #ammo-block .label { font-size: 11px; font-weight: bold; letter-spacing: 3px; color: #cfd6e4; }
 /* desktop minimap sits under the vitals (automap.ts draws it) */
 #hud #minimap {
-  position: absolute; top: 58px; left: 14px; width: 124px; height: 124px;
+  position: absolute; top: calc(58px + var(--sat)); left: calc(14px + var(--sal)); width: 124px; height: 124px;
   image-rendering: pixelated; background: rgba(5,6,10,.78); border: 1px solid #6a7488;
   box-shadow: 0 2px 0 rgba(0,0,0,.35);
 }
 #messages {
-  position: absolute; top: 196px; left: 14px; font-size: 14px; color: #e8ecf4;
+  position: absolute; top: calc(196px + var(--sat)); left: calc(14px + var(--sal)); font-size: 14px; color: #e8ecf4;
   display: flex; flex-direction: column; gap: 3px; max-width: 40vw;
 }
 #messages div { animation: msgfade 3.5s forwards; }
@@ -426,10 +442,12 @@ body.touch-mode #boss-head { font-size: 10px; }
 /* weapon skins: a three-band paint chip */
 .sw { display: inline-flex; width: 20px; height: 11px; border: 1px solid #000; box-shadow: 0 0 0 1px rgba(255,255,255,.12); flex: none; }
 .sw i { flex: 1; }
-/* next-skin progress: pops in under the score when it moves, fades after a few seconds */
+/* next-skin progress: pops in bottom-left when it moves, fades after a few seconds
+   (owner's call: under the score it sat beneath the touch weapon button) */
 #unlock {
-  display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding: 5px 8px;
-  background: rgba(8,10,16,.7); border: 1px solid #262c38; border-right: 3px solid #55e0ff;
+  position: absolute; left: calc(14px + var(--sal)); bottom: calc(34px + var(--sab));
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 5px 8px;
+  background: rgba(8,10,16,.7); border: 1px solid #262c38; border-left: 3px solid #55e0ff;
   opacity: 0; transition: opacity .6s; pointer-events: none;
 }
 #unlock.show { opacity: 1; transition: opacity .15s; }
@@ -438,7 +456,7 @@ body.touch-mode #boss-head { font-size: 10px; }
 #unlock .u-label { color: #55e0ff; font-weight: bold; }
 #unlock .u-bar { width: 170px; height: 4px; background: rgba(0,0,0,.6); border: 1px solid #39404f; }
 #u-fill { height: 100%; width: 0; background: #55e0ff; box-shadow: 0 0 6px rgba(85,224,255,.6); transition: width .25s; }
-body.touch-mode #unlock { padding: 3px 6px; }
+body.touch-mode #unlock { left: calc(10px + var(--sal)); bottom: calc(10px + var(--sab)); padding: 3px 6px; }
 body.touch-mode #unlock .u-row { font-size: 9px; }
 body.touch-mode #unlock .u-bar { width: 130px; }
 /* SKIN UNLOCKED: a cyan stamp, the new paint's name + chip */
@@ -571,7 +589,7 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 .buff.shield { color: #55e0ff; border-color: #55e0ff; }
 .buff.haste { color: #ff8030; border-color: #ff8030; }
 #hint {
-  position: absolute; left: 50%; bottom: 74px; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: calc(74px + var(--sab)); transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
   padding: 8px 16px; font-size: 13px; letter-spacing: 2px; color: #e8ecf4;
   background: rgba(8,10,16,.78); border: 1px solid #ffd028; max-width: 90vw;
@@ -627,6 +645,7 @@ body.touch-mode .secret-found span { font-size: 12px; }
   position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
   justify-content: center; background: rgba(4,6,10,.86); color: #cfd6e4;
   pointer-events: auto; cursor: pointer; z-index: 10; text-align: center;
+  padding: var(--sat) var(--sar) var(--sab) var(--sal); box-sizing: border-box;
 }
 .screen h1 { font-size: 52px; letter-spacing: 8px; margin: 0 0 8px; color: #e8524a;
   text-shadow: 3px 3px 0 #000, 0 0 24px rgba(232,82,74,.5); }
@@ -662,7 +681,7 @@ body.touch-mode .secret-found span { font-size: 12px; }
 }
 .panel::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
 .panel::after { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
-#fps { position: absolute; left: 14px; bottom: 10px; font-size: 12px; color: #566076; }
+#fps { position: absolute; left: calc(14px + var(--sal)); bottom: calc(10px + var(--sab)); font-size: 12px; color: #566076; }
 
 /* ---------------- touch controls ---------------- */
 #touchui { position: absolute; inset: 0; pointer-events: none; }
@@ -693,12 +712,12 @@ body.touch-mode .secret-found span { font-size: 12px; }
 }
 /* FIRE, JUMP and the weapon button stack against the right edge: anything
    further in sits where the thumb drags to aim and gets hit by look swipes */
-#tfire { right: 18px; bottom: 18px; width: 104px; height: 104px; font-size: 16px; }
-#tjump { right: 37px; bottom: 134px; }
+#tfire { right: calc(18px + var(--sar)); bottom: calc(18px + var(--sab)); width: 104px; height: 104px; font-size: 16px; }
+#tjump { right: calc(37px + var(--sar)); bottom: calc(134px + var(--sab)); }
 /* quick melee: up and in from FIRE, so the firing thumb rolls onto it (never the aim side) */
-#tmelee { right: 122px; bottom: 112px; width: 56px; height: 56px; font-size: 11px; }
+#tmelee { right: calc(122px + var(--sar)); bottom: calc(112px + var(--sab)); width: 56px; height: 56px; font-size: 11px; }
 /* weapon button above JUMP: tap = next, swipe = prev/next, hold = wheel */
-#tweapon { right: 37px; bottom: 210px; flex-direction: column; gap: 2px; line-height: 1; }
+#tweapon { right: calc(37px + var(--sar)); bottom: calc(210px + var(--sab)); flex-direction: column; gap: 2px; line-height: 1; }
 #tweapon .ico { opacity: .75; }
 #tweapon-num { font-size: 18px; color: #ffd028; }
 #tweapon-name { font-size: 7.5px; letter-spacing: .5px; max-width: 60px; overflow: hidden; white-space: nowrap; }
@@ -716,13 +735,13 @@ body.touch-mode .secret-found span { font-size: 12px; }
 .twheel-item.pick { color: #ffd028; border-color: #ffd028; background: rgba(40,32,8,.92); transform: scale(1.18); }
 /* map + pause sit exactly where the desktop buttons are (#sysbtns) */
 #tmap, #tpause {
-  top: 34px; height: 34px; border-radius: 0; border-width: 1px; border-color: #6a7488;
+  top: calc(34px + var(--sat)); height: 34px; border-radius: 0; border-width: 1px; border-color: #6a7488;
   background: rgba(8,10,16,.74); font-size: 13px; letter-spacing: 2px;
 }
-#tpause { right: 10px; width: 36px; letter-spacing: 0; }
-#tmap { right: 54px; width: 58px; }
+#tpause { right: calc(10px + var(--sar)); width: 36px; letter-spacing: 0; }
+#tmap { right: calc(54px + var(--sar)); width: 58px; }
 #tammo {
-  position: absolute; right: 134px; bottom: 30px; display: flex; align-items: center; gap: 8px;
+  position: absolute; right: calc(134px + var(--sar)); bottom: calc(30px + var(--sab)); display: flex; align-items: center; gap: 8px;
   font: bold 22px 'Courier New', Courier, monospace; color: #f0f2f6;
   text-shadow: 2px 2px 0 #000; pointer-events: none; letter-spacing: 1px;
 }
@@ -744,35 +763,35 @@ body.force-landscape {
 /* ---------------- mobile HUD layout (touch devices) ---------------- */
 /* thumbs own the bottom corners: weapons move to the top, ammo sits over FIRE,
    no minimap (the MAP button opens the full automap) */
-body.touch-mode #vitals { top: 8px; left: 10px; gap: 6px; }
+body.touch-mode #vitals { top: calc(8px + var(--sat)); left: calc(10px + var(--sal)); gap: 6px; }
 body.touch-mode .pill { padding: 4px 9px 4px 8px; gap: 6px; }
 body.touch-mode .pill .value { font-size: 18px; }
 body.touch-mode .pill .unit { font-size: 11px; }
 body.touch-mode #hud #minimap { display: none; }
-body.touch-mode #topright { top: 8px; right: 10px; gap: 8px; }
+body.touch-mode #topright { top: calc(8px + var(--sat)); right: calc(10px + var(--sar)); gap: 8px; }
 body.touch-mode #obj-head { font-size: 13px; }
 body.touch-mode #sysbtns .sysbtn { visibility: hidden; } /* the touch #tmap/#tpause sit here */
-body.touch-mode #weaponbar { top: 8px; bottom: auto; gap: 6px; }
+body.touch-mode #weaponbar { top: calc(8px + var(--sat)); bottom: auto; gap: 6px; }
 body.touch-mode #slots { gap: 6px; }
 /* touch: only weapons you own, bigger targets (the weapon button does most switching) */
 body.touch-mode .slot { width: 36px; height: 30px; font-size: 14px; }
 body.touch-mode .slot:not(.owned) { display: none; }
 body.touch-mode .slot.active::after { bottom: -6px; height: 2px; }
 body.touch-mode .key { width: 34px; height: 28px; }
-body.touch-mode #objective { top: 50px; max-width: 40vw; }
+body.touch-mode #objective { top: calc(50px + var(--sat)); max-width: 40vw; }
 body.touch-mode #obj-main { font-size: 12px; padding: 4px 9px 4px 8px; gap: 7px; letter-spacing: .06em; }
 body.touch-mode #obj-nav { font-size: 12px; }
 body.touch-mode #obj-dial { width: 28px; height: 28px; }
 body.touch-mode #obj-arrow { width: 20px; height: 20px; }
 body.touch-mode #ammo-block { display: none; }
-body.touch-mode #messages { top: 52px; left: 10px; font-size: 11px; max-width: 30vw; gap: 2px; }
+body.touch-mode #messages { top: calc(52px + var(--sat)); left: calc(10px + var(--sal)); font-size: 11px; max-width: 30vw; gap: 2px; }
 body.touch-mode #fps { display: none; }
 body.touch-mode #score { font-size: 12px; }
 body.touch-mode #kills { font-size: 11px; }
 body.touch-mode .buff { font-size: 10px; padding: 2px 6px; }
 body.touch-mode .streak { font-size: 19px; letter-spacing: 4px; }
 /* the hint sits low, between the thumbs */
-body.touch-mode #hint { bottom: 12px; max-width: 46vw; font-size: 11px; padding: 6px 10px; gap: 6px; }
+body.touch-mode #hint { bottom: calc(12px + var(--sab)); max-width: 46vw; font-size: 11px; padding: 6px 10px; gap: 6px; }
 
 /* ---------------- small screens ---------------- */
 @media (max-width: 760px) {
@@ -797,7 +816,7 @@ body.touch-mode #hint { bottom: 12px; max-width: 46vw; font-size: 11px; padding:
 .tscreen {
   position: fixed; inset: 0; z-index: 10; color: #cfd6e4;
   display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-  padding: 12px 0 13px; box-sizing: border-box;
+  padding: calc(12px + var(--sat)) var(--sar) calc(13px + var(--sab)) var(--sal); box-sizing: border-box;
   overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
   background:
     radial-gradient(ellipse at 50% 115%, rgba(5,6,10,0), rgba(5,6,10,.9) 72%),
@@ -949,14 +968,14 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
 .title-controls b { color: #aab3c4; }
 .title-controls i { font-style: normal; margin: 0 10px; color: #3a4150; }
 .title-gear {
-  position: fixed; top: 14px; right: 16px; z-index: 11; width: 42px; height: 42px;
+  position: fixed; top: calc(14px + var(--sat)); right: calc(16px + var(--sar)); z-index: 11; width: 42px; height: 42px;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
   background: rgba(10,13,20,.72); color: #8a94a8; border: 1px solid #39404f;
 }
 .title-gear:hover { color: #ffd028; border-color: #ffd028; }
 /* top-left, mirroring the gear: the Armory (weapon skins), with the owned count */
 .title-armory {
-  position: fixed; top: 14px; left: 16px; z-index: 11; height: 42px; padding: 0 14px 0 12px;
+  position: fixed; top: calc(14px + var(--sat)); left: calc(16px + var(--sal)); z-index: 11; height: 42px; padding: 0 14px 0 12px;
   display: flex; align-items: center; gap: 9px; cursor: pointer;
   font: bold 12px 'Courier New', Courier, monospace; letter-spacing: .2em; text-transform: uppercase;
   background: rgba(10,13,20,.72); color: #cfd6e4; border: 1px solid #39404f; border-left: 3px solid #55e0ff;
@@ -988,12 +1007,12 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   .tstep-text { font-size: 10px; letter-spacing: .1em; }
   .tbtn-play { font-size: 18px; padding: 12px 60px; }
   .title-controls { margin-top: 10px; font-size: 10px; }
-  .title-gear { top: 8px; right: 10px; width: 36px; height: 36px; }
-  .title-armory { top: 8px; left: 10px; height: 36px; padding: 0 10px 0 9px; font-size: 10px; gap: 7px; }
+  .title-gear { top: calc(8px + var(--sat)); right: calc(10px + var(--sar)); width: 36px; height: 36px; }
+  .title-armory { top: calc(8px + var(--sat)); left: calc(10px + var(--sal)); height: 36px; padding: 0 10px 0 9px; font-size: 10px; gap: 7px; }
   /* phones: icon + count only, so it stays clear of the wordmark */
   .title-armory span { display: none; }
   .title-menu { margin-top: 18px; }
-  .tscreen { padding: 4px 0 7px; }
+  .tscreen { padding: calc(4px + var(--sat)) var(--sar) calc(7px + var(--sab)) var(--sal); }
   .title-foot { margin-top: 4px; }
   /* settings: smaller logo + tighter rows so Back fits on a landscape phone */
   #settings-logo { width: min(40vw, 230px); }
@@ -1092,6 +1111,7 @@ export class HUD {
       </div>
       <div id="messages"></div>
       <div id="fps"></div>
+      <div id="unlock"><div class="u-row"><span class="u-label">NEXT SKIN</span><span id="u-sw"></span><b id="u-name"></b></div><div class="u-bar"><div id="u-fill"></div></div><div class="u-row"><span id="u-need"></span><b id="u-n"></b></div></div>
       <div id="vitals">
         <div class="pill hpanel" id="hp">${ICONS.health()}<span class="value">100</span><span class="unit">HP</span></div>
         <div class="pill hpanel" id="armor">${ICONS.armor()}<span class="value">0</span><span class="unit">ARMOR</span></div>
@@ -1105,7 +1125,6 @@ export class HUD {
         <div id="score"><span class="label">SCORE</span><span id="score-num">000000</span><span id="score-mult"></span></div>
         <div id="kills"><span class="label">KILLS</span><span id="kills-num">0 / 0</span></div>
         <div id="buffs"></div>
-        <div id="unlock"><div class="u-row"><span class="u-label">NEXT SKIN</span><span id="u-sw"></span><b id="u-name"></b></div><div class="u-bar"><div id="u-fill"></div></div><div class="u-row"><span id="u-need"></span><b id="u-n"></b></div></div>
       </div>
       <div id="objective">
         <div id="obj-main" class="hpanel"><i id="obj-icon"></i><span id="obj-text"></span><span id="obj-steps"><i></i><i></i><i></i></span></div>
@@ -1419,7 +1438,7 @@ export class HUD {
   private unlockKey = '';
   private unlockHide = 0;
   /**
-   * Next-skin progress under the score: shown when the count moves (or
+   * Next-skin progress, bottom-left: shown when the count moves (or
    * `force`, at a sector start), faded out a few seconds later.
    */
   unlockProgress(next: SkinDef | null, have: number, force = false): void {
@@ -1717,7 +1736,7 @@ export class HUD {
         </div>` : ''}
         ${opts.newSector ? `<div id="new-sector" class="new-sector" role="note">
           <span class="ns-tag">NEW SECTOR</span>
-          <span class="ns-text"><b>THE BIOFOUNDRY</b><i>&middot;</i>SECTORS 4&ndash;5<i>&middot;</i>DON'T WAKE THE TANKS</span>
+          <span class="ns-text"><b>THE GEOTHERMAL CORE</b><i>&middot;</i>SECTORS 6&ndash;7<i>&middot;</i>MIND THE HEAT</span>
         </div>` : ''}
         <div class="title-menu${cont ? ' title-menu-pair' : ''}">
           ${cont

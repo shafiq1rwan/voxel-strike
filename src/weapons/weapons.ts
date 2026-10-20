@@ -721,6 +721,28 @@ export class WeaponSystem {
     this.switchTo(id);
   }
 
+  /** a thrown gun picked back up: owned again, empty, so no switch to it */
+  reclaim(id: WeaponId, game: Game): void {
+    this.owned.add(id);
+    game.hud.updateWeapon(this);
+  }
+
+  /** the gun that was thrown last (tests read it) */
+  lastThrown: WeaponId | null = null;
+
+  /** fling the empty gun in hand; the next one comes straight up (the hand is empty) */
+  private throwCurrent(next: WeaponId, game: Game): void {
+    const id = this.current;
+    this.owned.delete(id);
+    this.models.get(id)!.visible = false;
+    this.raiseT = 0;
+    this.pending = next;
+    this.lastThrown = id;
+    game.thrown.launch(id, game);
+    game.audio.play('meleeSwing');
+    game.hud.message(`Out of ammo: threw the ${WEAPONS[id].name}!`);
+  }
+
   has(id: WeaponId): boolean {
     return this.owned.has(id);
   }
@@ -795,13 +817,16 @@ export class WeaponSystem {
         this.fire(def, game);
       } else if (!this.dryFired) {
         this.dryFired = true;
-        game.audio.play('dryfire');
-        // desktop: just click (number keys are right there). Touch: switching
-        // is a reach mid-fight, so hop to the best weapon that still has ammo.
-        if (game.isTouch) {
-          const next = DRY_SWITCH.find((id) =>
-            id !== this.current && this.owned.has(id) && game.player.ammo[WEAPONS[id].ammoType] >= WEAPONS[id].ammoPerShot);
-          if (next) this.switchTo(next);
+        const next = DRY_SWITCH.find((id) =>
+          id !== this.current && this.owned.has(id) && game.player.ammo[WEAPONS[id].ammoType] >= WEAPONS[id].ammoPerShot);
+        if (next && this.current !== 'pistol' && !game.net) {
+          // out of ammo with something else loaded: throw the empty gun at
+          // them and bring the next one up (it lands as a pickup to reclaim)
+          this.throwCurrent(next, game);
+        } else {
+          game.audio.play('dryfire');
+          // the sidearm (never thrown), co-op and touch hop to the best loaded weapon
+          if (next && (this.current === 'pistol' || game.isTouch)) this.switchTo(next);
         }
       }
       // adrenaline powerup: faster trigger

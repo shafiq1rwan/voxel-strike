@@ -89,7 +89,7 @@ which the Poki build ignores. If it comes back: its offer/reward screens use
 the `overload` state, so the per-frame SDK bridge stops gameplay while a
 choice is open, and they request no ad breaks or measure events.
 
-Deliberately small: the game sends **7 campaign events plus 2 endless ones**, enough to answer "how many
+Deliberately small: the game sends **15 campaign events plus 2 endless ones**, enough to answer "how many
 started playing", "who passed each level" and "how many times players died". Everything else (loads, plays,
 ads, playtime) Poki already tracks on its own. None of the values may contain
 `/` or `^`.
@@ -97,18 +97,23 @@ ads, playtime) Poki already tracks on its own. None of the values may contain
 | category | what | action | Fired when |
 |---|---|---|---|
 | `level` | `1` | `fresh-start` | A new run begins: title *Play*, *New run* (title or death screen), or *Play a new layout*. Not sent on *Retry sector* or *Continue* |
-| `level` | `1` – `5` | `complete` | That sector's exit pad is reached |
-| `level` | `1` – `5` | `fail` | The player dies in that sector (solo) |
-| `endless` | `6` – `20` | `complete` | An endless depth past sector 5 is cleared (depth 20 and deeper all report as `20`) |
-| `endless` | `6` – `20` | `fail` | The player dies at that endless depth (same cap) |
+| `level` | `1` – `7` | `complete` | That sector's exit pad is reached |
+| `level` | `1` – `7` | `fail` | The player dies in that sector (solo) |
+| `endless` | `8` – `20` | `complete` | An endless depth past sector 7 is cleared (depth 20 and deeper all report as `20`) |
+| `endless` | `8` – `20` | `fail` | The player dies at that endless depth (same cap) |
 
-In the Game Events tab they group as `level` → `1` … `5` →
+Since sectors 6–7 (the Geothermal Core) joined the campaign, builds before
+it reported depths 6–7 as `endless 6` / `endless 7`; newer ones report them
+as `level 6` / `level 7`. Compare playtests across that change with care.
+
+In the Game Events tab they group as `level` → `1` … `7` →
 `fresh-start` / `complete` / `fail`, which reads as a funnel:
 
 **level 1 fresh-start** (played) → **level 1 complete** → **level 2 complete** →
 **level 3 complete** (reached the Biofoundry) → **level 4 complete** →
-**level 5 complete** (finished the campaign). Past that, *Keep descending*
-starts the endless run: `endless 6 complete` … show how deep players go, and
+**level 5 complete** (beat the Broodkeeper) → **level 6 complete** (reached
+the Geothermal Core) → **level 7 complete** (finished the campaign). Past
+that, *Keep descending* starts the endless run: `endless 8 complete` … show how deep players go, and
 `endless N fail` where the run ended. The value is capped at 20 so the
 dashboard keeps a bounded set of rows. Sectors 4–5 are the generated Biofoundry and ships in the Poki build;
 only the standalone `?sector4` hand-built preview stays web-only.

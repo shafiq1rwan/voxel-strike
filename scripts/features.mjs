@@ -742,7 +742,7 @@ try {
     await ph.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
     await ph.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
     // a returning player who hasn't reached the Biofoundry: the busiest title there is
-    await ph.evaluate(() => { localStorage.setItem('voxelstrike-tutorial-done', '1'); localStorage.removeItem('voxelstrike-biofoundry-seen'); });
+    await ph.evaluate(() => { localStorage.setItem('voxelstrike-tutorial-done', '1'); localStorage.removeItem('voxelstrike-geothermal-seen'); });
     await ph.reload({ waitUntil: 'networkidle0' });
     await ph.waitForSelector('#title-settings-btn');
     const phoneTitle = await ph.evaluate(() => {
@@ -927,7 +927,7 @@ try {
     check(offer.ids.length === 3 && offer.ids.filter((i) => ['patchUp', 'resupply', 'reinforce'].includes(i)).length === 2,
       `with one perk left, the offer is that perk plus one-off rewards (${offer.ids.join(', ')})`);
     // building sector 5 marked the Biofoundry seen (and the clear may save a run): the title checks below need a fresh device
-    await bp.evaluate(() => ['voxelstrike-biofoundry-seen', 'voxelstrike-run', 'voxelstrike-best-depth'].forEach((k) => localStorage.removeItem(k)));
+    await bp.evaluate(() => ['voxelstrike-geothermal-seen', 'voxelstrike-run', 'voxelstrike-best-depth'].forEach((k) => localStorage.removeItem(k)));
     await bp.close();
   }
 
@@ -1008,7 +1008,7 @@ try {
     // (it was ~8 s: the 600 HP boss died inside its first opening)
     check(secs >= 20 && secs <= 50, `a perfect held-Ripper fight lasts a few cycles, not one opening (${secs.toFixed(1)}s, want 20–50)`);
     check(end.key && !end.bar && /keycard/i.test(end.stage ?? ''), `then the keycard drops, the bar hides, the objective moves on ("${end.stage}")`);
-    await kp.evaluate(() => ['voxelstrike-biofoundry-seen', 'voxelstrike-run', 'voxelstrike-best-depth'].forEach((k) => localStorage.removeItem(k)));
+    await kp.evaluate(() => ['voxelstrike-geothermal-seen', 'voxelstrike-run', 'voxelstrike-best-depth'].forEach((k) => localStorage.removeItem(k)));
     await kp.close();
   }
 
@@ -1292,6 +1292,318 @@ try {
     await sp.close();
   }
 
+  // --- 21. the Geothermal Core's Power Link: an optional cage puzzle ---------
+  // Every generated core sector has a sealed supply cage in a normal room and
+  // a node in that room's wall, joined by an amber cable. The grille keeps
+  // you (and the magnet) out until the node is SHOT; then the gate sinks, the
+  // grille clears and the supplies are yours.
+  {
+    const gp = await browser.newPage();
+    gp.on('pageerror', (err) => errors.push(`[pageerror] ${err.message}`));
+    gp.on('console', (msg) => { if (msg.type() === 'error') errors.push(`[console.error] ${msg.text()}`); });
+    await gp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await gp.waitForSelector('#start-btn');
+    const sweep = await gp.evaluate(async () => {
+      const { generateLevel } = await import('/src/world/levelgen.ts');
+      const bad = [];
+      let n = 0;
+      for (let seed = 1; seed <= 15; seed++) for (const depth of [6, 7]) {
+        n++;
+        const L = generateLevel(seed * 7919, depth, 'geothermal');
+        const pl = L.geo?.powerLink;
+        if (!pl) { bad.push(`${seed}/${depth}: none`); continue; }
+        const c = pl.cage;
+        const room = L.rooms.find((r) => r.x === pl.room.x0 && r.z === pl.room.z0);
+        if (!room || room.kind !== 'normal') bad.push(`${seed}/${depth}: in a ${room?.kind} room`);
+        if (L.world.get(pl.node.x, pl.node.y, pl.node.z) !== 7) bad.push(`${seed}/${depth}: node is not a lamp`);
+        const sealed = L.pickups.filter((p) => p.sealed);
+        const inCage = sealed.every((p) => {
+          const a = (p.x - c.ox) * c.ux + (p.z - c.oz) * c.uz, t = (p.x - c.ox) * c.nx + (p.z - c.oz) * c.nz;
+          return a > 1 && a < 4 && t > 0 && t < 1;
+        });
+        if (sealed.length !== 3 || !inCage) bad.push(`${seed}/${depth}: ${sealed.length} sealed, in cage ${inCage}`);
+        const enemyInside = L.enemies.some((e) => {
+          const a = (e.x - c.ox) * c.ux + (e.z - c.oz) * c.uz, t = (e.x - c.ox) * c.nx + (e.z - c.oz) * c.nz;
+          return a > 0 && a < 5 && t > 0 && t < 2;
+        });
+        if (enemyInside) bad.push(`${seed}/${depth}: an enemy spawns in the cage`);
+      }
+      // facility and Biofoundry sectors never get one
+      const other = [generateLevel(7919, 3, 'facility'), generateLevel(7919, 4, 'biofoundry')].some((L) => L.geo);
+      return { n, bad, other };
+    });
+    check(sweep.bad.length === 0, `Power Link in all ${sweep.n} core layouts: normal room, lamp node, 3 sealed supplies in the cage, no enemy inside${sweep.bad.length ? ' — ' + sweep.bad.join('; ') : ''}`);
+    check(!sweep.other, 'facility and Biofoundry sectors have no core layout');
+
+    await new Promise((r) => setTimeout(r, 900));
+    await gp.click('#start-btn');
+    await new Promise((r) => setTimeout(r, 1000));
+    await gp.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.hud.clearHint();
+      g.levelIndex = 6;
+      g.buildLevel();
+      g.state = 'playing';
+      g.player.health = 99999;
+      g.input.locked = true;
+      for (const e of g.enemies.list) e.puppet = true; // hold still
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    // a point on the cage: a along the wall, t out into the room
+    await gp.evaluate(() => {
+      window.__cageAt = (a, t) => { const c = window.__voxelstrike.level.geo.powerLink.cage; return [c.ox + c.ux * a + c.nx * t, c.oz + c.uz * a + c.nz * t]; };
+    });
+    // walk straight at the grille: it holds, and nothing inside is collected
+    const walk = await gp.evaluate(async () => {
+      const at = window.__cageAt;
+      const g = window.__voxelstrike;
+      const [x, z] = at(2.5, 3.2);
+      const [tx, tz] = at(2.5, 0);
+      g.player.pos.set(x, 1.9, z);
+      g.player.vel.set(0, 0, 0);
+      g.player.yaw = Math.atan2(-(tx - x), -(tz - z));
+      g.player.pitch = 0;
+      g.input.keys.add('KeyW');
+      for (let i = 0; i < 45; i++) await new Promise((r) => requestAnimationFrame(r));
+      g.input.keys.delete('KeyW');
+      const c = g.level.geo.powerLink.cage;
+      const depth = (g.player.pos.x - c.ox) * c.nx + (g.player.pos.z - c.oz) * c.nz;
+      return { depth, taken: g.pickups.items.filter((p) => p.taken && 'sealed' in p.spec).length, art: !!g.previewArt?.group.userData.powerLink };
+    });
+    check(walk.art, 'the core sector gets the Power Link scenery');
+    check(walk.depth > 2.2 && walk.taken === 0, `the grille holds (stopped ${walk.depth.toFixed(2)} from the wall) and the supplies stay sealed`);
+    // a shot at plain wall does nothing; a shot at the node solves it
+    const shoot = (target) => gp.evaluate(async (target) => {
+      const g = window.__voxelstrike;
+      const n = g.level.geo.powerLink.node;
+      const x = n.x + 0.5 + n.nx * 4, z = n.z + 0.5 + n.nz * 4;
+      g.player.pos.set(x, 1.9, z);
+      g.player.vel.set(0, 0, 0);
+      for (let i = 0; i < 3; i++) await new Promise((r) => requestAnimationFrame(r));
+      const ty = target === 'node' ? 2.5 : 4.5; // the wall above the cable drop's top
+      const dx = n.x + 0.5 - g.player.pos.x, dz = n.z + 0.5 - g.player.pos.z;
+      g.player.yaw = Math.atan2(-dx, -dz);
+      g.player.pitch = Math.atan2(ty - g.player.eyeY(), Math.hypot(dx, dz));
+      for (let i = 0; i < 3; i++) await new Promise((r) => requestAnimationFrame(r));
+      g.weapons.give('pistol');
+      g.input.pressFire();
+      for (let i = 0; i < 8; i++) await new Promise((r) => requestAnimationFrame(r));
+      return g.previewArt.group.userData.powerLink.solved;
+    }, target);
+    check(!(await shoot('wall')), 'a shot into the wall above the node does not solve it');
+    await new Promise((r) => setTimeout(r, 700));
+    check(await shoot('node'), 'a real pistol shot at the node restores the Power Link');
+    await new Promise((r) => setTimeout(r, 1600));
+    const open = await gp.evaluate(() => {
+      const g = window.__voxelstrike;
+      const st = g.previewArt.group.userData.powerLink;
+      return { opened: st.opened, clear: st.grille.every(([x, y, z]) => g.world.get(x, y, z) === 0), sealed: g.level.pickups.filter((p) => p.sealed).length };
+    });
+    check(open.opened && open.clear && open.sealed === 0, `the gate sinks, the grille clears and the supplies unseal (${JSON.stringify(open)})`);
+    const got = await gp.evaluate(async () => {
+      const at = window.__cageAt;
+      const g = window.__voxelstrike;
+      g.player.health = 40;
+      g.player.armor = 0;
+      const [x0, z0] = at(2.5, 3);
+      g.player.pos.set(x0, 1.9, z0);
+      const before = g.pickups.items.filter((p) => p.taken).length;
+      for (const a of [1.5, 2.5, 3.5]) {
+        const [x, z] = at(a, 0.6);
+        g.player.pos.set(x, 1.9, z);
+        g.player.vel.set(0, 0, 0);
+        for (let i = 0; i < 12; i++) await new Promise((r) => requestAnimationFrame(r));
+      }
+      return { taken: g.pickups.items.filter((p) => p.taken).length - before, armor: g.player.armor };
+    });
+    check(got.taken === 3 && got.armor > 0, `walking in collects all three supplies (${got.taken}, armor ${got.armor})`);
+    await gp.evaluate(() => {
+      const at = window.__cageAt;
+      const g = window.__voxelstrike;
+      const [x, z] = at(2.5, 5.5);
+      const [tx, tz] = at(2.5, 0);
+      g.player.pos.set(x, 1.9, z);
+      g.player.yaw = Math.atan2(-(tx - x), -(tz - z));
+      g.player.pitch = 0.05;
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    await gp.screenshot({ path: 'scripts/shots/features-powerlink-open.png' });
+    await gp.close();
+  }
+
+  // --- 22. an empty gun gets thrown and the next loaded one comes up ----------
+  // Trigger on a dry gun with another one loaded: it flies end over end, hits
+  // like a melee blow, lands as a pickup that gives the gun back (no ammo, no
+  // switch). The sidearm is never thrown; with nothing loaded it's a dry click.
+  {
+    const tp = await browser.newPage();
+    tp.on('pageerror', (err) => errors.push(`[pageerror] ${err.message}`));
+    tp.on('console', (msg) => { if (msg.type() === 'error') errors.push(`[console.error] ${msg.text()}`); });
+    await tp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await tp.waitForSelector('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    await tp.click('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    // page-side helpers: wait ms; a husk 5u down a clear arena lane, held still (sector 2)
+    await tp.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.hud.clearHint();
+      g.levelIndex = 2;
+      g.buildLevel();
+      g.state = 'playing';
+      window.__wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      window.__lane = () => {
+        g.input.locked = true;
+        g.player.health = 999; g.player.dead = false; g.player.buffs.quad = 0;
+        for (const o of g.enemies.list) {
+          if (o.alive) { o.pos.set(4, o.pos.y, 4); o.awake = false; o.state = 'idle'; o.vel.set(0, 0, 0); o.wake = () => {}; }
+        }
+        const h = g.enemies.list.find((q) => q.alive && q.kind === 'husk');
+        const a = g.level.rooms.find((r) => r.kind === 'arena');
+        g.player.pos.set(a.cx + 0.5 - 5, 2.0, a.cz + 0.5);
+        g.player.vel.set(0, 0, 0);
+        g.player.yaw = -Math.PI / 2;
+        h.pos.set(a.cx + 0.5, h.pos.y, a.cz + 0.5);
+        h.mesh.position.copy(h.pos);
+        h.hp = 500;
+        g.player.pitch = Math.atan2(h.pos.y - g.player.eyeY(), 5);
+        // the arena's own arc caster + cells lie in the lane: out of the way
+        for (const p of g.pickups.items) if (!p.spec.thrown) p.spec.y = -50;
+        return h;
+      };
+    });
+    const thrown = await tp.evaluate(async () => {
+      const g = window.__voxelstrike;
+      const h = window.__lane();
+      g.weapons.give('shotgun');
+      g.player.ammo.shells = 0;
+      g.player.ammo.bullets = 30;
+      await window.__wait(600);
+      const hp0 = h.hp;
+      g.input.pressFire();
+      await window.__wait(150);
+      const thrownId = g.weapons.lastThrown, ownedAfter = g.weapons.has('shotgun');
+      await window.__wait(800);
+      const drop = g.pickups.items.find((p) => p.spec.thrown && !p.taken);
+      return { thrownId, ownedAfter, dmg: hp0 - h.hp, result: g.thrown.lastResult, current: g.weapons.current,
+        drop: drop ? { kind: drop.spec.kind, x: drop.spec.x, y: drop.spec.y, z: drop.spec.z, dist: Math.hypot(drop.spec.x - h.pos.x, drop.spec.z - h.pos.z) } : null };
+    });
+    check(thrown.thrownId === 'shotgun' && !thrown.ownedAfter, `a dry trigger with the sidearm loaded throws the empty Scattergun (${thrown.thrownId})`);
+    check(thrown.result === 'enemy' && thrown.dmg === 45, `it hits the husk down the lane for a melee-weight 45 (${thrown.result}, ${thrown.dmg})`);
+    check(thrown.current === 'pistol', `the loaded sidearm comes up (${thrown.current})`);
+    check(!!thrown.drop && thrown.drop.kind === 'weaponShotgun' && thrown.drop.dist < 1.6 && Math.abs(thrown.drop.y - 1.4) < 0.01,
+      `it lands on the floor by the husk as a Scattergun pickup (${JSON.stringify(thrown.drop)})`);
+    const back = await tp.evaluate(async () => {
+      const g = window.__voxelstrike;
+      const d = g.pickups.items.find((p) => p.spec.thrown && !p.taken);
+      g.player.pos.set(d.spec.x, 2.0, d.spec.z);
+      g.player.vel.set(0, 0, 0);
+      await window.__wait(400);
+      return { owned: g.weapons.has('shotgun'), taken: d.taken, current: g.weapons.current, shells: g.player.ammo.shells };
+    });
+    check(back.owned && back.taken && back.current === 'pistol' && back.shells === 0,
+      `walking over it gives the Scattergun back, empty, without switching to it (${JSON.stringify(back)})`);
+    const side = await tp.evaluate(async () => {
+      const g = window.__voxelstrike;
+      const h = window.__lane();
+      // the sidearm runs dry with shells loaded: no throw, it hops to the shotgun
+      g.weapons.lastThrown = null;
+      g.weapons.switchTo('pistol');
+      await window.__wait(500);
+      g.player.ammo.bullets = 0;
+      g.player.ammo.shells = 8;
+      g.input.pressFire();
+      await window.__wait(700);
+      const pistol = { thrown: g.weapons.lastThrown, has: g.weapons.has('pistol'), current: g.weapons.current };
+      // nothing loaded at all: a dry click, the gun stays in hand
+      g.player.ammo.shells = 0;
+      g.input.pressFire();
+      await window.__wait(700);
+      return { pistol, dry: { thrown: g.weapons.lastThrown, current: g.weapons.current, has: g.weapons.has('shotgun') } };
+    });
+    check(side.pistol.thrown === null && side.pistol.has && side.pistol.current === 'shotgun',
+      `the sidearm is never thrown: dry, it hops to the loaded Scattergun (${JSON.stringify(side.pistol)})`);
+    check(side.dry.thrown === null && side.dry.current === 'shotgun' && side.dry.has,
+      `with nothing loaded anywhere it's a dry click and the gun stays (${JSON.stringify(side.dry)})`);
+    // a throw into a wall still lands as a pickup on the floor
+    const wall = await tp.evaluate(async () => {
+      const g = window.__voxelstrike;
+      for (const o of g.enemies.list) if (o.alive) o.pos.set(4, o.pos.y, 4);
+      g.player.ammo.bullets = 30;
+      g.player.pitch = 0;
+      g.player.yaw = Math.PI / 2; // back down the lane: the arena's west wall
+      await window.__wait(400);
+      g.input.pressFire();
+      await window.__wait(1200);
+      const d = g.pickups.items.filter((p) => p.spec.thrown && !p.taken).pop();
+      return { result: g.thrown.lastResult, thrown: g.weapons.lastThrown, floorY: d ? d.spec.y : null,
+        inAir: d ? g.world.get(Math.floor(d.spec.x), Math.floor(d.spec.y), Math.floor(d.spec.z)) === 0 : false };
+    });
+    check(wall.thrown === 'shotgun' && wall.result === 'wall' && wall.inAir && Math.abs(wall.floorY - 1.4) < 0.01,
+      `a throw into a wall drops it on the open floor (${JSON.stringify(wall)})`);
+    await tp.close();
+  }
+
+  // --- 23. safe area: nothing pinned to an edge sits under a notch / home bar --
+  // index.html uses viewport-fit=cover, so the HUD, touch buttons and title
+  // corners add env(safe-area-inset-*). Real insets via CDP: an iPhone held
+  // landscape (47 | 47, home bar 21), then held upright, which the game
+  // rotates into landscape (notch 47 on top, home bar 34 → the game's left
+  // and right). The crosshair stays dead centre; no insets = the old spots.
+  {
+    const EDGE_IDS = ['#tfire', '#tjump', '#tweapon', '#tmelee', '#tmap', '#tpause', '#vitals', '#topright', '#weaponbar', '#objective', '#unlock'];
+    const run = async (w, h, insets) => {
+      const sp = await browser.newPage();
+      sp.on('pageerror', (err) => errors.push(`[safe-area pageerror] ${err.message}`));
+      await sp.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
+      const cdp = await sp.createCDPSession();
+      await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets });
+      await sp.evaluateOnNewDocument(() => localStorage.setItem('voxelstrike-tutorial-done', '1'));
+      await sp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+      await sp.waitForSelector('#title-screen');
+      await new Promise((r) => setTimeout(r, 800));
+      const inside = (ids) => sp.evaluate((ids, ins) => {
+        const W = innerWidth, H = innerHeight, out = [];
+        for (const id of ids) {
+          const el = document.querySelector(id);
+          if (!el) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          if (r.left < ins.left - 0.5 || r.top < ins.top - 0.5 || r.right > W - ins.right + 0.5 || r.bottom > H - ins.bottom + 0.5) {
+            out.push(`${id} [${r.left.toFixed(0)},${r.top.toFixed(0)},${r.right.toFixed(0)},${r.bottom.toFixed(0)}]`);
+          }
+        }
+        return out;
+      }, ids, insets);
+      const title = await inside(['#title-settings-btn', '#title-armory-btn', '#start-btn']);
+      await sp.tap('#start-btn');
+      await new Promise((r) => setTimeout(r, 900));
+      const hud = await inside(EDGE_IDS);
+      const info = await sp.evaluate(() => {
+        const c = document.querySelector('#crosshair').getBoundingClientRect();
+        const f = document.querySelector('#tfire').getBoundingClientRect();
+        return { cx: c.left + c.width / 2, cy: c.top + c.height / 2, W: innerWidth, H: innerHeight,
+          rotated: document.body.classList.contains('force-landscape'), fireRight: innerWidth - f.right, fireBottom: innerHeight - f.bottom };
+      });
+      await sp.screenshot({ path: `scripts/shots/features-safearea-${w}x${h}.png` });
+      await sp.close();
+      return { title, hud, info };
+    };
+    const flat = await run(667, 375, { top: 0, left: 0, right: 0, bottom: 0 });
+    check(flat.info.fireRight === 18 && flat.info.fireBottom === 18, `no insets: FIRE keeps its 18px from the edges (${flat.info.fireRight}, ${flat.info.fireBottom})`);
+    const land = await run(667, 375, { top: 0, left: 47, right: 47, bottom: 21 });
+    check(land.title.length === 0, `notched landscape: title corner buttons + PLAY clear the notch${land.title.length ? ' — ' + land.title.join(' ') : ''}`);
+    check(land.hud.length === 0, `notched landscape: touch buttons, MAP/pause and the HUD clear the notch and home bar${land.hud.length ? ' — ' + land.hud.join(' ') : ''}`);
+    check(land.info.fireRight === 18 + 47 && land.info.fireBottom === 18 + 21, `FIRE moves in by exactly the insets (${land.info.fireRight}, ${land.info.fireBottom})`);
+    check(Math.abs(land.info.cx - land.info.W / 2) < 1 && Math.abs(land.info.cy - land.info.H / 2) < 1, 'the crosshair stays at the screen centre');
+    // a notched phone's real landscape size (iPhone 14 class)
+    const big = await run(844, 390, { top: 0, left: 47, right: 47, bottom: 21 });
+    check(big.title.length === 0 && big.hud.length === 0, `844×390 notched: title + HUD clear the notch and home bar${big.title.length + big.hud.length ? ' — ' + [...big.title, ...big.hud].join(' ') : ''}`);
+    const up = await run(375, 667, { top: 47, left: 0, right: 0, bottom: 34 });
+    check(up.info.rotated, 'held upright, the game is rotated into landscape');
+    check(up.hud.length === 0, `held upright: the rotated HUD clears the notch and home bar${up.hud.length ? ' — ' + up.hud.join(' ') : ''}`);
+  }
+
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
   // Desktop defaults to 480 lines, touch to 320 (above), still cycled in
@@ -1304,7 +1616,7 @@ try {
     await pc.evaluateOnNewDocument(() => {
       if (sessionStorage.getItem('seeded')) return;
       sessionStorage.setItem('seeded', '1');
-      for (const k of ['voxelstrike-settings', 'voxelstrike-tutorial-done', 'voxelstrike-biofoundry-seen', 'voxelstrike-run', 'voxelstrike-skins']) localStorage.removeItem(k);
+      for (const k of ['voxelstrike-settings', 'voxelstrike-tutorial-done', 'voxelstrike-geothermal-seen', 'voxelstrike-run', 'voxelstrike-skins']) localStorage.removeItem(k);
     });
     await pc.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
     await pc.waitForSelector('#start-btn');
@@ -1341,7 +1653,7 @@ try {
       const r = b.getBoundingClientRect();
       return { shown: true, text: b.textContent.replace(/\s+/g, ' ').trim(), aboveMenu: r.bottom <= menu.getBoundingClientRect().top + 1, inside: r.left >= 0 && r.right <= innerWidth };
     });
-    check(banner.shown && /NEW SECTOR/.test(banner.text) && /BIOFOUNDRY/.test(banner.text),
+    check(banner.shown && /NEW SECTOR/.test(banner.text) && /GEOTHERMAL/.test(banner.text),
       `a returning player sees the NEW SECTOR banner ("${banner.text ?? ''}")`);
     check(banner.shown && banner.aboveMenu && banner.inside, 'the banner sits above the menu, inside the screen');
     await pc.screenshot({ path: 'scripts/shots/features-title-banner.png' });
@@ -1368,13 +1680,13 @@ try {
     check(await pc.evaluate(() => window.__voxelstrike.settings.resolution === 240), 'a 240 chosen under the new settings stays 240');
     await pc.goto(URL + '&coop', { waitUntil: 'networkidle0', timeout: 30000 });
     check(await pc.evaluate(() => !!document.querySelector('#coop-btn')), '?coop still shows the co-op button for development');
-    // once the Biofoundry has been reached, the banner has done its job
+    // once the Geothermal Core has been reached, the banner has done its job
     await pc.evaluate(() => {
       const g = window.__voxelstrike;
-      g.levelIndex = 4;
+      g.levelIndex = 6;
       g.buildLevel();
     });
-    check(await pc.evaluate(() => localStorage.getItem('voxelstrike-biofoundry-seen') === '1'), 'entering the Biofoundry marks it as seen');
+    check(await pc.evaluate(() => localStorage.getItem('voxelstrike-geothermal-seen') === '1'), 'entering the Geothermal Core marks it as seen');
     await pc.reload({ waitUntil: 'networkidle0' });
     await pc.waitForSelector('#start-btn');
     check(await pc.evaluate(() => !document.querySelector('#new-sector')), 'after that, the title shows no NEW SECTOR banner');

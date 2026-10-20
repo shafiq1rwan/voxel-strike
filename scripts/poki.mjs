@@ -269,12 +269,20 @@ try {
   check(noVideo.state === 'dead' && noVideo.dead, 'no video watched → no revive (still dead)');
   check(noVideo.disabled && /no video/i.test(noVideo.text), `the revive button says so and is disabled ("${noVideo.text}")`);
   const sentNow = (await calls(page)).filter((x) => x.startsWith('measure'));
-  check(sentNow.every((x) => /^measure level [1-5] (fresh-start|complete|fail)$/.test(x)), 'revive adds no game events of its own');
-  // endless descent (past sector 5): depths get their own `endless` bucket, capped at 20
+  check(sentNow.every((x) => /^measure level [1-7] (fresh-start|complete|fail)$/.test(x)), 'revive adds no game events of its own');
+  // endless descent (past sector 7): depths get their own `endless` bucket, capped at 20;
+  // sectors 6-7 (the Geothermal Core) are still campaign `level` events
   await page.evaluate(() => {
     const g = window.__voxelstrike;
     g.player.dead = false; g.player.health = 100;
     g.levelIndex = 7; g.state = 'playing'; g.hud.hideScreen();
+    g.win();
+  });
+  await sleep(150);
+  await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.player.dead = false; g.player.health = 100;
+    g.hud.hideScreen(); g.levelIndex = 9; g.state = 'playing';
     g.win();
   });
   await sleep(150);
@@ -285,9 +293,9 @@ try {
     g.onPlayerDeath();
   });
   await sleep(150);
-  const deep = (await calls(page)).filter((x) => x.startsWith('measure')).slice(-2);
-  check(deep.join() === 'measure endless 7 complete,measure endless 20 fail',
-    `endless depths send endless N complete / fail, capped at 20 (${deep.join(', ')})`);
+  const deep = (await calls(page)).filter((x) => x.startsWith('measure')).slice(-3);
+  check(deep.join() === 'measure level 7 complete,measure endless 9 complete,measure endless 20 fail',
+    `sector 7 is a level; endless depths send endless N complete / fail, capped at 20 (${deep.join(', ')})`);
   // Armory: a locked skin can be unlocked early with a rewarded video — the
   // button says Watch ad with the clapperboard, isn't the primary look, and
   // only a watched video pays out

@@ -45,6 +45,8 @@ export interface DoorSpec {
 export interface PickupSpec {
   /** Visible supplies in a puzzle cache cannot drift or be collected until opened. */
   sealed?: boolean;
+  /** a gun the player threw when it ran dry: picking it up gives the gun back, no ammo */
+  thrown?: boolean;
   kind: PickupKind;
   x: number;
   y: number;

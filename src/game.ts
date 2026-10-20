@@ -31,6 +31,8 @@ import { POKI, poki } from './platform/poki';
 import { isPerkId, isReward, offerDef, rollPerkOffer, type OfferId, type PerkId } from './core/perks';
 import { BASE_AMMO_MAX, BASE_MAX_HEALTH } from './entities/player';
 import { biofoundryTerminal, decorateBiofoundry } from './preview/biofoundry';
+import { decorateGeothermal } from './preview/geothermal-gen';
+import { ThrownGuns } from './weapons/thrown';
 
 type GameState = 'title' | 'playing' | 'paused' | 'overload' | 'dead' | 'intermission' | 'won';
 
@@ -64,8 +66,12 @@ const FACILITY_SECTORS = 3;
  * fresh every run like the facility, same keycard → red door → lift → pad
  */
 const BIOFOUNDRY_SECTOR = 4;
-/** sector 5 is the deep Biofoundry: same theme, slightly harder (levelgen) */
-const TOTAL_SECTORS = 5;
+/** sector 5 is the deep Biofoundry: same theme, slightly harder; the Broodkeeper waits there */
+const BOSS_SECTOR = 5;
+/** then the Geothermal Core: generated like the others, its own monsters (levelgen 'geothermal') */
+const GEOTHERMAL_SECTOR = 6;
+/** sector 7 is the deep core; endless depths start after it */
+const TOTAL_SECTORS = 7;
 
 /** what enemy AI / explosions / bolts need from "a player" — the local
  *  Player and the co-op partner's RemotePlayer both satisfy this shape */
@@ -131,6 +137,8 @@ const BEST_DEPTH_KEY = 'voxelstrike-best-depth';
 
 /** set the first time the player enters the Biofoundry: hides the title's NEW SECTOR banner */
 const BIOFOUNDRY_SEEN_KEY = 'voxelstrike-biofoundry-seen';
+/** set when a player first enters the Geothermal Core (ends the NEW SECTOR banner) */
+const GEOTHERMAL_SEEN_KEY = 'voxelstrike-geothermal-seen';
 
 function storageGet(key: string): string | null {
   try {
@@ -170,6 +178,8 @@ export class Game {
   readonly dynLights = new DynLights();
   readonly particles = new Particles();
   readonly tracers = new Tracers();
+  /** empty guns in flight (WeaponSystem throws them) */
+  readonly thrown = new ThrownGuns();
   readonly projectiles = new ProjectilePool();
   readonly enemies = new EnemyManager();
   readonly player = new Player();
@@ -256,6 +266,7 @@ export class Game {
     const scene = this.rendererSys.scene;
     scene.add(this.particles.mesh);
     scene.add(this.tracers.group);
+    scene.add(this.thrown.group);
     scene.add(this.projectiles.group);
     // the gun renders in its own depth-cleared pass (see Renderer.overlay)
     this.rendererSys.overlay.add(this.weapons.viewModel);
@@ -491,6 +502,7 @@ export class Game {
 
   private teardownLevel(): void {
     const scene = this.rendererSys.scene;
+    this.thrown.clear();
     if (this.overload) {
       scene.remove(this.overload.group);
       this.overload.dispose();
@@ -559,8 +571,10 @@ export class Game {
     this.chunks.buildAll();
     scene.add(this.chunks.group);
     // Biofoundry scenery + live tanks: the authored ?sector4 map, or a generated sector 4
-    if (authored || this.level.bio) {
-      this.previewArt = authored ? authored.decorate(this.level) : decorateBiofoundry(this.level);
+    // (or the Geothermal Core's steam, signs and Power Link puzzle)
+    if (authored || this.level.bio || this.level.geo) {
+      this.previewArt = authored ? authored.decorate(this.level)
+        : this.level.bio ? decorateBiofoundry(this.level) : decorateGeothermal(this.level);
       scene.add(this.previewArt.group);
     }
 
@@ -634,6 +648,7 @@ export class Game {
     this.player.dead = false;
     // reached the Biofoundry (campaign, not the ?sector4 preview): it's no longer "new"
     if (this.level.theme === 'biofoundry' && !this.preview) storageSet(BIOFOUNDRY_SEEN_KEY, '1');
+    if (this.level.theme === 'geothermal' && !this.preview) storageSet(GEOTHERMAL_SEEN_KEY, '1');
     if (!this.preview) this.skinStat('reached', this.levelIndex);
     // a fresh attempt at a sector: no keycard checkpoint yet, revive available
     this.keyCheckpoint = null;
@@ -1372,19 +1387,21 @@ export class Game {
   }
 
   /**
-   * The look of a sector: facility 1–3, Biofoundry 4–5; endless depths
-   * alternate every two (6–7 facility, 8–9 Biofoundry, …), and a boss depth
-   * is always the Biofoundry.
+   * The look of a sector: facility 1–3, Biofoundry 4–5, Geothermal Core 6–7;
+   * endless depths rotate the three every two (8–9 facility, 10–11
+   * Biofoundry, 12–13 core, …), and a boss depth is always the Biofoundry.
    */
   private themeFor(n: number): LevelTheme {
     if (n <= FACILITY_SECTORS) return 'facility';
-    if (n <= TOTAL_SECTORS || this.bossFor(n)) return 'biofoundry';
-    return ((n - TOTAL_SECTORS - 1) >> 1) % 2 === 0 ? 'facility' : 'biofoundry';
+    if (n <= BOSS_SECTOR || this.bossFor(n)) return 'biofoundry';
+    if (n <= TOTAL_SECTORS) return 'geothermal';
+    const themes: LevelTheme[] = ['facility', 'biofoundry', 'geothermal'];
+    return themes[((n - TOTAL_SECTORS - 1) >> 1) % themes.length];
   }
 
-  /** the Broodkeeper waits at the end of the campaign and every fifth depth after */
+  /** the Broodkeeper waits in sector 5 and every fifth depth after (solo) */
   private bossFor(n: number): boolean {
-    return !this.net && n >= TOTAL_SECTORS && n % 5 === 0;
+    return !this.net && n >= BOSS_SECTOR && n % 5 === 0;
   }
 
   /** "sector 3" / "depth 7" */
@@ -1446,11 +1463,15 @@ export class Game {
     this.net?.sendNextLevel();
     if (this.endless) {
       const where = this.level.boss ? 'something big is waiting in the incubation chamber.'
-        : this.level.theme === 'biofoundry' ? 'the Biofoundry goes deeper.' : 'old facility levels, colder and meaner.';
+        : this.level.theme === 'biofoundry' ? 'the Biofoundry goes deeper.'
+        : this.level.theme === 'geothermal' ? 'back into the heat. The core never cools.'
+        : 'old facility levels, colder and meaner.';
       this.enterSector(`DEPTH ${this.levelIndex} — ${where}`, adShown);
       return;
     }
     const deeper = this.level.boss ? 'the Broodkeeper guards the keycard. Kill it.'
+      : this.levelIndex === GEOTHERMAL_SECTOR ? 'THE GEOTHERMAL CORE. Mind the heat — things live in it.'
+      : this.levelIndex > GEOTHERMAL_SECTOR ? 'the deep core. Hotter, and more of them.'
       : this.levelIndex > BIOFOUNDRY_SECTOR ? 'deeper into the Biofoundry. More tanks are full down here.'
       : 'it gets worse down here.';
     this.enterSector(`SECTOR ${this.levelIndex} of ${this.totalSectors} — ${deeper}`, adShown);
@@ -1495,7 +1516,7 @@ export class Game {
       skinsOwned: this.skins.unlocked.size,
       onArmory: () => this.openArmory('title'),
       // returning players only: a first visit sees just the goal and PLAY
-      newSector: storageGet(TUTORIAL_KEY) !== null && storageGet(BIOFOUNDRY_SEEN_KEY) === null,
+      newSector: storageGet(TUTORIAL_KEY) !== null && storageGet(GEOTHERMAL_SEEN_KEY) === null,
       // ...and returning players skip the goal + steps they already know
       returning: storageGet(TUTORIAL_KEY) !== null,
     });
@@ -1828,9 +1849,9 @@ export class Game {
     this.pendingExplosions.push({ x, y, z, t: fuse, dmg, radius });
   }
 
-  /** drop a pickup into the live level (brute rewards, crate drops) */
-  spawnPickup(kind: PickupKind, x: number, y: number, z: number): void {
-    this.pickups.add({ kind, x, y, z }, this.world);
+  /** drop a pickup into the live level (brute rewards, crate drops, thrown guns) */
+  spawnPickup(kind: PickupKind, x: number, y: number, z: number, thrown = false): void {
+    this.pickups.add(thrown ? { kind, x, y, z, thrown } : { kind, x, y, z }, this.world);
     this.dynLights.flash(x, y + 0.4, z, 1, 0.9, 0.4, 1.4, 6, 0.3);
     this.net?.sendPickupSpawn(this.pickups.items.length - 1, kind, x, y, z);
   }
@@ -2460,6 +2481,7 @@ export class Game {
     }
     if (!this.isNetClient) this.previewArt?.update?.(dt, this);
     this.projectiles.update(dt, this);
+    this.thrown.update(dt, this);
     this.particles.update(dt, this.world);
     this.tracers.update(dt);
     this.pickups.update(dt, this.time, this);

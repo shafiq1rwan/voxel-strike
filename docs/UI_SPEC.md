@@ -61,7 +61,7 @@ Follows the owner's mockup.
 | Keycards | `#keys` | Red key slot always shown (dim until held); blue/yellow only when held |
 | Weapon + ammo | `#ammo-block` | Weapon name, ammo-type icon, count, `AMMO` label |
 | Hint strip | `#hint` | First-run control hints (3 steps, sector 1 of the first solo run): controls; follow the yellow arrow; bash (V / BASH) + switching + map |
-| Next skin | `#unlock` | Under the score: *NEXT SKIN* + swatch + name, a cyan progress bar and *goal n / N*. Pops in when the count moves (and for 5 s at each sector start), fades after ~3 s |
+| Next skin | `#unlock` | Bottom-left (above the FPS counter on desktop; in the corner on touch — under the score it sat beneath the touch weapon button): *NEXT SKIN* + swatch + name, a cyan progress bar and *goal n / N*. Pops in when the count moves (and for 5 s at each sector start), fades after ~3 s |
 | Skin unlocked | `.skin-unlocked` | Cyan *SKIN UNLOCKED* stamp below the crosshair (streaks sit above it), the skin's swatch + name + gun, *EQUIPPED*; ~2.8 s. Earned on a menu (e.g. a sector clear), it waits until play resumes; several queue 3 s apart |
 | Secret found | `.secret-found` | Big gold *SECRET FOUND* stamp with *+500* under it (and *THE THUMPER IS IN HERE* if not owned yet), a warm edge glow `#secret-glow`, ~2.6 s. Near the cracked wall beforehand, a one-per-sector line: *That cracked wall looks weak. Shoot it or bash it (V).* |
 | FPS | `#fps` | Bottom-left, small and dim |
@@ -113,7 +113,7 @@ Differences from desktop:
 | BASH `#tmelee` | Quick melee. A smaller round button up and in from FIRE (right 122px, bottom 112px), so the firing thumb rolls onto it; never on the aiming side. Clear of FIRE, JUMP and the ammo count |
 | **Weapon button** `#tweapon` | Above JUMP, in a column against the right edge with FIRE (anything further in gets hit by look swipes). Shows ⇄, the slot number and the weapon name. **Tap** = next owned weapon. **Swipe left/right** = previous/next. **Hold 280 ms** = weapon wheel |
 | Weapon wheel `#twheel` | Owned weapons fan out in an arc above the button; the current one is outlined yellow. Slide onto one and release to pick it; release on the button to cancel |
-| Auto-switch | Firing an empty weapon switches to a loaded one (shotgun → SMG → arc → pistol → rockets last). Touch only |
+| Auto-switch | Firing an empty weapon switches to a loaded one (shotgun → SMG → arc → pistol → rockets last), on every device. Any gun but the sidearm is THROWN at the target as it goes (a melee-weight hit) and lands as a pickup that gives it back empty; with nothing loaded it's a dry click |
 | MAP / pause | Top right |
 
 The game is always landscape: held in portrait, the whole page rotates 90°
@@ -146,6 +146,13 @@ skip them.
   landscape. `.tscreen` menus scroll if they must (centred by auto margins
   so they never clip at the top), and settings switch to a compact
   two-column grid under `max-height: 560px`. `features.mjs` #14 checks it.
+- **Safe area.** The page draws edge to edge (`viewport-fit=cover`), so
+  anything pinned to a screen edge adds the safe-area variables on `body`
+  (`--sat` / `--sar` / `--sab` / `--sal`, from `env(safe-area-inset-*)`,
+  remapped while a portrait phone is rotated into landscape):
+  `right: calc(18px + var(--sar))`. Centred elements (crosshair, automap,
+  panels) don't. `features.mjs` #23 checks a notched phone in landscape
+  and held upright.
 - **Thumb targets:** touch buttons and slots at least ~30 px, and not at the
   top of the screen if they're used mid-fight.
 - **Desktop clicks:** while the pointer is locked, clicks go to the canvas,

@@ -26,6 +26,7 @@ off the core. The per-file rules and known gotchas live in
 |---|---|---|
 | Entry | `main.ts` | Poki init (Poki builds), constructs `Game`, registers the service worker (web builds); web builds route `?sector4` (the hand-built Biofoundry preview map; its module is in the main bundle because sectors 4–5 use its scenery) and `?operative` (character viewer, lazy-loaded) |
 | Biofoundry + previews | `preview/biofoundry.ts`, `preview/operative-viewer.ts` | The Biofoundry's scenery and live tank breaches for the generated sector 4 (`decorateBiofoundry`, driven by `level.bio`), the facility terminal text, and the hand-built `?sector4` preview map; the Facility Operative viewer (sheet / orbit / compare), standalone, no `Game` |
+| Geothermal scenery | `preview/geothermal-gen.ts` | The generated Geothermal Core's (sectors 6–7) steam, spawn-room sign and optional POWER LINK puzzle (`decorateGeothermal`, driven by `level.geo` from levelgen `placePowerLink`): amber cable from a wall node to a sealed supply cage; shooting the node (`voxelHit`) sinks the gate, clears the PowerBarrier grille and unseals the pickups. `preview/geothermal.ts` is Codex's hand-built `?sector6` map |
 | Orchestration | `game.ts` | State machine, frame loop, sector lifecycle + checkpoints, explosions queue, score/combo, objective tracker, co-op routing |
 | Shared types | `types.ts` | Plain-data types (no Three.js imports) |
 | Rendering | `core/renderer.ts` | WebGL renderer at a low internal resolution (Settings → Pixelation: 480 lines default on desktop, 320 on touch), fog, the world pass + the weapon overlay pass |
@@ -281,11 +282,12 @@ build is also a PWA (`public/manifest.webmanifest` + network-first
 |---|---|
 | A weapon's stats or feel | `WEAPONS` + `animate()` in `weapons/weapons.ts` |
 | A weapon's look | `buildWeaponModel()` in `weapons/weapons.ts` — the held gun and the floor pickup both come from it |
-| Add a weapon | Both `ORDER` arrays (weapons.ts, hud.ts), `DRY_SWITCH`, the Digit list in `input.ts` |
+| Add a weapon | Both `ORDER` arrays (weapons.ts, hud.ts), `DRY_SWITCH`, the Digit list in `input.ts`, and its floor pickup in `GUN_PICKUP` (thrown.ts) + `THROWN_GUN` (pickups.ts) so it can be thrown |
 | Add a block | `world/blocks.ts` — the enums and tables must stay in sync, and ids are append-only |
 | Level layout rules | `world/levelgen.ts` (keep the BFS validation passing) |
 | Enemy behaviour | `entities/enemies.ts` |
 | Preview-only live scenery (sector 4) | `PreviewArt` hooks returned by `decorate()` in `src/preview/biofoundry.ts`: `update(dt)`, `tankHit(x,y,z)` (a TankGlass voxel was shot), `noise(x,z,r)` (gunfire via `Game.noise`). The tank-breach state machine lives there |
+| Generated-core live scenery (sectors 6–7) | `PreviewArt` from `decorateGeothermal` in `src/preview/geothermal-gen.ts`: `update(dt)` (steam, gate, cage hint), `voxelHit(x,y,z)` (the Power Link node; consumes the hit) |
 | Add an enemy kind | `EnemyKind` in `types.ts`; `TUNING`, `ALERT_SOUND`, a `buildX()` rig and `doChase`/`doAttack` branches in `enemies.ts` (reuse the husk skeleton + `humanoid()` to get the gait/attack animation for free); the headshot check in `weapons.ts`; kill points in `game.ts`. Keep preview-only kinds out of `levelgen.ts` |
 | HUD / screens | `ui/hud.ts` ([UI_SPEC.md](UI_SPEC.md)) |
 | Touch controls | `core/touch.ts` + the touch CSS in `ui/hud.ts` |

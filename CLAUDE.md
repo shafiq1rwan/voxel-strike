@@ -44,13 +44,13 @@ save screenshots to `scripts/shots/`):
 
 ```bash
 node scripts/smoke.mjs      # boot, move, shoot, explode; fails on any console error; enemy-bounds watchdog
-node scripts/e2e.mjs        # plays the whole 5-sector campaign: aggro, barrels, key → vault → lift → exit, the facility terminal into the Biofoundry, sector 5 harder than 4, the sector 5 Broodkeeper holds the key, Keep descending → depth 6
+node scripts/e2e.mjs        # plays the whole 7-sector campaign: aggro, barrels, key → vault → lift → exit, the facility terminal into the Biofoundry, sector 5 harder than 4, the sector 5 Broodkeeper holds the key, sectors 6–7 the generated Geothermal Core with its monsters, Keep descending → depth 8
 node scripts/movement.mjs   # WASD displacement must match camera basis vectors at 5 yaw angles
 node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consistency, claw/dodge + rendered poses/motion clip
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + gentle sector 2 (8–9 rooms, lone tickers), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit)
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + gentle sector 2 (8–9 rooms, lone tickers), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), the Geothermal Core POWER LINK (cage in every core layout, grille holds, a pistol shot at the node opens it, supplies collected)
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/exit-room-props.mjs [url] # seven props, 24 layouts/four lift directions, boarding route, ride/status/exit, ?exitroom shortcut, ready/docked screenshots
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
@@ -75,9 +75,15 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 ## Architecture
 
 - `src/game.ts` — orchestrator: state machine (title/playing/paused/dead/
-  intermission/won), 5-sector campaign flow with in-place level teardown.
+  intermission/won), 7-sector campaign flow with in-place level teardown.
   ALL sectors are generated fresh each run with the same keycard → red door
-  → lift → pad flow: 1–3 in the facility theme, 4–5 in the Biofoundry theme
+  → lift → pad flow: 1–3 in the facility theme, 4–5 in the Biofoundry theme,
+  6–7 in the Geothermal Core theme (`generateLevel(seed, n, 'geothermal')`,
+  levelgen `dressGeothermal`; 5 → 6 is an ordinary intermission; the
+  standalone `?sector6` map is only Codex's hand-built preview; its
+  scenery — steam over the heat seams, a GEOTHERMAL CORE sign in the spawn
+  room and the optional POWER LINK puzzle — comes from `decorateGeothermal`
+  in `src/preview/geothermal-gen.ts`, driven by `LevelData.geo`)
   (`generateLevel(seed, n, 'biofoundry')`; sector 5 is slightly harder —
   6 occupied tanks instead of 4 and +1 enemy in rooms 3+ steps from spawn,
   the only levelgen bumps past sector 4 since the other curves are capped;
@@ -133,10 +139,12 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   `pickPerk` applies them on the spot and never stores them.
   ENDLESS: the final clear screen's *Keep descending* (`onDescend`, solo
   only) runs `afterBreak(nextLevel)` from state 'won'; `levelIndex` keeps
-  counting past `TOTAL_SECTORS` and `Game.endless` is true from depth 6.
-  `themeFor(n)`: 1–3 facility, 4–5 Biofoundry, then two-depth alternation;
-  `bossFor(n)` = solo and every 5th depth (forces Biofoundry). Endless enemy
-  HP ×`min(1.8, 1 + 0.08·(n−5))`; best depth in `voxelstrike-best-depth`
+  counting past `TOTAL_SECTORS` (7) and `Game.endless` is true from depth 8.
+  `themeFor(n)`: 1–3 facility, 4–5 Biofoundry, 6–7 Geothermal Core, then the
+  three rotate every two depths (8–9 facility, 10–11 Biofoundry, 12–13 core…);
+  `bossFor(n)` = solo, sector 5 (`BOSS_SECTOR`) and every 5th depth after
+  (forces Biofoundry) — deliberately NOT tied to the campaign length. Endless enemy
+  HP ×`min(1.8, 1 + 0.08·(n−7))`; best depth in `voxelstrike-best-depth`
   (title footer); HUD / pause / death / Continue say DEPTH; Poki sends
   `measure('endless', min(20, n), complete|fail)` instead of `level`.
   BOSS: on a boss depth `buildLevel` holds the red key back (`bossKey`),
@@ -209,7 +217,28 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   no doorway is plugged; 4 occupied across different rooms, 2 broken),
   re-skins plain surfaces to the Lab block set (`reskinLab`, last, after the
   cracked secret wall), bakes with `BIO_AMBIENT`, and returns `level.bio`
-  for the scenery. Bio-only choices use `dhash` — facility sectors keep
+  for the scenery. `'geothermal'` (sectors 6–7): rooms 5–6 tall, warm work
+  lamps (key room red), basalt walls with rusted plate (`dressGeothermal`),
+  short molten `GeothermalHeat` seams set FLUSH in room floors (lamp blocks
+  that light from below — never trenches: the `?sector6` preview's recessed
+  channels stranded walkers), `GEO_AMBIENT`, and its own roster mixed in —
+  ~55% of melee spawns become Vent Stalkers and of ranged spawns Kiln
+  Drones (position-hashed), the arena's first brute a Cinder Hulk; the
+  ranged share is capped at 50% and tickers at ~45% of rooms in pairs, so
+  sector 6 (~60 enemies) is no harder than sector 5 and 7 (~69) a step up.
+  Every core sector also gets a POWER LINK (`placePowerLink`, returned in
+  `level.geo` with the steam `vents` and `signs`): a 5×2 supply cage
+  (Metal sides + roof at y = 4, steel plate floor) against a doorway-free
+  wall of a normal room (never spawn/key/exit/arena/boss), its front row an
+  invisible `PowerBarrier` grille, three `sealed` pickups inside (health,
+  armor, one ammo), and a node — a `LampWarm` voxel at eye height in the
+  same room's wall, ≥ 6 cells of wall away and preferably round a corner.
+  The cage's back row is PowerBarrier too while pickups/enemies are placed
+  (so nothing spawns inside) and opens before the bake. `decorateGeothermal`
+  routes an amber cable around the wall faces (`wallPerimeter`) from node to
+  cage; a hitscan/arc/melee hit on the node (`voxelHit`) turns it green, the
+  gate bars sink into the floor, the grille cells become air and the
+  pickups unseal. Optional: it never gates the route. Bio-only choices use `dhash` — facility sectors keep
   their exact layouts per seed. Occupied tanks are preallocated in
   `totalEnemies`. One big `arena` room per
   sector is placed FIRST (while the map is empty, so it always fits) and is
@@ -401,6 +430,21 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   reached, bosses, S ranks); a new skin auto-equips (`setSkin` rebuilds the
   view model in place) and its stamp queues until state is 'playing'.
   Floor pickups stay standard.
+  THROWN GUNS (owner's call, `src/weapons/thrown.ts`, Game owns
+  `thrown`): the trigger on an empty gun while another owned gun is
+  loaded (`DRY_SWITCH` order) flings it — `throwCurrent` drops it from
+  `owned`, hides its model and raises the next one straight away. It flies
+  end over end (22 u/s, slight arc, its floor-pickup model), is swept per
+  frame against enemy boxes (+0.2), voxels and `solidBoxes()`, hits like
+  a melee blow (45, ×2 vulnerable, quad ×4, shove, routed through
+  `applyEnemyHit`) and lands on the floor as a `thrown` weapon pickup:
+  picking it up gives the gun back with NO ammo and no switch
+  (`WeaponSystem.reclaim`; it isn't collected while you own that gun). The
+  sidearm is never thrown — it hops to a loaded gun on every device; with
+  nothing loaded it's the old dry click; co-op keeps the old behaviour. A
+  gun left on the floor when the sector ends is gone (the next checkpoint
+  has the loadout without it). `lastThrown` / `thrown.lastResult` are for
+  tests (`features.mjs` #22).
   Quick melee is NOT a slot: `MELEE` + `meleeStrike()` in weapons.ts (V,
   right mouse, touch `#tmelee` → `Input.consumeMelee`). 0.15s windup, 0.6s
   cooldown, centre reach 1.8 (+ big bodies' extra half-width), same floor,
@@ -476,10 +520,11 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   it per visit: that fired a webglcontextlost error report on every close,
   and leaking a context per visit lets the browser kill the game's own).
   A NEW SECTOR banner (THE
-  BIOFOUNDRY · SECTORS 4–5) shows above the menu for RETURNING players
-  only (`voxelstrike-tutorial-done` set) until they first enter a
-  Biofoundry sector (`buildLevel` sets
-  `voxelstrike-biofoundry-seen`; the `?sector4` preview doesn't count). Web
+  GEOTHERMAL CORE · SECTORS 6–7 · MIND THE HEAT) shows above the menu for
+  RETURNING players only (`voxelstrike-tutorial-done` set) until they first
+  enter a Geothermal Core sector (`buildLevel` sets
+  `voxelstrike-geothermal-seen`; previews don't count). It always advertises
+  the newest sectors (it was the Biofoundry's). Web
   builds show it with `?coop` (development; `coop.mjs` uses it), and the
   `?role=…&room=…` auto-join still works.
 - `src/platform/poki.ts` — Poki web-portal layer (details in POKI.md). Every
@@ -517,7 +562,16 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   tall landscape phone: they scroll (`overflow-y: auto`, inner block centred
   by auto margins so it never clips at the top, footer in the flow), and
   settings switch to a compact two-column grid under `max-height: 560px` —
-  check new menu content at 667×375 (`features.mjs` #14).
+  check new menu content at 667×375 (`features.mjs` #14). SAFE AREA:
+  index.html sets `viewport-fit=cover` (edge to edge under the notch and
+  home bar), so anything pinned to an edge adds the body's `--sat` /
+  `--sar` / `--sab` / `--sal` (`env(safe-area-inset-*)`, 0 on desktop,
+  notch-less phones and in Poki's iframe): `calc(18px + var(--sar))`.
+  `body.force-landscape` remaps them (the game's top = the device's right,
+  right = bottom, bottom = left, left = top). Centred things (crosshair,
+  automap, panels) never take them. `features.mjs` #23 checks real insets
+  (CDP `Emulation.setSafeAreaInsetsOverride`) at 667×375, 844×390 and held
+  upright — new edge-pinned UI must use the variables or it fails there.
 - `src/ui/hud.ts` — DOM HUD + all screens; the voxel wordmark renderer
   (`startVoxelLogo`) draws 5×7 glyphs as extruded blocks (add glyphs to
   `GLYPHS` before using new letters in a wordmark). `hud.hint()` is the
@@ -607,8 +661,9 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   swipe = prev/next, hold 280ms = a wheel of owned weapons (slide + release
   picks, release on the button cancels); wheel positions use offsetLeft/Top
   (layout space) so they match `mapXY`. The top slot bar shows owned weapons
-  only, and an empty weapon auto-switches to a loaded one (touch only,
-  `DRY_SWITCH` order, rockets last). `features.mjs` #13 covers all of it.
+  only, and an empty weapon auto-switches to a loaded one (`DRY_SWITCH`
+  order, rockets last). `features.mjs` #13 covers all of it. On EVERY
+  device an empty non-sidearm gun is THROWN instead (below).
 - PWA: `public/manifest.webmanifest` (fullscreen, landscape) + `public/sw.js`
   (network-first, cache fallback — bump its CACHE name when changing SW
   behavior) + icons from `node scripts/gen-icons.mjs`. The SW registers in

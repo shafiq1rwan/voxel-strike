@@ -6,13 +6,15 @@ import { ExitSignSpec, LedgeRailSpec,
 } from '../types';
 
 /** which look a generated sector wears; the layout rules are the same */
-export type LevelTheme = 'facility' | 'biofoundry';
+export type LevelTheme = 'facility' | 'biofoundry' | 'geothermal';
 
 /** specimen tank footprint: 3 (x) × 2 (z) on a metal base, glass y = 2..4, cap y = 5 */
 export const TANK_W = 3;
 export const TANK_D = 2;
 /** the Biofoundry's purple emergency-light wash (the facility keeps the default) */
 export const BIO_AMBIENT: [number, number, number] = [36, 26, 52];
+/** the Geothermal Core (sectors 6–7): a dark, warm basalt ambient under the heat seams */
+export const GEO_AMBIENT: [number, number, number] = [34, 24, 20];
 
 /**
  * Biofoundry sectors only: what the scenery pass (`decorate` in
@@ -35,10 +37,38 @@ export interface BioLayout {
   labDoor?: { x: number; z: number };
 }
 
+/**
+ * Geothermal sectors only: what `decorateGeothermal` (src/preview/geothermal-gen.ts)
+ * dresses and runs. The Power Link is optional: shoot the node, the supply
+ * cage's gate sinks and its sealed pickups unlock. It never gates the route.
+ */
+export interface GeoLayout {
+  powerLink: {
+    /** the node: a LampWarm voxel in the room's wall at eye height; (nx, nz) faces the room */
+    node: { x: number; y: number; z: number; nx: number; nz: number };
+    /**
+     * the cage against a wall: point(a, t) = (ox + ux·a + nx·t, oz + uz·a + nz·t),
+     * a ∈ 0..5 along the wall (sides at a = 0 and 4), t ∈ 0..2 into the room
+     * (back row holds the supplies, the front row is the PowerBarrier grille);
+     * Metal sides and roof (y = 4), interior y = 1..3
+     */
+    cage: { ox: number; oz: number; ux: number; uz: number; nx: number; nz: number };
+    /** the room's wall faces (interior bounds), for routing the cable around them */
+    room: { x0: number; z0: number; x1: number; z1: number };
+    /** the cable's height on the wall (clears doorways and the cage roof) */
+    cableY: number;
+  } | null;
+  /** steam outlets over heat seams: [x, z] cell */
+  vents: Array<[number, number]>;
+  /** wall signs: ry turns the plane to face the room */
+  signs: Array<{ text: string; x: number; y: number; z: number; w: number; ry: number }>;
+}
+
 export interface LevelData {
   world: VoxelWorld;
   theme?: LevelTheme;
   bio?: BioLayout;
+  geo?: GeoLayout;
   /**
    * Boss sectors (5, then every 5th depth): the Broodkeeper's cradle against
    * an arena wall with no doorway behind it. `yaw` faces the room. The red
@@ -124,6 +154,7 @@ const ENEMY_CAP = 90;
 function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, withBoss: boolean): LevelData {
   const rng = new RNG(seed);
   const isBio = theme === 'biofoundry';
+  const isGeo = theme === 'geothermal';
   const world = new VoxelWorld(WORLD_X, WORLD_Y, WORLD_Z);
   const pickups: PickupSpec[] = [];
   const enemies: EnemySpec[] = [];
@@ -173,7 +204,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     if (!ok) continue;
     rooms.push({
       // Biofoundry rooms are taller (tanks stand y = 1..5); same single draw
-      id: rooms.length, x, z, w, d, h: isBio ? rng.int(5, 6) : rng.int(4, 5),
+      id: rooms.length, x, z, w, d, h: isBio || isGeo ? rng.int(5, 6) : rng.int(4, 5),
       cx: x + Math.floor(w / 2), cz: z + Math.floor(d / 2),
       kind: 'normal', dist: 0,
     });
@@ -676,6 +707,9 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     // the exit hall its teal (signal colours keep their meaning)
     if (r.kind === 'exit') lamp = Block.LampWarm;
     else if (isBio) lamp = r.kind === 'key' ? Block.LampRed : Block.LampViolet;
+    // the Geothermal Core: warm work lights over the glowing seams; the key
+    // room keeps its red (signal colours keep their meaning)
+    else if (isGeo) lamp = r.kind === 'key' ? Block.LampRed : Block.LampWarm;
     else if (r.kind === 'key') lamp = Block.LampRed;
     else if (r.kind === 'arena') lamp = rng.chance(0.5) ? Block.LampTeal : Block.LampRed;
     else lamp = rng.chance(0.28) ? Block.LampTeal : rng.chance(0.14) ? Block.LampRed : Block.LampWarm;
@@ -859,6 +893,22 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     occupiedTanks = bio.tanks.filter((t) => t.occupied).length;
   }
 
+  // -- Geothermal Core: the optional Power Link cage ------------------------
+  // Built before pickups/enemies: its cells are PowerBarrier while they are
+  // placed (nothing lands inside), the back row opens again before the bake.
+  const powerLink = isGeo ? placePowerLink(world, rooms, dhash, boss?.roomId ?? -1) : null;
+  if (powerLink) {
+    const { ox, oz, ux, uz, nx, nz } = powerLink.cage;
+    const at = (a: number, t: number): [number, number] => [ox + ux * a + nx * t, oz + uz * a + nz * t];
+    // the supplies: armor in the middle, health and ammo either side
+    const ammo: PickupSpec['kind'][] = ['ammoRockets', 'ammoCells', 'ammoShells'];
+    const kinds: PickupSpec['kind'][] = ['healthBig', 'armorVest', ammo[Math.floor(dhash(ox, 9, oz) * ammo.length)]];
+    kinds.forEach((kind, i) => {
+      const [x, z] = at(1.5 + i, 0.5);
+      pickups.push({ kind, x, y: 1.4, z, sealed: true });
+    });
+  }
+
   // -- pickups --------------------------------------------------------------
   const freeSpot = (r: RoomDef): [number, number] => {
     for (let tries = 0; tries < 20; tries++) {
@@ -957,18 +1007,26 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     if (difficulty > 5 && r.dist >= 2) count += Math.min(2, Math.floor((difficulty - 4) / 3));
     for (let i = 0; i < count; i++) {
       // farther rooms and later sectors skew ranged
-      const rangedP = Math.min(0.75, (r.dist >= 2 ? 0.5 : 0.25) + (difficulty - 1) * 0.08);
+      // (the core caps it lower: its Kiln Drones hit harder than Sentinels, and
+      // a ranged-heavy sector 6 was a wall right after the boss)
+      const rangedP = Math.min(isGeo ? 0.5 : 0.75, (r.dist >= 2 ? 0.5 : 0.25) + (difficulty - 1) * 0.08);
       const ranged = rng.chance(rangedP);
       const [x, z] = freeSpot(r);
-      addEnemy({ kind: ranged ? 'sentinel' : 'husk', x, z, roomId: r.id });
+      // the Geothermal Core breeds its own: Vent Stalkers among the melee,
+      // Kiln Drones among the ranged (position-hashed: the layout RNG stream
+      // is the same as any other sector's)
+      const native = isGeo && dhash(x, 711 + i, z) < 0.55;
+      addEnemy({ kind: ranged ? (native ? 'kilnDrone' : 'sentinel') : (native ? 'ventStalker' : 'husk'), x, z, roomId: r.id });
     }
     // ticker nests: packs of suicide crawlers, more common deeper in (none in
     // the sector 1 opener). Sector 2 only meets lone tickers, in about a
     // quarter of the rooms; sector 3 pairs at most; full packs from sector 4.
     // Enemies per sector now climb ~12 → ~20 → ~38 → ~61 (it was 12 → 46).
-    const tickerP = difficulty === 2 ? 0.25 : difficulty === 3 ? 0.35 : 0.3 + (difficulty - 1) * 0.15;
+    // The core keeps tickers to about half the rooms, in pairs at most: its
+    // Vent Stalkers already rush you.
+    const tickerP = difficulty === 2 ? 0.25 : difficulty === 3 ? 0.35 : isGeo ? 0.45 : 0.3 + (difficulty - 1) * 0.15;
     if (difficulty >= 2 && r.dist >= 1 && rng.chance(tickerP)) {
-      const pack = difficulty === 2 ? 1 : rng.int(1, Math.min(difficulty === 3 ? 2 : 3, 1 + difficulty));
+      const pack = difficulty === 2 ? 1 : rng.int(1, Math.min(difficulty === 3 || isGeo ? 2 : 3, 1 + difficulty));
       for (let i = 0; i < pack; i++) {
         const [x, z] = freeSpot(r);
         addEnemy({ kind: 'ticker', x, z, roomId: r.id });
@@ -980,7 +1038,8 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
       const brutes = difficulty >= 3 ? 2 : difficulty >= 2 ? 1 : 0;
       for (let i = 0; i < brutes; i++) {
         const [x, z] = freeSpot(r);
-        addEnemy({ kind: 'brute', x, z, roomId: r.id });
+        // the core's pit is held by a Cinder Hulk (with a brute beside it later on)
+        addEnemy({ kind: isGeo && i === 0 ? 'cinderHulk' : 'brute', x, z, roomId: r.id });
       }
     }
   }
@@ -1010,6 +1069,19 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   // (after the deco pass, the cracked secret wall and every lamp, so only the
   // plain surfaces change; vents, pipe columns, trim and metal stay)
   if (isBio) reskinLab(world, dhash);
+  let geo: GeoLayout | undefined;
+  if (isGeo) {
+    if (powerLink) {
+      // the cage's back row was held while spawns were placed: open it for the supplies
+      const { ox, oz, ux, uz, nx, nz } = powerLink.cage;
+      for (let a = 1; a <= 3; a++) {
+        const x = Math.floor(ox + ux * (a + 0.5) + nx * 0.5), z = Math.floor(oz + uz * (a + 0.5) + nz * 0.5);
+        for (let y = 1; y <= 3; y++) world.set(x, y, z, Block.Air);
+      }
+    }
+    const vents = dressGeothermal(world, rooms, dhash);
+    geo = { powerLink, vents, signs: geoSigns(world, spawnRoom) };
+  }
 
   // Give the exit hall its reference surfaces, including the vertical ledge
   // face. This is local to the room; corridor and sector palettes stay intact.
@@ -1019,7 +1091,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
       for (let y = 0; y <= exitRoom.h + 1; y++) {
         const b = world.get(x, y, z);
         if ([Block.Wall, Block.WallRust, Block.WallVent, Block.WallPipes, Block.WallWorn,
-          Block.LabWall, Block.LabWallRust, Block.Metal].includes(b)) {
+          Block.LabWall, Block.LabWallRust, Block.Basalt, Block.Metal].includes(b)) {
           world.set(x, y, z, dhash(x, y, z) < .28 ? Block.ServiceWallRust : Block.ServiceWall);
         } else if (b === Block.Floor || b === Block.LabFloor) world.set(x, y, z, Block.ServiceFloor);
         else if ([Block.Ceil, Block.CeilVent, Block.CeilPipes, Block.CeilPipesZ, Block.LabCeil, Block.LabCeilGrate].includes(b)) world.set(x, y, z, Block.ServiceCeil);
@@ -1047,7 +1119,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     }
   }
   // -- bake lights & finish -------------------------------------------------
-  world.bakeLighting(isBio ? BIO_AMBIENT : undefined, lightOverrides);
+  world.bakeLighting(isBio ? BIO_AMBIENT : isGeo ? GEO_AMBIENT : undefined, lightOverrides);
 
   return {
     world,
@@ -1068,6 +1140,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     totalSecrets: secretRect ? 1 : 0,
     theme,
     bio,
+    geo,
     boss,
   };
 }
@@ -1229,6 +1302,158 @@ function dressBiofoundry(
 }
 
 /** lab tiles over the facility's plain surfaces (vents, pipes, trim, metal stay) */
+/**
+ * The Geothermal Core's look (after reference/geothermal-in-game-v2.png and the
+ * ?sector6 preview): basalt walls with rusted plate between, and molten heat
+ * seams set FLUSH in the room floors — short glowing runs along each room's
+ * long axis. They light the rooms orange from below and read as lava cracks,
+ * but they're solid floor: no trench anything can fall into (the preview's
+ * recessed channels stranded walkers). Spawn and exit rooms stay plain.
+ */
+function dressGeothermal(world: VoxelWorld, rooms: RoomDef[], dhash: Hash): Array<[number, number]> {
+  const vents: Array<[number, number]> = [];
+  for (let y = 0; y < world.sy; y++) for (let z = 0; z < world.sz; z++) for (let x = 0; x < world.sx; x++) {
+    const b = world.get(x, y, z);
+    if (b === Block.Wall || b === Block.WallWorn) world.set(x, y, z, dhash(x, y + 40, z) < 0.7 ? Block.Basalt : Block.WallRust);
+  }
+  for (const r of rooms) {
+    if (r.kind === 'spawn' || r.kind === 'exit') continue;
+    const alongX = r.w >= r.d;
+    const len = alongX ? r.w : r.d;
+    // one seam down the middle; big rooms get a second, offset one
+    const lines = alongX ? [r.cz] : [r.cx];
+    if ((alongX ? r.d : r.w) >= 11) lines.push((alongX ? r.cz : r.cx) + 3);
+    lines.forEach((c, li) => {
+      // 3-cell runs with gaps, starting at a hashed offset
+      const start = 2 + Math.floor(dhash(r.id, li, 812) * 3);
+      for (let a = start; a < len - 2; a++) {
+        if ((a - start) % 5 >= 3) continue;
+        const x = alongX ? r.x + a : c, z = alongX ? c : r.z + a;
+        // only open floor (never under a pillar, crate or barrel)
+        if (world.get(x, 0, z) !== Block.Floor || world.get(x, 1, z) !== Block.Air) continue;
+        world.set(x, 0, z, Block.GeothermalHeat);
+        // some runs vent steam from their first cell
+        if ((a - start) % 5 === 0 && vents.length < 14 && dhash(x, 3, z) < 0.5) vents.push([x, z]);
+      }
+    });
+  }
+  return vents;
+}
+
+const PLAIN_WALLS: number[] = [Block.Wall, Block.WallRust, Block.WallWorn, Block.WallVent, Block.WallPipes];
+
+/** a room's four walls: origin at the a = 0 corner of the face, u along it, n into the room */
+function roomWalls(r: RoomDef): Array<{ ox: number; oz: number; ux: number; uz: number; nx: number; nz: number; len: number; deep: number }> {
+  return [
+    { ox: r.x, oz: r.z, ux: 1, uz: 0, nx: 0, nz: 1, len: r.w, deep: r.d },
+    { ox: r.x, oz: r.z + r.d, ux: 1, uz: 0, nx: 0, nz: -1, len: r.w, deep: r.d },
+    { ox: r.x, oz: r.z, ux: 0, uz: 1, nx: 1, nz: 0, len: r.d, deep: r.w },
+    { ox: r.x + r.w, oz: r.z, ux: 0, uz: 1, nx: -1, nz: 0, len: r.d, deep: r.w },
+  ];
+}
+
+/**
+ * Distance around a room's wall faces (clockwise from the x0/z0 corner) of a
+ * point on a face with inward normal (nx, nz). The Power Link cable follows it.
+ */
+export function wallPerimeter(room: { x0: number; z0: number; x1: number; z1: number }, fx: number, fz: number, nx: number, nz: number): number {
+  const W = room.x1 - room.x0, D = room.z1 - room.z0;
+  if (nz > 0) return fx - room.x0;
+  if (nx < 0) return W + fz - room.z0;
+  if (nz < 0) return W + D + room.x1 - fx;
+  return 2 * W + D + room.z1 - fz;
+}
+
+/**
+ * The Power Link: a 5×2 supply cage against a doorway-free wall of a normal
+ * room (never spawn, key, exit, arena or the boss chamber), its grille facing
+ * clear floor, and a node in the same room's wall at least 6 cells of wall
+ * away — the amber cable between them is the clue. Position-hashed only.
+ */
+function placePowerLink(world: VoxelWorld, rooms: RoomDef[], dhash: Hash, bossRoom: number): GeoLayout['powerLink'] {
+  const cands = rooms
+    .filter((r) => r.kind === 'normal' && r.dist >= 1 && r.id !== bossRoom)
+    .sort((a, b) => (b.dist >= 2 ? 1 : 0) - (a.dist >= 2 ? 1 : 0) || dhash(a.id, 5, 77) - dhash(b.id, 5, 77));
+  const air = (x: number, y: number, z: number): boolean => world.get(x, y, z) === Block.Air;
+  for (const r of cands) {
+    const walls = roomWalls(r);
+    const room = { x0: r.x, z0: r.z, x1: r.x + r.w, z1: r.z + r.d };
+    const P = 2 * (r.w + r.d);
+    const w0 = Math.floor(dhash(r.id, 6, 78) * 4);
+    for (let k = 0; k < 4; k++) {
+      const w = walls[(w0 + k) % 4];
+      if (w.len < 9 || w.deep < 6) continue;
+      const span = w.len - 6;
+      const o0 = Math.floor(dhash(r.id, 7 + k, 79) * span);
+      for (let j = 0; j < span; j++) {
+        const a0 = 1 + ((o0 + j) % span);
+        const cage = { ox: w.ox + w.ux * a0, oz: w.oz + w.uz * a0, ux: w.ux, uz: w.uz, nx: w.nx, nz: w.nz };
+        const cell = (a: number, t: number): [number, number] => [
+          Math.floor(cage.ox + w.ux * (a + 0.5) + w.nx * (t + 0.5)),
+          Math.floor(cage.oz + w.uz * (a + 0.5) + w.nz * (t + 0.5)),
+        ];
+        let ok = true;
+        // the footprint is open air, the wall behind has no doorway, the grille faces clear floor
+        for (let a = -1; a <= 5 && ok; a++) for (let t = -1; t <= 2 && ok; t++) {
+          const [x, z] = cell(a, t);
+          if (t === -1) { for (let y = 1; y <= 3; y++) if (air(x, y, z)) ok = false; }
+          else if (t <= 1 && a >= 0 && a <= 4) { for (let y = 1; y <= 4; y++) if (!air(x, y, z)) ok = false; }
+          else if (t === 2 && a >= 1 && a <= 3) { for (let y = 1; y <= 2; y++) if (!air(x, y, z)) ok = false; }
+        }
+        if (!ok) continue;
+        // the node: a plain wall voxel at eye height, open air in front of it
+        const sCage = wallPerimeter(room, cage.ox + w.ux * 2.5, cage.oz + w.uz * 2.5, w.nx, w.nz);
+        let node: { x: number; y: number; z: number; nx: number; nz: number } | null = null;
+        let best = -1;
+        for (const v of walls) {
+          for (let a = 1; a < v.len - 1; a++) {
+            const x = Math.floor(v.ox + v.ux * (a + 0.5) - v.nx * 0.5), z = Math.floor(v.oz + v.uz * (a + 0.5) - v.nz * 0.5);
+            if (!PLAIN_WALLS.includes(world.get(x, 2, z)) || air(x, 1, z) || air(x, 3, z)) continue;
+            if (!air(x + v.nx, 1, z + v.nz) || !air(x + v.nx, 2, z + v.nz)) continue;
+            const s = wallPerimeter(room, x + 0.5 + v.nx * 0.5, z + 0.5 + v.nz * 0.5, v.nx, v.nz);
+            const gap = Math.min(Math.abs(s - sCage), P - Math.abs(s - sCage));
+            if (gap < 6) continue;
+            // prefer another wall: the cable has to turn a corner to be followed
+            const score = dhash(x, 2, z) + (v === w ? 0 : 1);
+            if (score > best) { best = score; node = { x, y: 2, z, nx: v.nx, nz: v.nz }; }
+          }
+        }
+        if (!node) continue;
+        // build: steel plate floor, Metal sides + roof, the interior held by
+        // PowerBarrier until spawns are placed (the front row stays: the grille)
+        for (let a = 0; a <= 4; a++) for (let t = 0; t <= 1; t++) {
+          const [x, z] = cell(a, t);
+          world.set(x, 0, z, Block.Metal);
+          for (let y = 1; y <= 3; y++) world.set(x, y, z, a === 0 || a === 4 ? Block.Metal : Block.PowerBarrier);
+          world.set(x, 4, z, Block.Metal);
+        }
+        world.set(node.x, node.y, node.z, Block.LampWarm);
+        return { node, cage, room, cableY: 5.45 };
+      }
+    }
+  }
+  return null;
+}
+
+/** the core's name over the spawn room's first doorway-free wall */
+function geoSigns(world: VoxelWorld, r: RoomDef): GeoLayout['signs'] {
+  for (const w of roomWalls(r)) {
+    const c = Math.floor(w.len / 2);
+    let solid = true;
+    for (let a = c - 2; a <= c + 1 && solid; a++) {
+      const x = Math.floor(w.ox + w.ux * (a + 0.5) - w.nx * 0.5), z = Math.floor(w.oz + w.uz * (a + 0.5) - w.nz * 0.5);
+      for (let y = 1; y <= 4; y++) if (!world.isSolid(x, y, z)) solid = false;
+    }
+    if (!solid) continue;
+    return [{
+      text: 'GEOTHERMAL CORE', w: 3.4, y: 3.3,
+      x: w.ox + w.ux * c + w.nx * 0.03, z: w.oz + w.uz * c + w.nz * 0.03,
+      ry: Math.atan2(w.nx, w.nz),
+    }];
+  }
+  return [];
+}
+
 function reskinLab(world: VoxelWorld, dhash: Hash): void {
   for (let y = 0; y < world.sy; y++) for (let z = 0; z < world.sz; z++) for (let x = 0; x < world.sx; x++) {
     switch (world.get(x, y, z)) {
