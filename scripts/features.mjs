@@ -57,7 +57,9 @@ try {
     const tickers = g.level.enemies.filter((e) => e.kind === 'ticker');
     const perRoom = {};
     for (const t of tickers) perRoom[t.roomId] = (perRoom[t.roomId] ?? 0) + 1;
-    const s2 = { rooms: g.level.rooms.length, tickers: tickers.length, maxPack: Math.max(0, ...Object.values(perRoom)) };
+    const occupied = new Set(g.level.enemies.map((e) => e.roomId));
+    const quiet = g.level.rooms.filter((r) => r.kind === 'normal' && !occupied.has(r.id)).length;
+    const s2 = { rooms: g.level.rooms.length, quiet, tickers: tickers.length, maxPack: Math.max(0, ...Object.values(perRoom)) };
     // the exit pad is the threshold of an exit door in the back wall
     const sign = g.level.exitSign, pad = g.level.exitPad;
     s2.gate = !!sign && !!pad && sign.y === pad.y &&
@@ -68,8 +70,8 @@ try {
   check(opener.rooms <= 7 && !opener.brute && !opener.ticker && opener.shotgunAtSpawn,
     `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no tickers, shotgun in the spawn room`);
   check(opener.s2.gate, `the exit pad sits against the back wall under the EXIT sign (${opener.s2.gateFace} wall)`);
-  check(opener.s2.rooms >= 8 && opener.s2.rooms <= 9 && opener.s2.tickers >= 1 && opener.s2.maxPack === 1,
-    `sector 2 steps up gently: ${opener.s2.rooms} rooms (8–9), ${opener.s2.tickers} lone ticker(s), no packs (largest ${opener.s2.maxPack})`);
+  check(opener.s2.rooms >= 11 && opener.s2.rooms <= 13 && opener.s2.tickers >= 1 && opener.s2.maxPack === 1 && opener.s2.quiet >= 1,
+    `sector 2 is full length but gentle: ${opener.s2.rooms} rooms (11–13), ${opener.s2.quiet} quiet room(s), ${opener.s2.tickers} lone ticker(s), no packs (largest ${opener.s2.maxPack})`);
   await new Promise((r) => setTimeout(r, 300));
 
   // --- 1a. ticker charges the player and self-destructs -----------------------
@@ -99,6 +101,11 @@ try {
   // --- 1b. a sniped ticker explodes where it died (corpse chain) --------------
   const chain = await page.evaluate(async () => {
     const g = window.__voxelstrike;
+    // sector 2 meets lone tickers (often just one, spent in 1a): bring in another
+    if (!g.enemies.list.some((q) => q.alive && q.kind === 'ticker')) {
+      const r = g.level.rooms.find((q) => q.kind === 'spawn');
+      g.enemies.spawnFromSpecs([{ kind: 'ticker', x: r.cx + 0.5, z: r.cz + 0.5, roomId: r.id }], g.level.rooms, g);
+    }
     const t = g.enemies.list.find((q) => q.alive && q.kind === 'ticker');
     const h = g.enemies.list.find((q) => q.alive && q.kind === 'husk');
     if (!t || !h) return { found: false };
@@ -1307,10 +1314,12 @@ try {
       const { generateLevel } = await import('/src/world/levelgen.ts');
       const bad = [];
       let n = 0;
-      for (let seed = 1; seed <= 15; seed++) for (const depth of [6, 7]) {
+      // the core (6–7) and the facility from sector 2 (2, 3, and an endless depth)
+      const cases = [[6, 'geothermal'], [7, 'geothermal'], [2, 'facility'], [3, 'facility'], [8, 'facility']];
+      for (let seed = 1; seed <= 12; seed++) for (const [depth, theme] of cases) {
         n++;
-        const L = generateLevel(seed * 7919, depth, 'geothermal');
-        const pl = L.geo?.powerLink;
+        const L = generateLevel(seed * 7919, depth, theme);
+        const pl = L.powerLink;
         if (!pl) { bad.push(`${seed}/${depth}: none`); continue; }
         const c = pl.cage;
         const room = L.rooms.find((r) => r.x === pl.room.x0 && r.z === pl.room.z0);
@@ -1328,12 +1337,14 @@ try {
         });
         if (enemyInside) bad.push(`${seed}/${depth}: an enemy spawns in the cage`);
       }
-      // facility and Biofoundry sectors never get one
-      const other = [generateLevel(7919, 3, 'facility'), generateLevel(7919, 4, 'biofoundry')].some((L) => L.geo);
-      return { n, bad, other };
+      // the sector 1 opener and the Biofoundry (it has its tanks) never get one;
+      // only the core has the steam + signs
+      const other = [generateLevel(7919, 1, 'facility'), generateLevel(7919, 4, 'biofoundry')].some((L) => L.powerLink);
+      const geoOnly = !generateLevel(7919, 2, 'facility').geo && !!generateLevel(7919, 6, 'geothermal').geo;
+      return { n, bad, other, geoOnly };
     });
-    check(sweep.bad.length === 0, `Power Link in all ${sweep.n} core layouts: normal room, lamp node, 3 sealed supplies in the cage, no enemy inside${sweep.bad.length ? ' — ' + sweep.bad.join('; ') : ''}`);
-    check(!sweep.other, 'facility and Biofoundry sectors have no core layout');
+    check(sweep.bad.length === 0, `Power Link in all ${sweep.n} core + facility (sector 2+) layouts: normal room, lamp node, 3 sealed supplies in the cage, no enemy inside${sweep.bad.length ? ' — ' + sweep.bad.join('; ') : ''}`);
+    check(!sweep.other && sweep.geoOnly, 'no Power Link in the sector 1 opener or the Biofoundry; steam + signs only in the core');
 
     await new Promise((r) => setTimeout(r, 900));
     await gp.click('#start-btn');
@@ -1351,7 +1362,7 @@ try {
     await new Promise((r) => setTimeout(r, 400));
     // a point on the cage: a along the wall, t out into the room
     await gp.evaluate(() => {
-      window.__cageAt = (a, t) => { const c = window.__voxelstrike.level.geo.powerLink.cage; return [c.ox + c.ux * a + c.nx * t, c.oz + c.uz * a + c.nz * t]; };
+      window.__cageAt = (a, t) => { const c = window.__voxelstrike.level.powerLink.cage; return [c.ox + c.ux * a + c.nx * t, c.oz + c.uz * a + c.nz * t]; };
     });
     // walk straight at the grille: it holds, and nothing inside is collected
     const walk = await gp.evaluate(async () => {
@@ -1366,7 +1377,7 @@ try {
       g.input.keys.add('KeyW');
       for (let i = 0; i < 45; i++) await new Promise((r) => requestAnimationFrame(r));
       g.input.keys.delete('KeyW');
-      const c = g.level.geo.powerLink.cage;
+      const c = g.level.powerLink.cage;
       const depth = (g.player.pos.x - c.ox) * c.nx + (g.player.pos.z - c.oz) * c.nz;
       return { depth, taken: g.pickups.items.filter((p) => p.taken && 'sealed' in p.spec).length, art: !!g.previewArt?.group.userData.powerLink };
     });
@@ -1375,7 +1386,7 @@ try {
     // a shot at plain wall does nothing; a shot at the node solves it
     const shoot = (target) => gp.evaluate(async (target) => {
       const g = window.__voxelstrike;
-      const n = g.level.geo.powerLink.node;
+      const n = g.level.powerLink.node;
       const x = n.x + 0.5 + n.nx * 4, z = n.z + 0.5 + n.nz * 4;
       g.player.pos.set(x, 1.9, z);
       g.player.vel.set(0, 0, 0);

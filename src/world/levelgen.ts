@@ -38,12 +38,12 @@ export interface BioLayout {
 }
 
 /**
- * Geothermal sectors only: what `decorateGeothermal` (src/preview/geothermal-gen.ts)
- * dresses and runs. The Power Link is optional: shoot the node, the supply
- * cage's gate sinks and its sealed pickups unlock. It never gates the route.
+ * The optional POWER LINK (facility sectors from 2, and the Geothermal Core):
+ * shoot the node, the supply cage's gate sinks and its sealed pickups unlock.
+ * It never gates the route. `decorateGeothermal` (src/preview/geothermal-gen.ts)
+ * draws and runs it.
  */
-export interface GeoLayout {
-  powerLink: {
+export interface PowerLinkLayout {
     /** the node: a LampWarm voxel in the room's wall at eye height; (nx, nz) faces the room */
     node: { x: number; y: number; z: number; nx: number; nz: number };
     /**
@@ -57,7 +57,10 @@ export interface GeoLayout {
     room: { x0: number; z0: number; x1: number; z1: number };
     /** the cable's height on the wall (clears doorways and the cage roof) */
     cableY: number;
-  } | null;
+}
+
+/** Geothermal sectors only: the core's scenery (steam, signs) for `decorateGeothermal` */
+export interface GeoLayout {
   /** steam outlets over heat seams: [x, z] cell */
   vents: Array<[number, number]>;
   /** wall signs: ry turns the plane to face the room */
@@ -69,6 +72,7 @@ export interface LevelData {
   theme?: LevelTheme;
   bio?: BioLayout;
   geo?: GeoLayout;
+  powerLink?: PowerLinkLayout | null;
   /**
    * Boss sectors (5, then every 5th depth): the Broodkeeper's cradle against
    * an arena wall with no doorway behind it. `yaw` faces the room. The red
@@ -150,6 +154,9 @@ const BIO_TANKS_MAX = 12;
 const bioOccupied = (difficulty: number): number => (difficulty >= 8 ? 8 : difficulty >= 5 ? 6 : 4);
 /** endless depths keep adding bodies; this keeps phones inside the draw budget */
 const ENEMY_CAP = 90;
+/** share of plain rooms with no enemies in sectors 2 and 3 (full length, gentle fight count) */
+const QUIET_ROOMS_S2 = 0.4;
+const QUIET_ROOMS_S3 = 0.25;
 
 function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, withBoss: boolean): LevelData {
   const rng = new RNG(seed);
@@ -182,13 +189,12 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   }
 
   // sector 1 is a short opener (a first clear within a few minutes); the
-  // rest grow with depth. Sectors 2 and 3 step up gently: the Player Fit Test
-  // lost ~74% of players in sector 2 when it jumped straight from 6–7 rooms
-  // to 11–13. Sector 4 on keeps 12–14. Same single draw either way.
-  const targetRooms = difficulty === 1 ? rng.int(6, 7)
-    : difficulty === 2 ? rng.int(8, 9)
-    : difficulty === 3 ? rng.int(10, 11)
-    : rng.int(10, 12) + Math.min(2, difficulty - 1);
+  // rest grow with depth: 11–13 rooms in sector 2, 12–14 from sector 3. The
+  // Player Fit Test lost ~74% of players in sector 2 when it ALSO had ~4×
+  // sector 1's enemies; cutting it to 8–9 rooms made it feel too short (the
+  // owner), so the length is back and the enemy count is kept down instead
+  // (quiet rooms, lone tickers — see the enemy pass).
+  const targetRooms = difficulty === 1 ? rng.int(6, 7) : rng.int(10, 12) + Math.min(2, difficulty - 1);
   for (let attempt = 0; attempt < 300 && rooms.length < targetRooms; attempt++) {
     const w = rng.int(8, 15);
     const d = rng.int(8, 15);
@@ -893,10 +899,13 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     occupiedTanks = bio.tanks.filter((t) => t.occupied).length;
   }
 
-  // -- Geothermal Core: the optional Power Link cage ------------------------
-  // Built before pickups/enemies: its cells are PowerBarrier while they are
-  // placed (nothing lands inside), the back row opens again before the bake.
-  const powerLink = isGeo ? placePowerLink(world, rooms, dhash, boss?.roomId ?? -1) : null;
+  // -- the optional Power Link cage (facility from sector 2, the core) -------
+  // Something to find off the route in every sector after the opener (the
+  // Biofoundry has its tanks). Built before pickups/enemies: its cells are
+  // PowerBarrier while they are placed (nothing lands inside), the back row
+  // opens again before the bake.
+  const withLink = isGeo || (theme === 'facility' && difficulty >= 2);
+  const powerLink = withLink ? placePowerLink(world, rooms, dhash, boss?.roomId ?? -1) : null;
   if (powerLink) {
     const { ox, oz, ux, uz, nx, nz } = powerLink.cage;
     const at = (a: number, t: number): [number, number] => [ox + ux * a + nx * t, oz + uz * a + nz * t];
@@ -992,6 +1001,11 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     if (r.kind === 'spawn') continue;
     // a boss arena is the Broodkeeper's alone (its summons are the adds)
     if (boss && r.id === boss.roomId) continue;
+    // sectors 2–3 are full length again (the owner: shorter ones didn't feel
+    // like the game), but the difficulty step stays gentle: some plain rooms
+    // are quiet — supplies, no fight — so the run breathes between fights
+    if ((difficulty === 2 || difficulty === 3) && r.kind === 'normal' && r.dist >= 1 &&
+      dhash(r.id, 5, 913) < (difficulty === 2 ? QUIET_ROOMS_S2 : QUIET_ROOMS_S3)) continue;
     let count: number;
     if (r.dist <= 1) count = rng.int(1, 2);
     else if (r.dist === 2) count = 2;
@@ -1069,19 +1083,16 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   // (after the deco pass, the cracked secret wall and every lamp, so only the
   // plain surfaces change; vents, pipe columns, trim and metal stay)
   if (isBio) reskinLab(world, dhash);
-  let geo: GeoLayout | undefined;
-  if (isGeo) {
-    if (powerLink) {
-      // the cage's back row was held while spawns were placed: open it for the supplies
-      const { ox, oz, ux, uz, nx, nz } = powerLink.cage;
-      for (let a = 1; a <= 3; a++) {
-        const x = Math.floor(ox + ux * (a + 0.5) + nx * 0.5), z = Math.floor(oz + uz * (a + 0.5) + nz * 0.5);
-        for (let y = 1; y <= 3; y++) world.set(x, y, z, Block.Air);
-      }
+  if (powerLink) {
+    // the cage's back row was held while spawns were placed: open it for the supplies
+    const { ox, oz, ux, uz, nx, nz } = powerLink.cage;
+    for (let a = 1; a <= 3; a++) {
+      const x = Math.floor(ox + ux * (a + 0.5) + nx * 0.5), z = Math.floor(oz + uz * (a + 0.5) + nz * 0.5);
+      for (let y = 1; y <= 3; y++) world.set(x, y, z, Block.Air);
     }
-    const vents = dressGeothermal(world, rooms, dhash);
-    geo = { powerLink, vents, signs: geoSigns(world, spawnRoom) };
   }
+  let geo: GeoLayout | undefined;
+  if (isGeo) geo = { vents: dressGeothermal(world, rooms, dhash), signs: geoSigns(world, spawnRoom) };
 
   // Give the exit hall its reference surfaces, including the vertical ledge
   // face. This is local to the room; corridor and sector palettes stay intact.
@@ -1141,6 +1152,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     theme,
     bio,
     geo,
+    powerLink,
     boss,
   };
 }
@@ -1370,7 +1382,7 @@ export function wallPerimeter(room: { x0: number; z0: number; x1: number; z1: nu
  * clear floor, and a node in the same room's wall at least 6 cells of wall
  * away — the amber cable between them is the clue. Position-hashed only.
  */
-function placePowerLink(world: VoxelWorld, rooms: RoomDef[], dhash: Hash, bossRoom: number): GeoLayout['powerLink'] {
+function placePowerLink(world: VoxelWorld, rooms: RoomDef[], dhash: Hash, bossRoom: number): PowerLinkLayout | null {
   const cands = rooms
     .filter((r) => r.kind === 'normal' && r.dist >= 1 && r.id !== bossRoom)
     .sort((a, b) => (b.dist >= 2 ? 1 : 0) - (a.dist >= 2 ? 1 : 0) || dhash(a.id, 5, 77) - dhash(b.id, 5, 77));
@@ -1400,6 +1412,12 @@ function placePowerLink(world: VoxelWorld, rooms: RoomDef[], dhash: Hash, bossRo
           else if (t <= 1 && a >= 0 && a <= 4) { for (let y = 1; y <= 4; y++) if (!air(x, y, z)) ok = false; }
           else if (t === 2 && a >= 1 && a <= 3) { for (let y = 1; y <= 2; y++) if (!air(x, y, z)) ok = false; }
         }
+        // and it reads from across the room: no hanging lamp, pipe column or
+        // crate in the three rows in front of it
+        for (let a = 0; a <= 4 && ok; a++) for (let t = 2; t <= 4 && ok; t++) {
+          const [x, z] = cell(a, t);
+          for (let y = 1; y <= 3; y++) if (!air(x, y, z)) ok = false;
+        }
         if (!ok) continue;
         // the node: a plain wall voxel at eye height, open air in front of it
         const sCage = wallPerimeter(room, cage.ox + w.ux * 2.5, cage.oz + w.uz * 2.5, w.nx, w.nz);
@@ -1428,7 +1446,8 @@ function placePowerLink(world: VoxelWorld, rooms: RoomDef[], dhash: Hash, bossRo
           world.set(x, 4, z, Block.Metal);
         }
         world.set(node.x, node.y, node.z, Block.LampWarm);
-        return { node, cage, room, cableY: 5.45 };
+        // under the ceiling: facility rooms can be 4 tall (the cable then meets the cage roof's side)
+        return { node, cage, room, cableY: Math.min(5.45, r.h + 0.45) };
       }
     }
   }

@@ -50,7 +50,7 @@ node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consi
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + gentle sector 2 (8–9 rooms, lone tickers), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), the Geothermal Core POWER LINK (cage in every core layout, grille holds, a pistol shot at the node opens it, supplies collected)
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + full-length but gentle sector 2 (11–13 rooms, quiet rooms, lone tickers), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/exit-room-props.mjs [url] # seven props, 24 layouts/four lift directions, boarding route, ride/status/exit, ?exitroom shortcut, ready/docked screenshots
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
@@ -226,8 +226,10 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   Drones (position-hashed), the arena's first brute a Cinder Hulk; the
   ranged share is capped at 50% and tickers at ~45% of rooms in pairs, so
   sector 6 (~60 enemies) is no harder than sector 5 and 7 (~69) a step up.
-  Every core sector also gets a POWER LINK (`placePowerLink`, returned in
-  `level.geo` with the steam `vents` and `signs`): a 5×2 supply cage
+  Every core sector — and every FACILITY sector from 2 (something to find
+  off the route; the Biofoundry has its tanks) — gets a POWER LINK
+  (`placePowerLink` → `level.powerLink`; the core's steam `vents` and
+  `signs` are `level.geo`): a 5×2 supply cage
   (Metal sides + roof at y = 4, steel plate floor) against a doorway-free
   wall of a normal room (never spawn/key/exit/arena/boss), its front row an
   invisible `PowerBarrier` grille, three `sealed` pickups inside (health,
@@ -238,7 +240,9 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   routes an amber cable around the wall faces (`wallPerimeter`) from node to
   cage; a hitscan/arc/melee hit on the node (`voxelHit`) turns it green, the
   gate bars sink into the floor, the grille cells become air and the
-  pickups unseal. Optional: it never gates the route. Bio-only choices use `dhash` — facility sectors keep
+  pickups unseal. Optional: it never gates the route. Co-op (dev-only):
+  a client's shot solves it on the host, but the opened grille and unsealed
+  pickups are host-local, so only the host can collect. Bio-only choices use `dhash` — facility sectors keep
   their exact layouts per seed. Occupied tanks are preallocated in
   `totalEnemies`. One big `arena` room per
   sector is placed FIRST (while the map is empty, so it always fits) and is
@@ -254,13 +258,18 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   Difficulty = sector/depth number. Sector 1 is a short OPENER (6–7 rooms,
   shotgun in the spawn room, no ticker nests, no brute — 1 brute at 2, 2
   from 3 — plus a hashed barrel pair in the first room; e2e needs a barrel).
-  Sectors 2–3 RAMP gently (Player Fit Test 2026-10-19: sector 2 lost ~74%
-  of players when it jumped to 11–13 rooms and ~4× sector 1's enemies):
-  sector 2 is 8–9 rooms with lone tickers only (25% of rooms, plus one
-  guaranteed in a far room to introduce them) and no extra far-room enemy;
-  sector 3 is 10–11 rooms, ticker pairs at most (35%), the far-room +1
-  starts here; sector 4 on is unchanged (12–14 rooms, full packs). Enemies
-  per sector average ~12 → ~20 → ~39 → ~61; `features.mjs` checks sector 2.
+  Sectors 2–3 are FULL LENGTH but gentle. Player Fit Test 2026-10-19: sector
+  2 lost ~74% of players with 11–13 rooms AND ~4× sector 1's enemies; cutting
+  it to 8–9 rooms then felt too short to the owner ("we want to retain and
+  let them explore"), so the length is back (11–13 rooms, 12–14 from
+  sector 3) and the enemy count is what stays down: `QUIET_ROOMS_S2` (40%)
+  / `QUIET_ROOMS_S3` (25%) of plain rooms past the first hold no enemies
+  (position-hashed), sector 2 meets lone tickers only (25% of rooms, plus
+  one guaranteed in a far room) and no extra far-room enemy; sector 3 ticker
+  pairs at most (35%), the far-room +1 starts there; sector 4 on unchanged
+  (full packs). Over 30 seeds: rooms ~6.4 → 11.7 → 12.9 → 12.9, enemies
+  ~12 → ~23 → ~43 → ~65 (pre-ramp ~46 in sector 2); `features.mjs` checks
+  sector 2.
   `generateLevel(seed, n, theme, withBoss)`: with a boss, `placeBoss` puts
   the Broodkeeper on a doorway-free N/S (then W/E) wall of the arena with a
   clear 3.4×3.4 footprint (crates/barrels cleared), empties the arena's

@@ -4,9 +4,9 @@ import { wallPerimeter, type GeoLayout, type LevelData } from '../world/levelgen
 import { Block } from '../world/blocks';
 
 /**
- * Scenery + the optional Power Link puzzle for the GENERATED Geothermal Core
- * (sectors 6–7 and its endless depths), from the layout levelgen puts in
- * `LevelData.geo`. Codex's hand-built `?sector6` preview (geothermal.ts) is
+ * The optional Power Link puzzle (`LevelData.powerLink`: facility sectors from
+ * 2 and the Geothermal Core) + the GENERATED core's scenery (`LevelData.geo`:
+ * steam, signs) for sectors 6–7 and its endless depths. Codex's hand-built `?sector6` preview (geothermal.ts) is
  * where the puzzle was designed: an amber cable runs along the walls from a
  * sealed supply cage to a node in the wall; shooting the node turns the cable
  * green, the gate sinks into the floor and the supplies unlock. Optional —
@@ -41,7 +41,7 @@ interface Inst { x: number; y: number; z: number; sx: number; sy: number; sz: nu
 export function decorateGeothermal(level: LevelData): PreviewArt {
   const group = new THREE.Group();
   group.name = 'geothermal-art';
-  const geo: GeoLayout = level.geo ?? { powerLink: null, vents: [], signs: [] };
+  const geo: GeoLayout = level.geo ?? { vents: [], signs: [] };
   const shaded = shadedBox();
   const flat = new THREE.BoxGeometry(1, 1, 1);
   const materials: THREE.Material[] = [];
@@ -89,7 +89,7 @@ export function decorateGeothermal(level: LevelData): PreviewArt {
   for (const sg of geo.signs) sign(sg.text, sg.x, sg.y, sg.z, sg.w, sg.ry, '#e4d8b9');
 
   // ---- the Power Link ------------------------------------------------------
-  const link = geo.powerLink;
+  const link = level.powerLink ?? null;
   const signalMat = new THREE.MeshBasicMaterial({ color: raw(AMBER) });
   materials.push(signalMat);
   const gate = new THREE.Group();
@@ -152,9 +152,10 @@ export function decorateGeothermal(level: LevelData): PreviewArt {
     wallBox(dark, fx + node.nx * 0.13, (3 + cableY) / 2, fz + node.nz * 0.13, 0.26, cableY - 3, 0.26, nux);
     wallBox(signal, fx + node.nx * 0.28, (3 + cableY) / 2, fz + node.nz * 0.28, 0.1, cableY - 3, 0.07, nux);
     const [jx, jz] = cpt(2.5, 0.2);
-    wallBox(dark, jx, 5.2, jz, 0.7, 0.45, 0.4, cage.ux);
+    const jy = Math.min(5.2, cableY);
+    wallBox(dark, jx, jy, jz, 0.7, 0.45, 0.4, cage.ux);
     const [kx, kz] = cpt(2.5, 0.41);
-    wallBox(signal, kx, 5.2, kz, 0.3, 0.2, 0.04, cage.ux);
+    wallBox(signal, kx, jy, kz, 0.3, 0.2, 0.04, cage.ux);
     // status lamps either end of the roof's front face
     for (const a of [0.5, 4.5]) {
       const [lx, lz] = cpt(a, 2.03);

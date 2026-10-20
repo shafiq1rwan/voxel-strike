@@ -55,6 +55,15 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-20 — Sectors 2–3 full length again (owner: the shorter ones
+  "don't feel like last time"; "we want to retain and let them explore"):
+  11–13 / 12–14 rooms like before the ramp, but the enemy count stays
+  gentle — 40% / 25% of plain rooms are quiet (no enemies), lone tickers in
+  sector 2. Sector 2 averages ~23 enemies (pre-ramp ~46, the short build
+  ~20). The optional POWER LINK supply cache is now in every facility
+  sector from 2 too, as something to find off the route. Watch the level 2
+  `fail` vs `complete` split in the next playtest.
+
 - 2026-10-20 — Safe area on notched phones (owner asked): the page was
   already edge to edge (`viewport-fit=cover`) with nothing keeping the HUD
   out from under the notch and home bar. Touch buttons, MAP/pause, the HUD

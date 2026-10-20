@@ -571,8 +571,8 @@ export class Game {
     this.chunks.buildAll();
     scene.add(this.chunks.group);
     // Biofoundry scenery + live tanks: the authored ?sector4 map, or a generated sector 4
-    // (or the Geothermal Core's steam, signs and Power Link puzzle)
-    if (authored || this.level.bio || this.level.geo) {
+    // (or the Power Link puzzle — facility from sector 2 — and the core's steam + signs)
+    if (authored || this.level.bio || this.level.geo || this.level.powerLink) {
       this.previewArt = authored ? authored.decorate(this.level)
         : this.level.bio ? decorateBiofoundry(this.level) : decorateGeothermal(this.level);
       scene.add(this.previewArt.group);
