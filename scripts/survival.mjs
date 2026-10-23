@@ -1,6 +1,6 @@
 /**
- * Survival — the main mode (docs/RETENTION_PLAN.md §4): PLAY on the title
- * drops you into a sealed arena; waves spawn at its edges, kills drop
+ * Survival — the quiet button under PLAY on the title (docs/RETENTION_PLAN.md
+ * §4; it was PLAY for one Fit Test) drops you into a sealed arena; waves spawn at its edges, kills drop
  * supplies and SCRAP (a pickup that flies to you; the HUD counts it), each
  * cleared wave offers a pick of three and then a shop with gun pictures
  * (guns bought with scrap), wave 5 moves you to the next map, death ends the
@@ -66,19 +66,19 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
-  await page.waitForSelector('#play-btn');
+  await page.waitForSelector('#survival-btn');
 
-  // 1. the title: PLAY is Survival, the campaign is a quiet button
+  // 1. the title: PLAY is the campaign, Survival a quiet button under it
   const title = await page.evaluate(() => ({
-    play: document.querySelector('#play-btn')?.className ?? '',
-    camp: document.querySelector('#start-btn')?.textContent?.trim() ?? '',
-    campQuiet: document.querySelector('#start-btn')?.classList.contains('tbtn-quiet') ?? false,
+    play: document.querySelector('#start-btn')?.className ?? '',
+    camp: document.querySelector('#survival-btn')?.textContent?.trim() ?? '',
+    campQuiet: document.querySelector('#survival-btn')?.classList.contains('tbtn-quiet') ?? false,
     goal: document.querySelector('.title-goal')?.textContent ?? '',
     steps: document.querySelectorAll('#title-steps .tstep').length,
   }));
-  check(/tbtn-primary/.test(title.play) && title.camp === 'Campaign' && title.campQuiet,
-    `title: PLAY is the primary button, "Campaign" sits quiet beside it (${title.camp})`);
-  check(/Survive the waves/i.test(title.goal) && title.steps === 3, `first visit: "Survive the waves" + three steps (${title.goal})`);
+  check(/tbtn-primary/.test(title.play) && title.camp === 'Survival' && title.campQuiet,
+    `title: PLAY (the campaign) is the primary button, "Survival" sits quiet under it (${title.camp})`);
+  check(/Escape the facility/i.test(title.goal) && title.steps === 3, `first visit: the campaign's "Escape the facility" + three steps (${title.goal})`);
 
   // 2. PLAY: a sealed arena, the player in its middle
   // (every spawn's distance from the player is recorded at the moment it appears)
@@ -94,7 +94,7 @@ try {
     };
   });
   await sleep(800);
-  await page.click('#play-btn');
+  await page.click('#survival-btn');
   await sleep(1200);
   const start = await page.evaluate(() => {
     const g = window.__voxelstrike;
@@ -117,7 +117,7 @@ try {
     return { survival: !!g.survival, state: g.state, inside, gaps, theme: g.level.theme, enemies: g.level.enemies.length, pickups: g.pickups.items.length,
       w: r.w, d: r.d, cover, breakable, corner: g.survival.nav.stepsAt(r.x + 2.5, r.z + 2.5), far: !!g.survival.nav.dirAt(r.x + r.w - 2.5, r.z + r.d - 2.5) };
   });
-  check(start.survival && start.state === 'playing', 'PLAY starts a Survival run');
+  check(start.survival && start.state === 'playing', 'the Survival button starts a Survival run');
   check(start.inside && start.gaps === 0 && start.theme === 'facility', `map 1 is the Facility arena, walled off (gaps ${start.gaps}), the player inside`);
   check(start.enemies === 0 && start.pickups === 0, 'the arena starts empty: no campaign enemies or pickups');
   check(start.w >= 31 && start.d >= 29, `the Survival arena is big (${start.w} × ${start.d})`);
@@ -328,7 +328,7 @@ try {
   await page.evaluate(() => document.querySelector('#start-btn').click());
   await sleep(1200);
   const camp = await page.evaluate(() => ({ survival: window.__voxelstrike.survival, theme: window.__voxelstrike.level.theme, enemies: window.__voxelstrike.level.enemies.length }));
-  check(camp.survival === null && camp.theme === 'facility' && camp.enemies > 0, 'the quiet Campaign button still starts the campaign');
+  check(camp.survival === null && camp.theme === 'facility' && camp.enemies > 0, 'PLAY still starts the campaign');
   await page.close();
 
   // 10. a phone: the wave-clear screen fits
@@ -336,9 +336,9 @@ try {
   ph.on('pageerror', (e) => errors.push(e.message));
   await ph.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
   await ph.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
-  await ph.waitForSelector('#play-btn');
+  await ph.waitForSelector('#survival-btn');
   await sleep(800);
-  await ph.tap('#play-btn');
+  await ph.tap('#survival-btn');
   await sleep(4500);
   await ph.evaluate(() => { window.__voxelstrike.player.health = 99999; });
   await clearWave(ph);

@@ -155,7 +155,7 @@ export class Overload {
       game.player.armor = Math.min(100, game.player.armor + 15);
     } else {
       const type = WEAPONS[game.weapons.current].ammoType;
-      game.player.addAmmo(type, { bullets: 30, shells: 8, rockets: 2, cells: 8 }[type]);
+      game.player.addAmmo(type, { bullets: 30, shells: 8, rockets: 2, cells: 8, special: 4 }[type]);
     }
     this.status = 'claimed';
     game.hud.updateStats(game.player);

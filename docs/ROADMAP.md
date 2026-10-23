@@ -22,6 +22,7 @@ tile. Re-submit when the playtime items are in.
 | (earlier) | 3:33 | before the 2026-10-18 content wave |
 | 2026-10-19 | 5:00 | after the five-sector campaign, endless, perks, skins |
 | 2026-10-19 | 4:42 | after the simpler title + Broodkeeper retune |
+| 2026-10-23 | ~2:00 | 0.3.5: SURVIVAL as PLAY (132 players, same audience) — reverted in 0.3.6: PLAY = the campaign again, Survival a quiet button |
 
 Level events in the 4:42 test (all actions added together, so not player
 counts): level 1 → 1,185, level 2 → 548, level 3 → 142, level 4 → 59,
@@ -59,6 +60,12 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 - Difficulty choice and per-sector star ratings.
 
 ## Done
+
+- 2026-10-23 — 0.3.6: PLAY is the campaign again (Survival as PLAY scored
+  ~2:00 against the campaign's ~5:00 with the same audience); Survival is a
+  quiet button under it. The campaign keeps everything built for Survival
+  that isn't Survival itself: scrap drops + the HUD counter, upgrades,
+  pickup-order slots, floor drops.
 
 - 2026-10-23 — Survival, owner's second round: scrap DROPS from every kill
   as a pickup that flies to you, with a scrap counter on the HUD (credits
@@ -244,3 +251,20 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
   below, faster cycle, deck rails, ledge rail.
 - 2026-10-08 — Poki phases 1–2: SDK bridge, in-place restarts, objective
   tracker, retry-sector checkpoints, saved Continue, first-run tips.
+
+
+### Built: five campaign secret prototypes (2026-10-23)
+
+Sector 1 Rivet Riot, 2 Breacher, 3 Lance, 4 Spore Popper, 5 Brood Breaker. Hidden cracked-wall pickups, one carried prototype in slot 6, independent ammo and checkpoint/Continue support. This owner-requested five-sector implementation differs from the earlier three-environment proposal; permanent unlocks, Survival drops and future-environment weapons remain pending.
+
+
+### Built: remaining three approved map themes (2026-10-23)
+
+Freight Depot, Deep Excavation and Medical Wing are generated playable themes
+in Survival and endless campaign rotation. Dedicated materials, lighting,
+procedural landmarks, optional Power Link caches and secret rooms are built;
+the Medical Wing includes recessed treatment beds and monitoring equipment.
+Web playtest routes: `?map=freight`, `?map=excavation`, `?map=medical`.
+The original seven-sector campaign order is retained. Theme-specific new
+enemies, future-map weapons and the alternate Coolant/Security/Hangar maps
+remain separate future work.

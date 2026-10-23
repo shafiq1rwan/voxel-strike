@@ -1799,7 +1799,7 @@ try {
     check(!fresh.coop, 'the main screen has no co-op button (same as Poki)');
     check(await pc.evaluate(() => window.__voxelstrike.overload === null), 'the Overload terminal is hidden in normal play (only ?overload builds it)');
     const first = await pc.evaluate(() => {
-      const play = document.querySelector('#play-btn');
+      const play = document.querySelector('#start-btn');
       const steps = [...document.querySelectorAll('#title-steps .tstep-text')].map((t) => t.textContent.replace(/\s+/g, ' ').trim());
       const buttons = [...document.querySelectorAll('#title-screen button')].map((b) => b.id);
       const r = play.getBoundingClientRect();
@@ -1808,10 +1808,10 @@ try {
         goal: document.querySelector('.title-goal')?.textContent, playOnScreen: r.bottom <= innerHeight,
       };
     });
-    check(first.play === 'Play' && first.playOnScreen && first.goal === 'Survive the waves' && first.steps.length === 3 && /wave/i.test(first.steps[0]),
-      `first visit: the Survival goal, three steps and one PLAY button ("${first.goal}": ${first.steps.join(' > ')})`);
-    check(first.buttons.join() === 'title-settings-btn,title-armory-btn,play-btn,start-btn' && !first.banner,
-      `first visit: PLAY, the quiet Campaign button and the two corner buttons, no NEW SECTOR banner (${first.buttons.join(', ')})`);
+    check(first.play === 'Play' && first.playOnScreen && first.goal === 'Escape the facility' && first.steps.length === 3 && /keycard/i.test(first.steps[0]),
+      `first visit: the campaign goal, three steps and one PLAY button ("${first.goal}": ${first.steps.join(' > ')})`);
+    check(first.buttons.join() === 'title-settings-btn,title-armory-btn,start-btn,survival-btn' && !first.banner,
+      `first visit: PLAY (the campaign), the quiet Survival button and the two corner buttons, no NEW SECTOR banner (${first.buttons.join(', ')})`);
     await pc.screenshot({ path: 'scripts/shots/features-title-first.png' });
     // a returning player who hasn't reached the Biofoundry yet gets the banner
     await pc.evaluate(() => localStorage.setItem('voxelstrike-tutorial-done', '1'));
@@ -1862,6 +1862,25 @@ try {
     await pc.waitForSelector('#start-btn');
     check(await pc.evaluate(() => !document.querySelector('#new-sector')), 'after that, the title shows no NEW SECTOR banner');
     await pc.close();
+  }
+  // New environments retain their optional cache and cracked-wall secret.
+  for (const [depth, theme] of [[8, 'freight'], [11, 'excavation'], [12, 'medical']]) {
+    await page.evaluate((n) => {
+      const g = window.__voxelstrike;
+      g.hud.hideScreen(); g.survival = null; g.levelIndex = n; g.buildLevel();
+      g.state = 'playing'; g.player.dead = false; g.player.health = 99999; g.input.locked = true;
+      for (const e of g.enemies.list) e.puppet = true;
+      const node = g.level.powerLink?.node;
+      if (node) g.applyVoxelDamage(node.x, node.y, node.z, 20);
+      for (const [x, y, z] of g.level.secretWall ?? []) g.applyVoxelDamage(x, y, z, 100);
+    }, depth);
+    await new Promise((r) => setTimeout(r, 1300));
+    const map = await page.evaluate(() => {
+      const g = window.__voxelstrike;
+      return { theme: g.level.theme, link: !!g.level.powerLink, supplies: g.pickups.items.filter((p) => p.spec.sealed).length,
+        secret: !!g.level.secretRect && g.level.secretWall.every(([x,y,z]) => g.world.get(x,y,z) !== 12) };
+    });
+    check(map.theme === theme && map.link && map.supplies === 0 && map.secret, `${theme}: Power Link opens and secret wall breaks`);
   }
 } finally {
   await browser.close();

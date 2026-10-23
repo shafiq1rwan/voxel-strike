@@ -35,6 +35,8 @@ import { gunSnapshot } from './ui/armory-preview';
 import { BASE_AMMO_MAX, BASE_MAX_HEALTH } from './entities/player';
 import { biofoundryTerminal, decorateBiofoundry } from './preview/biofoundry';
 import { decorateGeothermal } from './preview/geothermal-gen';
+import { decorateEnvironment } from './preview/environments';
+import { isNewTheme } from './world/environments';
 import { ThrownGuns } from './weapons/thrown';
 
 type GameState = 'title' | 'playing' | 'paused' | 'overload' | 'dead' | 'intermission' | 'won';
@@ -126,6 +128,7 @@ interface Checkpoint {
   totalSecrets: number;
   totalTime: number;
   focusedShotgun?: boolean;
+  secretWeapon?: number;
   /** run perks picked so far (src/core/perks.ts) */
   perks?: string[];
 }
@@ -590,8 +593,9 @@ export class Game {
     scene.add(this.chunks.group);
     // Biofoundry scenery + live tanks: the authored ?sector4 map, or a generated sector 4
     // (or the Power Link puzzle — facility from sector 2 — and the core's steam + signs)
-    if (authored || this.level.bio || this.level.geo || this.level.powerLink) {
+    if (authored || isNewTheme(theme) || this.level.bio || this.level.geo || this.level.powerLink) {
       this.previewArt = authored ? authored.decorate(this.level)
+        : isNewTheme(theme) ? decorateEnvironment(this.level, theme)
         : this.level.bio ? decorateBiofoundry(this.level) : decorateGeothermal(this.level);
       scene.add(this.previewArt.group);
     }
@@ -931,6 +935,7 @@ export class Game {
       totalSecrets: this.totalSecretsSoFar,
       totalTime: this.totalPlayTime,
       focusedShotgun: this.weapons.focusedShotgun,
+      secretWeapon: this.weapons.secret,
       perks: [...this.perks],
     };
   }
@@ -972,6 +977,7 @@ export class Game {
       this.player.ammo[k] = Math.min(this.player.ammoMax[k], Math.max(0, cp.ammo[k] ?? 0));
     }
     this.player.buffs.quad = this.player.buffs.shield = this.player.buffs.haste = 0;
+    this.weapons.restoreSecret(cp.secretWeapon ?? 0);
     this.weapons.restoreLoadout(cp.owned, cp.current);
     this.weapons.focusedShotgun = cp.focusedShotgun === true;
     this.totalKills = cp.totalKills;
@@ -996,6 +1002,7 @@ export class Game {
 
   /** heartbeat, low-health vignette, tutorial hint, death timer */
   private clearTransientFX(): void {
+    this.weapons.clearSecretEffects();
     this.audio.setHeartbeat(false);
     this.lowHealth = false;
     this.hud.setLowHealth(false);
@@ -1717,7 +1724,7 @@ export class Game {
       this.player.ammo.shells = 36;
       this.player.ammo.rockets = 8;
       this.player.ammo.cells = 45;
-      this.weapons.restoreLoadout(['pistol', 'shotgun', 'smg', 'rocket', 'arc'], 'shotgun');
+      this.weapons.restoreLoadout(['pistol', 'shotgun', 'smg', 'rocket', 'arc'], this.level.architecture ? 'pistol' : 'shotgun');
       this.hud.updateStats(this.player);
       this.hud.updateWeapon(this.weapons);
       this.captureCheckpoint();
@@ -1806,7 +1813,7 @@ export class Game {
     if (n <= FACILITY_SECTORS) return 'facility';
     if (n <= BOSS_SECTOR || this.bossFor(n)) return 'biofoundry';
     if (n <= TOTAL_SECTORS) return 'geothermal';
-    const themes: LevelTheme[] = ['facility', 'biofoundry', 'geothermal'];
+    const themes: LevelTheme[] = ['freight', 'excavation', 'medical', 'facility', 'biofoundry', 'geothermal'];
     return themes[((n - TOTAL_SECTORS - 1) >> 1) % themes.length];
   }
 
@@ -1876,6 +1883,7 @@ export class Game {
       const where = this.level.boss ? 'something big is waiting in the incubation chamber.'
         : this.level.theme === 'biofoundry' ? 'the Biofoundry goes deeper.'
         : this.level.theme === 'geothermal' ? 'back into the heat. The core never cools.'
+        : this.level.theme && isNewTheme(this.level.theme) ? `${THEME_NAME[this.level.theme]}. Find the red keycard and the lift.`
         : 'old facility levels, colder and meaner.';
       this.enterSector(`DEPTH ${this.levelIndex} — ${where}`, adShown);
       return;
@@ -1930,7 +1938,7 @@ export class Game {
       newSector: storageGet(TUTORIAL_KEY) !== null && storageGet(GEOTHERMAL_SEEN_KEY) === null,
       // ...and returning players skip the goal + steps they already know
       returning: storageGet(TUTORIAL_KEY) !== null,
-      // Survival is PLAY (docs/RETENTION_PLAN.md §4); solo only
+      // Survival: the quiet button under PLAY (it was PLAY for one Fit Test: ~2:00 vs the campaign's ~5:00); solo only
       onSurvival: this.net ? undefined : () => this.afterBreak((ad) => this.startSurvival(ad)),
       survivalBest: this.survivalBest,
     });
@@ -1964,7 +1972,7 @@ export class Game {
       this.state = 'playing';
       if (!this.isTouch) this.input.requestLock();
     };
-    const ammo = { bullets: '+30 bullets', shells: '+8 shells', rockets: '+2 rockets', cells: '+8 cells' }[this.weapons.definition().ammoType];
+    const ammo = { bullets: '+30 bullets', shells: '+8 shells', rockets: '+2 rockets', cells: '+8 cells', special: '+4 prototype rounds' }[this.weapons.definition().ammoType];
     this.hud.showOverload(o.status === 'ready', {
       focus: o.canClaim('focus', this), repair: o.canClaim('repair', this), ammo: o.canClaim('ammo', this),
     }, ammo, () => {
@@ -2308,7 +2316,7 @@ export class Game {
     if (this.perks.has('momentum') && this.comboChain >= 3) pl.buffs.haste = Math.max(pl.buffs.haste, 3);
     if (this.perks.has('scavenger') && Math.random() < 1 / 3) {
       const ammo = this.weapons.definition().ammoType;
-      const kind: PickupKind = ammo === 'shells' ? 'ammoShells' : ammo === 'cells' ? 'ammoCells' : ammo === 'rockets' ? 'ammoRockets' : 'ammoBullets';
+      const kind: PickupKind = ammo === 'special' ? 'ammoSpecial' : ammo === 'shells' ? 'ammoShells' : ammo === 'cells' ? 'ammoCells' : ammo === 'rockets' ? 'ammoRockets' : 'ammoBullets';
       this.spawnPickup(kind, e.pos.x, this.floorTopAt(e.pos.x, e.pos.y, e.pos.z) + 0.4, e.pos.z);
     }
   }
@@ -2982,7 +2990,7 @@ export class Game {
         this.secretsFound = 1;
         this.audio.play('secret');
         this.audio.play('powerup');
-        this.hud.secretFound(500, this.weapons.has('rocket') ? '' : 'THE THUMPER IS IN HERE');
+        this.hud.secretFound(500, 'A SECRET PROTOTYPE IS IN HERE');
         this.dynLights.flash(p.x, this.player.eyeY(), p.z, 1, 0.82, 0.3, 2.2, 9, 0.6);
         this.punchFOV(2.5);
         this.skinStat('secrets');

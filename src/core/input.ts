@@ -36,7 +36,7 @@ export class Input {
       if (e.repeat) return;
       this.fireInteract(); // keyboard counts as the first gesture too (audio init)
       this.keys.add(e.code);
-      const num = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code);
+      const num = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].indexOf(e.code);
       if (num >= 0) this.switchRequest = num;
       if (e.code === 'Tab' || e.code === 'KeyM') this.onToggleMap?.();
       if (e.code === 'KeyE') this.onInteract?.();

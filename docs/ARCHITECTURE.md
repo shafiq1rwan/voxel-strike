@@ -34,7 +34,7 @@ off the core. The per-file rules and known gotchas live in
 | Physics | `core/physics.ts` | Axis-by-axis AABB vs voxels + dynamic boxes (doors, lift), ray/box tests |
 | Audio | `core/audio.ts`, `core/music.ts` | Every sound synthesized with WebAudio; optional crossfading music loops |
 | Settings | `core/settings.ts` | Persisted options (sensitivity, volumes, FOV, resolution, shake, aim assist) |
-| Survival | `modes/survival.ts` | The main mode: `prepareSurvivalLevel` (a generated sector's arena room sealed as the stage), `SurvivalRun` (waves, edge spawns, drops, map every 5 waves), the roster/size/HP curves, the scrap rates and the gun SHOP prices. Game owns `survival` and the wave-clear pick → shop (`showShop`, gun pictures from `gunSnapshot` in ui/armory-preview.ts on the Armory's one shared WebGL context) / death / HUD glue |
+| Survival | `modes/survival.ts` | The secondary mode (the quiet *Survival* button under PLAY; it was PLAY for one Fit Test and playtime fell): `prepareSurvivalLevel` (a generated sector's arena room sealed as the stage), `SurvivalRun` (waves, edge spawns, drops, map every 5 waves), the roster/size/HP curves, the scrap rates and the gun SHOP prices. Game owns `survival` and the wave-clear pick → shop (`showShop`, gun pictures from `gunSnapshot` in ui/armory-preview.ts on the Armory's one shared WebGL context) / death / HUD glue |
 | Upgrades | `core/upgrades.ts` | Scrap + permanent upgrades (docs/RETENTION_PLAN.md): the 7 upgrades × 3 tiers as data, scrap per kill / clear / secret / Power Link, and `UpgradeBook` (scrap, levels; localStorage). Kills drop scrap as a `'scrap'` pickup (`dropScrap` → `collectScrap`); Game feeds the bank through `earnScrap` (which also pops the HUD counter), Survival's shop spends it (`UpgradeBook.spend`), and applies the effects (`applyPerkStats`, `applyRunStart`, `enterSector`, `healMult`, `scannerLevel`) |
 | Skins | `core/skins.ts` | The 22 weapon skins as data (paint roles + flat marks + unlock goal) and `SkinBook` (lifetime stats, unlocks, equipped; localStorage). `buildWeaponModel(id, skin)` paints them; `WeaponSystem.setSkin` swaps a view model in place |
 | RNG | `core/rng.ts` | Seeded mulberry32 — the same seed always builds the same dungeon |
@@ -296,3 +296,37 @@ build is also a PWA (`public/manifest.webmanifest` + network-first
 | HUD / screens | `ui/hud.ts` ([UI_SPEC.md](UI_SPEC.md)) |
 | Touch controls | `core/touch.ts` + the touch CSS in `ui/hud.ts` |
 | A Poki event | `poki.measure()` + a row in POKI.md + an assert in `scripts/poki.mjs` |
+
+
+### Campaign secret prototypes
+
+`weapons/secrets.ts` defines five sector prototypes. `WeaponId.special` is one inventory slot (key 6); `WeaponSystem.secret` selects its definition and baked model. `AmmoType.special` is independent ammunition. Levelgen adds a `weaponSecret` with `secretSector` metadata to secret rooms in sectors 1?5, without consuming layout RNG. Pickups require line of sight before drifting or collection. Checkpoints store `secretWeapon` plus special ammo; older saves default safely. Spore timers bind to the current world and clear on revive/retry. Prototypes stay owned when empty.
+
+
+### Additional environment themes (2026-10-23)
+
+`world/environments.ts` defines Freight Depot (`freight`), Deep Excavation
+(`excavation`) and Medical Wing (`medical`), with theme materials and ambient
+light. Block ids 40-56 and atlas tiles 41-58 are appended (5 atlas slots
+left); all existing ids and the 8x8 atlas remain stable. Each theme is one
+hand-authored hall, `generateSectorLayout` in `world/sector-layouts.ts`,
+rebuilt 2026-10-23 to match its mockup (see CLAUDE.md "Additional maps"):
+voxels for solid set pieces that should take baked light (Freight's
+containers), instanced boxes (`LevelData.architecture`, two draws via
+`preview/sector-landmarks.ts`) for the rest, canvas-texture signs.
+`dressEnvironment` is no longer reached. The service-lift room, key red, exit
+green and amber Power Link node retain their meanings.
+
+`preview/environments.ts` instances cranes, mining equipment, monitors,
+surgical lamps and treatment beds, and composes the existing Power Link
+scenery callbacks into one `PreviewArt`. Its disposal frees instances,
+geometry, materials and sign textures. Decorations use bounded static boxes;
+medical trolleys over destructible crate pairs disappear when supports break.
+All materials are present before the standard level warm-up.
+
+Survival rotates Facility, Biofoundry, Geothermal, Freight, Excavation and
+Medical every five waves. Endless campaign depths rotate Freight,
+Excavation, Medical, Facility, Biofoundry and Geothermal every two depths
+starting at depth 8; every fifth depth still overrides to the Biofoundry boss.
+The original seven campaign sectors stay unchanged. Web `?map=<id>` routes
+use the existing isolated-preview lifecycle; Poki ignores the query flag.

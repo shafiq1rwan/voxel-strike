@@ -494,3 +494,52 @@ The one third-party asset is a handful of HUD icons from
 [Font Awesome Free](https://fontawesome.com) (CC BY 4.0), inlined as SVG at
 build time — see `public/THIRD-PARTY-NOTICES.txt`, which ships in every
 build (web and Poki) because minification strips the license comment.
+
+
+## Secret weapons (sectors 1?5)
+
+Break the cracked wall in each sector to find its prototype alongside the
+Thumper. One prototype is carried in **slot 6**; taking the next replaces it
+and supplies a limited charge of its own ammo. Mouse-wheel and touch weapon
+selection include the prototype. An empty prototype stays in your inventory;
+prototype ammo can drop from kills while it is equipped. Sector-entry saves,
+Continue and retries retain the correct prototype and ammo.
+
+| Sector | Secret weapon | Effect |
+| --- | --- | --- |
+| 1 | Rivet Riot | Heavy accurate rivets push enemies back |
+| 2 | Breacher | Slow double-barrel blast: twelve pellets |
+| 3 | Lance | Precision beam pierces up to four enemies |
+| 4 | Spore Popper | Sticky pods burst after 0.85 seconds in a small radius |
+| 5 | Brood Breaker | Powerful arc chains through nearby enemies |
+
+These are run pickups; permanent Armory unlocks and Survival drops are not
+part of this implementation. Sectors 6?7 retain their existing supplies.
+
+Run `node scripts/secret-weapons.mjs <url>` against a web dev server to check
+placement, damage, ammo, wall blocking, slot 6, checkpoints and model budgets.
+
+
+## Freight Depot, Deep Excavation and Medical Wing
+
+Three additional generated environments are playable in **Survival** (maps
+4-6, starting at waves 16, 21 and 26) and after **Keep descending** in the
+campaign. Endless depths 8-9 are Freight Depot, depth 11 is Deep Excavation,
+and depths 12-13 are Medical Wing; every fifth depth keeps the Biofoundry boss.
+The six environments then continue rotating in two-depth blocks.
+
+- **Freight Depot:** ribbed cargo surfaces, amber high-bay lamps and an overhead gantry crane.
+- **Deep Excavation:** basalt walls and ceiling, braced supports, warm mining lights and a square-step drill.
+- **Medical Wing:** weathered ivory and mint surfaces, treatment beds in recessed wall bays, monitors and surgical lamps.
+
+Each keeps the red keycard, locked door, service lift, cracked-wall secret
+and optional Power Link supply cage. The seven campaign sectors keep their
+existing order. The new maps use the current enemy roster.
+
+For a standalone web playtest with all standard weapons and isolated saves:
+`?map=freight`, `?map=excavation`, or `?map=medical` (optionally `&seed=12345`).
+Poki builds ignore these shortcuts but include the new rotation themes.
+
+`node scripts/new-maps.mjs <url>` checks generation across 24 layouts, routes,
+caches, secrets, retry, save isolation, Survival integration and mobile.
+Use `--poki` against a Poki server to check shortcut isolation.

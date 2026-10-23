@@ -56,7 +56,7 @@ node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
 node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + sector 2 as in 0.3.4 (11–13 rooms, no empty rooms), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), scrap + upgrades (kills DROP scrap pickups that bank when walked over + HUD counter, clears earn scrap, death screen shows it + Upgrades, buys cost and save, Suit/Plates/Medic/Hands/Head Start work, survives a reload, Armory entry, phone fit), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
-node scripts/survival.mjs   # SURVIVAL (the main mode): title PLAY = Survival + quiet Campaign, sealed arena, waves spawn ≥5 u away, kills drop supplies + scrap pickups (swept home at the clear), wave-clear pick of 3 then the SHOP (gun pictures, Scattergun 20 scrap → slot 2, CONTINUE), scrap flies in + HUD counter, wave 5 → Biofoundry map, death = reached/best wave + Try again / Upgrades / Main menu, best saved, phone pick + shop fit
+node scripts/survival.mjs   # SURVIVAL (the quiet button under PLAY): title PLAY = campaign + quiet Survival, sealed arena, waves spawn ≥5 u away, kills drop supplies + scrap pickups (swept home at the clear), wave-clear pick of 3 then the SHOP (gun pictures, Scattergun 20 scrap → slot 2, CONTINUE), scrap flies in + HUD counter, wave 5 → Biofoundry map, death = reached/best wave + Try again / Upgrades / Main menu, best saved, phone pick + shop fit
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/exit-room-props.mjs [url] # seven props, 24 layouts/four lift directions, boarding route, ride/status/exit, ?exitroom shortcut, ready/docked screenshots
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
@@ -80,10 +80,12 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 
 ## Architecture
 
-- SURVIVAL is the main mode (owner, 2026-10-23; docs/RETENTION_PLAN.md §4):
-  the title's PLAY (`#play-btn`, `showTitle({ onSurvival })`) starts it; the
-  campaign is the quiet *Campaign* / *Campaign · Sector N* + *New campaign*
-  row (`#start-btn` still starts the campaign — the suites rely on it).
+- SURVIVAL is the SECONDARY mode: a quiet *Survival* button under PLAY
+  (`#survival-btn`, `showTitle({ onSurvival })`; docs/RETENTION_PLAN.md §4).
+  It was PLAY for one Player Fit Test (0.3.5, 2026-10-23) and average
+  playtime fell from ~5:00 to ~2:00 with the same audience (132 players), so
+  the campaign is PLAY (`#start-btn`) again (owner's call, 0.3.6) — don't
+  make Survival the first impression again without a new test that says so.
   `src/modes/survival.ts`: `prepareSurvivalLevel` turns a generated sector
   into a stage (seals the arena room's ring with its own wall block, drops
   the level's enemies/pickups/secret/Power Link, spawn in the arena's
@@ -597,11 +599,11 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   default (240) is moved to the device default once.
 - Title screen: identical on web and Poki — no Co-op button anywhere.
   Kept bare on purpose (playtime fell to under 2 minutes): wordmark,
-  SURVIVE THE WAVES, three step tiles (clear each wave → pick an upgrade →
-  beat your best), one PLAY (`#play-btn` = SURVIVAL, owner's call 2026-10-23)
-  over ONE quiet row for the campaign (`#start-btn` *Campaign*, or with a save
-  *Campaign · Sector N* + *New campaign*; without `onSurvival` the old
-  keycard → door → lift tiles and PLAY = campaign come back), one controls line (first visit on desktop
+  ESCAPE THE FACILITY, three step tiles (keycard → door → lift, the HUD's
+  objective icons/colours), one PLAY (`#start-btn` = the campaign; with a
+  save Continue and New run share ONE row), ONE quiet *Survival* button
+  under it (`#survival-btn`, its own row — Survival was PLAY for one Fit
+  Test and playtime fell to ~2:00), one controls line (first visit on desktop
   only), the NEXT SKIN goal line, a Settings gear
   (`#title-settings-btn`) top-right and an Armory button
   (`#title-armory-btn`) top-left (owner's call) — don't add menu items
@@ -778,3 +780,49 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   `location.reload()` to keep their iframe params) and the graphics-lost
   overlay's "Reload game" button. Don't add reload-based restarts: each
   reload is another Poki load and loses in-memory state.
+
+
+## Secret prototype implementation
+
+Sectors 1?5 each have a distinct secret-room prototype, configured in `src/weapons/secrets.ts`. All use `WeaponId.special` in physical slot 6, `AmmoType.special`, and `WeaponSystem.secret` for the selected model/behavior. Regular guns stay in pickup order. Empty prototypes are retained rather than thrown. Checkpoints store `secretWeapon`; old saves default to the first model. `node scripts/secret-weapons.mjs <url>` verifies this feature. This five-sector scope follows the owner?s request and supersedes the earlier three-environment proposal for this implementation. Permanent unlocks and Survival drops remain pending.
+
+
+## Additional maps (2026-10-23)
+
+Freight Depot, Deep Excavation and Medical Wing are implemented as `freight`,
+`excavation` and `medical`. Each is ONE hand-authored hall
+(`generateSectorLayout` in `src/world/sector-layouts.ts`; only encounters
+and supplies vary by seed) built to match its mockup — the owner judges them
+against the IMAGE: `reference/new-sector-mockups/freight-depot.png`,
+`.../deep-excavation.png` and `reference/sector7-medical-wing-v1.png`.
+Solid set pieces are voxels where they should take baked light (Freight's
+containers are `FreightCargo` / `FreightCargoRed` blocks), the rest are
+instanced boxes in `LevelData.architecture` drawn by
+`src/preview/sector-landmarks.ts` (two draws). What makes each read:
+Freight — grey riveted plate walls, a panelled ceiling (`FreightWall`'s
+underside is `Tile.FreightCeil`) with square warm lamps, stacked corrugated
+containers, catwalks + yellow railings + stairs both sides, a red girder
+crane with a hazard-striped cargo frame, a braced cargo door round the red
+door between hazard posts, a grated loading track (`FreightGrate`) edged by
+a narrow hazard line (`FreightHazardFloor`: `Tile.FreightHazard` on top,
+hazard `Trim` on its sides — also used for door hazard posts). Excavation —
+dark blocky basalt (4 px cells, one dull ore fleck), steel floor plates, a
+yellow drill with a stepped stone cutter head, a black lattice tower, red
+girders, many small orange work lamps, a cool ambient. Medical — cream tiles
+(one per block) over a teal band of small tiles, beige floor, a T-bar
+ceiling with white troffers and dark ducts, bed bays + teal screens + ECG
+monitors behind cream pillars, an operating room through a framed opening
+in a partition, triage + a medicine cabinet, a red double door. Excavation
+and Medical share the framed double door (leaves round the real door, light
+bar, hazard posts, reader). `src/world/environments.ts` keeps the palette;
+its `dressEnvironment` is no longer reached (new themes return early from
+`generateLevel`). Existing block and tile ids are unchanged; appended block
+ids 40–56 and tiles 41–58 (59 of the 8×8 atlas's 64).
+
+Survival maps 4-6 use the new themes. Endless depths start with Freight at
+8-9, Excavation at 10-11 and Medical at 12-13; every fifth depth still uses the
+Biofoundry boss, so depth 10 is Biofoundry. The first seven sectors stay as
+before. Web-only isolated previews: `?map=freight`, `?map=excavation`,
+`?map=medical`. `node scripts/new-maps.mjs <url>` checks these maps; add
+`--poki` against a Poki server for preview-flag isolation. The e2e, features
+and perf suites include the new themes.

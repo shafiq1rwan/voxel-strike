@@ -322,6 +322,7 @@ export function buildFirstPersonHand(
  * of the grip rather than out on a fore-end it couldn't reach.
  */
 export const OPERATIVE_GRIPS: Record<WeaponId, Omit<HeldWeapon, 'object'>> = {
+  special: { stance: 'shoulder', grip: new THREE.Vector3(0, -0.13, 0.1), support: new THREE.Vector3(0, -0.1, -0.2), butt: new THREE.Vector3(0, 0, 0.2) },
   // pistol: square-ish stance, both arms out, the support hand under the grip
   pistol: { stance: 'pistol', grip: new THREE.Vector3(0, -0.13, 0.06), support: new THREE.Vector3(-0.045, -0.15, 0.05), butt: new THREE.Vector3(0, -0.13, 0.06) },
   // long guns: the stock's butt in the shoulder, the support hand out on

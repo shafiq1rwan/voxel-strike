@@ -45,12 +45,34 @@ export const enum Block {
   ServiceCeil = 37,
   ServiceLampWarm = 38,
   ServiceLampGreen = 39,
+  // Additional environments; persisted ids remain append-only.
+  FreightWall = 40,
+  FreightFloor = 41,
+  FreightCargo = 42,
+  FreightLamp = 43,
+  ExcavationWall = 44,
+  ExcavationFloor = 45,
+  ExcavationSupport = 46,
+  ExcavationLamp = 47,
+  MedicalWall = 48,
+  MedicalFloor = 49,
+  MedicalCabinet = 50,
+  MedicalCeil = 51,
+  MedicalLamp = 52,
+  MedicalWallLower = 53,
+  // Freight Depot, after reference/new-sector-mockups/freight-depot.png
+  FreightCargoRed = 54, // rust-red corrugated container side
+  FreightGrate = 55, // dark floor grating (the loading track)
+  FreightHazardFloor = 56, // hazard-striped floor edge (Trim on every face)
 }
 
-export const BLOCK_COUNT = 40;
+export const BLOCK_COUNT = 57;
 
 /** Which lamp blocks emit light, and their color (0-255 per channel). */
 export const LAMP_COLORS: Partial<Record<Block, [number, number, number]>> = {
+  [Block.FreightLamp]: [255, 202, 128],
+  [Block.ExcavationLamp]: [255, 184, 108],
+  [Block.MedicalLamp]: [255, 248, 228],
   [Block.GeothermalHeat]: [255, 108, 28],
   [Block.LampWarm]: [255, 214, 150],
   [Block.ServiceLampWarm]: [255, 225, 185],
@@ -126,15 +148,51 @@ export const enum Tile {
   ServiceCeil = 38,
   ServiceLampWarm = 39,
   ServiceLampGreen = 40,
+  FreightWall = 41,
+  FreightFloor = 42,
+  FreightCargo = 43,
+  FreightLamp = 44,
+  ExcavationWall = 45,
+  ExcavationFloor = 46,
+  ExcavationSupport = 47,
+  ExcavationLamp = 48,
+  MedicalWall = 49,
+  MedicalFloor = 50,
+  MedicalCabinet = 51,
+  MedicalCeil = 52,
+  MedicalLamp = 53,
+  MedicalWallLower = 54,
+  FreightCargoRed = 55,
+  FreightCeil = 56,
+  FreightGrate = 57,
+  FreightHazard = 58,
 }
 
-export const TILE_COUNT = 41;
+export const TILE_COUNT = 59;
 
 /** Face dirs: 0:+x 1:-x 2:+y(top) 3:-y(bottom) 4:+z 5:-z */
 export function tileFor(block: Block, dir: number): Tile {
   const top = dir === 2;
   const bottom = dir === 3;
   switch (block) {
+    case Block.FreightWall: return bottom ? Tile.FreightCeil : Tile.FreightWall;
+    case Block.FreightCargoRed: return Tile.FreightCargoRed;
+    case Block.FreightGrate: return Tile.FreightGrate;
+    case Block.FreightHazardFloor: return top ? Tile.FreightHazard : Tile.Trim;
+    case Block.FreightFloor: return Tile.FreightFloor;
+    case Block.FreightCargo: return Tile.FreightCargo;
+    case Block.FreightLamp: return Tile.FreightLamp;
+    case Block.ExcavationWall: return Tile.ExcavationWall;
+    case Block.ExcavationFloor: return Tile.ExcavationFloor;
+    case Block.ExcavationSupport: return Tile.ExcavationSupport;
+    case Block.ExcavationLamp: return Tile.ExcavationLamp;
+    case Block.MedicalWall: return Tile.MedicalWall;
+    case Block.MedicalFloor: return Tile.MedicalFloor;
+    case Block.MedicalCabinet: return Tile.MedicalCabinet;
+    case Block.MedicalCeil: return Tile.MedicalCeil;
+    case Block.MedicalLamp: return Tile.MedicalLamp;
+    case Block.MedicalWallLower: return Tile.MedicalWallLower;
+
     case Block.ServiceLampWarm: return Tile.ServiceLampWarm;
     case Block.ServiceLampGreen: return Tile.ServiceLampGreen;
     case Block.ServiceWall:
@@ -253,6 +311,172 @@ function drawTile(ctx: Ctx2D, tile: Tile): void {
   const ox = (tile % ATLAS_TILES) * TILE_PX;
   const oy = Math.floor(tile / ATLAS_TILES) * TILE_PX;
   switch (tile) {
+    case Tile.FreightWall: {
+      // grey riveted plate, one panel per block: lit top/left edge, dark
+      // bottom/right seam, corner rivets and a few rust specks (the mockup)
+      fillNoise(ctx, ox, oy, [124, 129, 136], 0.14, 801);
+      for (let i = 0; i < 16; i++) {
+        px(ctx, ox, oy, i, 0, '#8f959c');
+        px(ctx, ox, oy, i, 15, '#686e76'); px(ctx, ox, oy, 15, i, '#71777f');
+      }
+      for (const x of [2, 13]) for (const y of [2, 13]) { px(ctx, ox, oy, x, y, '#45494d'); px(ctx, ox, oy, x - 1, y - 1, '#c4c7ca'); }
+      for (let i = 0; i < 5; i++) {
+        const x = 1 + Math.floor(hnoise(i, 3, 804) * 14), y = 1 + Math.floor(hnoise(i, 4, 804) * 14);
+        px(ctx, ox, oy, x, y, i % 3 ? '#9a5a32' : '#b8703c');
+        if (i % 2) px(ctx, ox, oy, x, Math.min(14, y + 1), '#7e4a2c');
+      }
+      break;
+    }
+    case Tile.FreightCeil: {
+      // ceiling panels: darker grey, a heavy grid seam
+      fillNoise(ctx, ox, oy, [96, 100, 106], 0.14, 805);
+      for (let i = 0; i < 16; i++) for (const t of [0, 1]) { px(ctx, ox, oy, i, t, '#3b3f45'); px(ctx, ox, oy, t, i, '#3b3f45'); }
+      for (const x of [3, 12]) for (const y of [3, 12]) px(ctx, ox, oy, x, y, '#5a5f66');
+      break;
+    }
+    case Tile.FreightCargo:
+    case Tile.FreightCargoRed: {
+      // corrugated container side: a rib every 4 px (light crest, dark trough), grime
+      const red = tile === Tile.FreightCargoRed;
+      const base: [number, number, number] = red ? [146, 70, 44] : [66, 94, 128];
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        const rib = [1.18, 1.0, 0.82, 0.62][x % 4];
+        const n = 0.92 + hnoise(x, y, red ? 806 : 807) * 0.16 - (y > 12 ? 0.08 : 0);
+        px(ctx, ox, oy, x, y, shade(base, rib * n));
+      }
+      for (let i = 0; i < 5; i++) {
+        const x = Math.floor(hnoise(i, 7, 808) * 16), y = Math.floor(hnoise(i, 8, 808) * 16);
+        px(ctx, ox, oy, x, y, red ? '#6e3a24' : '#8a6a48');
+      }
+      break;
+    }
+    case Tile.FreightFloor: {
+      // concrete floor tile: grey, speckled, dark seams on two edges
+      fillNoise(ctx, ox, oy, [128, 128, 126], 0.18, 802);
+      for (let i = 0; i < 16; i++) { px(ctx, ox, oy, i, 0, '#646462'); px(ctx, ox, oy, 0, i, '#646462'); }
+      for (let i = 0; i < 12; i++) {
+        const x = 1 + Math.floor(hnoise(i, 5, 809) * 15), y = 1 + Math.floor(hnoise(i, 6, 809) * 15);
+        px(ctx, ox, oy, x, y, i % 4 ? '#8c877d' : '#9a6a44');
+      }
+      break;
+    }
+    case Tile.FreightHazard: {
+      // concrete with a narrow hazard band down the middle: the edge line of the loading track
+      fillNoise(ctx, ox, oy, [128, 128, 126], 0.18, 811);
+      for (let y = 0; y < 16; y++) for (let x = 5; x < 11; x++) {
+        const s = Math.floor((x + y) / 3) % 2 === 0;
+        px(ctx, ox, oy, x, y, s ? shade([214, 170, 34], 0.9 + hnoise(x, y, 812) * 0.2) : shade([34, 34, 38], 1));
+      }
+      for (let i = 0; i < 16; i++) px(ctx, ox, oy, i, 0, '#646462');
+      break;
+    }
+    case Tile.FreightGrate: {
+      // floor grating: dark slots between steel bars, a rim
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        const bar = y % 3 === 0 || x === 0 || x === 15;
+        px(ctx, ox, oy, x, y, bar ? shade([92, 96, 102], 0.9 + hnoise(x, y, 810) * 0.2) : shade([22, 24, 28], 1));
+      }
+      break;
+    }
+    case Tile.ExcavationWall: {
+      // dark basalt cut into big blocky chunks (4 px cells, each its own
+      // shade, lit top edge), a couple of amber ore flecks — the mockup's rock
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        const cx = x >> 2, cy = y >> 2;
+        const cell = 0.72 + hnoise(cx, cy, 814) * 0.5;
+        const edge = (y & 3) === 0 ? 1.18 : (x & 3) === 3 ? 0.82 : 1;
+        px(ctx, ox, oy, x, y, shade([64, 68, 76], cell * edge * (0.94 + hnoise(x, y, 811) * 0.12)));
+      }
+      // one small ore fleck (every block repeats it, so keep it rare and dull)
+      px(ctx, ox, oy, 11, 6, '#b48a48'); px(ctx, ox, oy, 12, 6, '#6e5634');
+      break;
+    }
+    case Tile.ExcavationFloor: {
+      // dark steel floor plate: one panel per block, a lit edge, dark seams, scuffs
+      fillNoise(ctx, ox, oy, [88, 90, 95], 0.14, 816);
+      for (let i = 0; i < 16; i++) {
+        px(ctx, ox, oy, i, 0, '#34373c'); px(ctx, ox, oy, 0, i, '#34373c');
+        px(ctx, ox, oy, i, 1, '#70737a'); px(ctx, ox, oy, 1, i, '#70737a');
+      }
+      for (let i = 0; i < 6; i++) {
+        const x = 2 + Math.floor(hnoise(i, 3, 817) * 13), y = 2 + Math.floor(hnoise(i, 4, 817) * 13);
+        px(ctx, ox, oy, x, y, '#6a6d73');
+      }
+      break;
+    }
+    case Tile.ExcavationSupport: {
+      // black steel lattice: a frame and an X brace
+      fillNoise(ctx, ox, oy, [30, 32, 36], 0.2, 813);
+      for (let i = 0; i < 16; i++) {
+        for (const t of [0, 15]) { px(ctx, ox, oy, i, t, '#5a5f66'); px(ctx, ox, oy, t, i, '#5a5f66'); }
+        px(ctx, ox, oy, i, i, '#6a7078'); px(ctx, ox, oy, 15 - i, i, '#6a7078');
+      }
+      break;
+    }
+    case Tile.MedicalWall:
+    case Tile.MedicalWallLower: {
+      // glazed tiles, four per block with grout; cream above, teal below (the
+      // mockup's ward walls), a few rust spots
+      const lower = tile === Tile.MedicalWallLower;
+      fillNoise(ctx, ox, oy, lower ? [96, 152, 142] : [204, 198, 182], 0.1, lower ? 825 : 821);
+      // cream: one big tile per block; teal: four small ones
+      for (let i = 0; i < 16; i++) for (const t of lower ? [0, 8] : [0]) {
+        px(ctx, ox, oy, i, t, lower ? '#5a8a82' : '#a8a292'); px(ctx, ox, oy, t, i, lower ? '#5a8a82' : '#a8a292');
+      }
+      for (const [x, y] of lower ? [[2, 2], [10, 2], [2, 10], [10, 10]] : [[2, 2]]) px(ctx, ox, oy, x, y, lower ? '#b6e0d8' : '#eae6d8');
+      for (let i = 0; i < 2; i++) {
+        const x = 1 + Math.floor(hnoise(i, 1, 823) * 14), y = 1 + Math.floor(hnoise(i, 2, 824) * 14);
+        px(ctx, ox, oy, x, y, '#a0603a'); if (i % 2) px(ctx, ox, oy, x, Math.min(15, y + 1), '#b8784a');
+      }
+      break;
+    }
+    case Tile.MedicalFloor: {
+      // big beige floor tile, dark grout on two edges, worn rust flecks
+      fillNoise(ctx, ox, oy, [188, 180, 162], 0.12, 826);
+      for (let i = 0; i < 16; i++) { px(ctx, ox, oy, i, 0, '#5e5a52'); px(ctx, ox, oy, 0, i, '#5e5a52'); }
+      for (let i = 0; i < 5; i++) {
+        const x = 2 + Math.floor(hnoise(i, 3, 827) * 13), y = 2 + Math.floor(hnoise(i, 4, 827) * 13);
+        px(ctx, ox, oy, x, y, i % 2 ? '#a06a42' : '#9a907c');
+      }
+      break;
+    }
+    case Tile.MedicalCeil: {
+      // ceiling panel: pale, a dark T-bar grid
+      fillNoise(ctx, ox, oy, [184, 180, 168], 0.1, 828);
+      for (let i = 0; i < 16; i++) { px(ctx, ox, oy, i, 0, '#4a4c4e'); px(ctx, ox, oy, 0, i, '#4a4c4e'); px(ctx, ox, oy, i, 1, '#8a8780'); }
+      break;
+    }
+    case Tile.MedicalCabinet: {
+      // white steel cabinet front: a door split, a handle, a kick plate
+      fillNoise(ctx, ox, oy, [206, 208, 204], 0.08, 829);
+      for (let i = 0; i < 16; i++) { px(ctx, ox, oy, 0, i, '#8a8e8c'); px(ctx, ox, oy, 15, i, '#8a8e8c'); px(ctx, ox, oy, 8, i, '#9a9e9c'); }
+      for (let x = 0; x < 16; x++) for (const y of [14, 15]) px(ctx, ox, oy, x, y, '#5a5e5e');
+      for (const y of [6, 7, 8]) { px(ctx, ox, oy, 6, y, '#5a5e5e'); px(ctx, ox, oy, 10, y, '#5a5e5e'); }
+      break;
+    }
+    case Tile.FreightLamp: {
+      // the mockup's square ceiling lamp: a dark steel frame round a bright warm panel
+      fillNoise(ctx, ox, oy, [52, 54, 58], 0.2, 832);
+      ctx.fillStyle = '#ffd890'; ctx.fillRect(ox + 2, oy + 2, 12, 12);
+      ctx.fillStyle = '#fff2c8'; ctx.fillRect(ox + 4, oy + 4, 8, 8);
+      break;
+    }
+    case Tile.ExcavationLamp: {
+      // small square work lamp, orange glass in a dark cage
+      fillNoise(ctx, ox, oy, [40, 42, 46], 0.2, 831);
+      ctx.fillStyle = '#ffb060'; ctx.fillRect(ox + 3, oy + 3, 10, 10);
+      ctx.fillStyle = '#ffe2a8'; ctx.fillRect(ox + 5, oy + 5, 6, 6);
+      ctx.fillStyle = '#40444a'; ctx.fillRect(ox + 3, oy + 7, 10, 1); ctx.fillRect(ox + 7, oy + 3, 1, 10);
+      break;
+    }
+    case Tile.MedicalLamp: {
+      // fluorescent troffer: a white diffuser in a grey frame
+      fillNoise(ctx, ox, oy, [96, 98, 98], 0.1, 833);
+      ctx.fillStyle = '#f4f2e6'; ctx.fillRect(ox + 1, oy + 3, 14, 10);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(ox + 2, oy + 5, 12, 2); ctx.fillRect(ox + 2, oy + 9, 12, 2);
+      break;
+    }
+
     case Tile.ServiceLampWarm:
     case Tile.ServiceLampGreen: {
       fillNoise(ctx, ox, oy, [39, 43, 47], .25, 731);

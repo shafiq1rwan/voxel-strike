@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Block } from '../world/blocks';
 import { moveBody, Box } from '../core/physics';
 import { Input } from '../core/input';
 import { KeyColor, AmmoType } from '../types';
@@ -18,7 +19,7 @@ const GRAVITY = 24;
 const JUMP_VEL = 8.5;
 
 export const BASE_MAX_HEALTH = 100;
-export const BASE_AMMO_MAX: Readonly<Record<AmmoType, number>> = { bullets: 240, shells: 60, rockets: 30, cells: 60 };
+export const BASE_AMMO_MAX: Readonly<Record<AmmoType, number>> = { bullets: 240, shells: 60, rockets: 30, cells: 60, special: 24 };
 
 export class Player {
   readonly pos = new THREE.Vector3();
@@ -33,7 +34,7 @@ export class Player {
   maxHealth = BASE_MAX_HEALTH;
   readonly maxArmor = 100;
   readonly keys = new Set<KeyColor>();
-  readonly ammo: Record<AmmoType, number> = { bullets: 48, shells: 0, rockets: 0, cells: 0 };
+  readonly ammo: Record<AmmoType, number> = { bullets: 48, shells: 0, rockets: 0, cells: 0, special: 0 };
   /** carry caps: the base values, ×1.5 with the Deep Pockets perk */
   readonly ammoMax: Record<AmmoType, number> = { ...BASE_AMMO_MAX };
   /** seconds since the last damage that got through (the Self-Repair perk) */
@@ -195,6 +196,20 @@ export class Player {
       this.vel.y = JUMP_VEL;
     }
 
+    if (this.onGround && !this.dead && this.vel.y <= 0 && wl > 0.001 && game.level.architecture?.stairs.some((r) => this.pos.x >= r.x - 0.4 && this.pos.x <= r.x + r.w + 0.4 && this.pos.z >= r.z - 0.4 && this.pos.z <= r.z + r.d + 0.4)) {
+      const px = this.pos.x + wx * (this.half.x + 0.12), pz = this.pos.z + wz * (this.half.z + 0.12);
+      const feet = this.pos.y - this.half.y;
+      const cellY = Math.floor(feet + 0.05);
+      const support = game.world.get(Math.floor(px), cellY, Math.floor(pz));
+      const top = cellY + 1;
+      if ((support === Block.ExcavationWall || support === Block.Metal) && top - feet > 0.05 && top - feet <= 1.05) {
+        let clear = true;
+        for (let x = Math.floor(px - this.half.x); x <= Math.floor(px + this.half.x); x++)
+          for (let z = Math.floor(pz - this.half.z); z <= Math.floor(pz + this.half.z); z++)
+            for (let y = top; y <= Math.floor(top + 2 * this.half.y); y++) if (game.world.isSolid(x, y, z)) clear = false;
+        if (clear) this.pos.y = top + this.half.y + 0.002;
+      }
+    }
     const res = moveBody(game.world, this.pos, this.half, this.vel, dt, extraBoxes);
     this.onGround = res.onGround;
 

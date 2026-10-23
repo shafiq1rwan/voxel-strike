@@ -18,13 +18,14 @@ import { RISE_S } from '../entities/enemies';
  */
 
 export const WAVES_PER_MAP = 5;
-/** map rotation (the three Codex themes join here when they exist) */
-export const SURVIVAL_THEMES: LevelTheme[] = ['facility', 'biofoundry', 'geothermal'];
+/** Six environments, five waves on each map. */
+export const SURVIVAL_THEMES: LevelTheme[] = ['facility', 'biofoundry', 'geothermal', 'freight', 'excavation', 'medical'];
 export const SURVIVAL_BEST_KEY = 'voxelstrike-survival-best';
 /** how long the warning glow burns before the enemy rises out of it */
 export const TELEGRAPH_S = 1.1;
 
 export const THEME_NAME: Record<LevelTheme, string> = {
+  freight: 'FREIGHT DEPOT', excavation: 'DEEP EXCAVATION', medical: 'MEDICAL WING',
   facility: 'THE FACILITY', biofoundry: 'THE BIOFOUNDRY', geothermal: 'THE GEOTHERMAL CORE',
 };
 
@@ -61,10 +62,11 @@ export const GUN_ROLE: Record<WeaponId, string> = {
   smg: 'Fast, steady fire',
   rocket: 'Blows up crowds',
   arc: 'Chains between enemies',
+  special: 'Secret prototype',
 };
-type AmmoKey = 'bullets' | 'shells' | 'rockets' | 'cells';
+type AmmoKey = 'bullets' | 'shells' | 'rockets' | 'cells' | 'special';
 export const GUN_AMMO: Record<WeaponId, [AmmoKey, number]> = {
-  pistol: ['bullets', 30], shotgun: ['shells', 12], smg: ['bullets', 60], rocket: ['rockets', 5], arc: ['cells', 24],
+  pistol: ['bullets', 30], shotgun: ['shells', 12], smg: ['bullets', 60], rocket: ['rockets', 5], arc: ['cells', 24], special: ['special', 8],
 };
 
 /** enemies in wave w (6, 8, 10 … capped) */

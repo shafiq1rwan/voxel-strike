@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SECRET_WEAPONS, secretIndex } from '../weapons/secrets';
 import { PickupKind, PickupSpec, WeaponId } from '../types';
 import { buildWeaponModel } from '../weapons/weapons';
 import { VoxelWorld } from '../world/world';
@@ -13,6 +14,8 @@ import { SEEN_HOLD, seenFrom } from '../core/occlusion';
 
 /** glow disc + accent color per pickup family */
 const GLOW_COLORS: Record<PickupKind, number> = {
+  weaponSecret: 0xc68aff,
+  ammoSpecial: 0xc68aff,
   healthSmall: 0xff4444,
   healthBig: 0xff4444,
   armorShard: 0x44e07a,
@@ -91,8 +94,8 @@ const THROWN_GUN: Partial<Record<PickupKind, WeaponId>> = {
  * spins around its own middle, and unlike the view model it sits in the
  * world, so it takes fog.
  */
-export function weaponPickup(id: WeaponId): THREE.Object3D {
-  const gun = buildWeaponModel(id).group;
+export function weaponPickup(id: WeaponId, prototype = 0): THREE.Object3D {
+  const gun = buildWeaponModel(id, null, prototype).group;
   gun.scale.setScalar(WEAPON_PICKUP_SCALE); // drop the view model's own scale/offset
   gun.position.set(0, 0, 0);
   const center = new THREE.Box3().setFromObject(gun).getCenter(new THREE.Vector3());
@@ -106,6 +109,8 @@ export function weaponPickup(id: WeaponId): THREE.Object3D {
 }
 
 const BUILDERS: Record<PickupKind, () => THREE.Object3D> = {
+  weaponSecret: () => weaponPickup('special'),
+  ammoSpecial: () => box(0.24, 0.24, 0.24, 0xc68aff),
   // health: white medkit with a fat red cross
   healthSmall: () => {
     const g = new THREE.Group();
@@ -297,7 +302,7 @@ class Pickup {
   private phase = Math.random() * Math.PI * 2;
 
   constructor(readonly spec: PickupSpec, world: VoxelWorld) {
-    this.obj = BUILDERS[spec.kind]();
+    this.obj = spec.kind === 'weaponSecret' ? weaponPickup('special', secretIndex(spec.secretSector ?? 1)) : BUILDERS[spec.kind]();
     this.obj.position.set(spec.x, spec.y, spec.z);
 
     // colored glow disc on the floor under the item
@@ -403,6 +408,8 @@ export class PickupManager {
         return pl.ammo.shells < pl.ammoMax.shells;
       case 'ammoRockets':
         return pl.ammo.rockets < pl.ammoMax.rockets;
+      case 'ammoSpecial':
+        return pl.ammo.special < pl.ammoMax.special;
       case 'ammoCells':
         return pl.ammo.cells < pl.ammoMax.cells;
       default:
@@ -420,6 +427,9 @@ export class PickupManager {
       const dy = pl.pos.y - p.obj.position.y;
       const dz = pl.pos.z - p.obj.position.z;
       const d2 = dx * dx + dy * dy + dz * dz;
+      // A secret prototype must stay behind its cracked wall until it is breached.
+      if (d2 < 6.25 && p.spec.kind === 'weaponSecret' && !game.hasLOS(pl.pos.x, pl.eyeY(), pl.pos.z, p.obj.position.x, p.obj.position.y, p.obj.position.z)) continue;
+
       // magnetism: useful items drift toward the player; scrap flies in from further
       const scrap = p.spec.kind === 'scrap';
       if (d2 < (scrap ? 20 : 6.25) && d2 > 0.5 && this.wants(p, game)) {
@@ -439,7 +449,7 @@ export class PickupManager {
         } else if (scrap) {
           this.take(p);
           game.collectScrap(p.spec.amount ?? 1);
-        } else if (p.spec.thrown ? this.reclaim(p, game) : this.tryCollect(p.spec.kind, game)) {
+        } else if (p.spec.thrown ? this.reclaim(p, game) : this.tryCollect(p.spec.kind, game, p.spec.secretSector)) {
           this.take(p);
           game.net?.sendPickupTaken(this.items.indexOf(p), false, p.spec.kind);
         }
@@ -507,7 +517,7 @@ export class PickupManager {
   claimForRemote(idx: number, game: Game): PickupKind | null {
     const p = this.items[idx];
     if (!p || p.taken) return null;
-    if (p.spec.kind.startsWith('key')) this.tryCollect(p.spec.kind, game); // both get keys
+    if (p.spec.kind.startsWith('key')) this.tryCollect(p.spec.kind, game, p.spec.secretSector); // both get keys
     this.take(p);
     return p.spec.kind;
   }
@@ -522,7 +532,7 @@ export class PickupManager {
   }
 
   /** returns false if the pickup should stay (e.g. already at max) */
-  private tryCollect(kind: PickupKind, game: Game): boolean {
+  private tryCollect(kind: PickupKind, game: Game, secretSector?: number): boolean {
     const pl = game.player;
     const hud = game.hud;
     const sfx = (name: 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup', msg: string): void => {
@@ -576,6 +586,19 @@ export class PickupManager {
       case 'keyYellow':
         pl.keys.add('yellow');
         sfx('pickupKey', 'Picked up the YELLOW keycard!');
+        return true;
+      case 'weaponSecret': {
+        const sector = secretSector ?? game.levelIndex;
+        game.weapons.equipSecret(sector);
+        const def = SECRET_WEAPONS[secretIndex(sector)];
+        pl.ammo.special = Math.min(pl.ammoMax.special, def.ammo);
+        game.hud.updateWeapon(game.weapons);
+        sfx('pickupWeapon', `${def.name}: ${def.hint} [6]`);
+        return true;
+      }
+      case 'ammoSpecial':
+        if (!pl.addAmmo('special', 6)) return false;
+        sfx('pickup', '+6 prototype rounds');
         return true;
       case 'weaponShotgun':
         game.weapons.give('shotgun');

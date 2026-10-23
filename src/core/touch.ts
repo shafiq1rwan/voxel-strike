@@ -254,7 +254,7 @@ export class TouchControls {
   private weaponRelease(): void {
     this.clearHold();
     if (this.wheelItems.length) {
-      if (this.wheelPick) this.input.switchRequest = this.getWeapons().owned.indexOf(this.wheelPick);
+      if (this.wheelPick) this.input.switchRequest = this.wheelPick === 'special' ? 5 : this.getWeapons().owned.filter((id) => id !== 'special').indexOf(this.wheelPick);
       this.closeWheel();
     } else if (!this.wSwiped) {
       this.input.switchRequest = -2; // tap: next owned weapon
@@ -286,7 +286,7 @@ export class TouchControls {
       el.className = 'twheel-item' + (id === current ? ' cur' : '');
       el.style.left = `${x - WHEEL_ITEM / 2}px`;
       el.style.top = `${y - WHEEL_ITEM / 2}px`;
-      el.innerHTML = `${i + 1}<small>${WEAPONS[id].name}</small>`;
+      el.innerHTML = `${id === 'special' ? 6 : i + 1}<small>${WEAPONS[id].name}</small>`;
       this.wheel.appendChild(el);
       return { id, x, y, el };
     });

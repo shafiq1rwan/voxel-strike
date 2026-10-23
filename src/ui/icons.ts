@@ -76,6 +76,7 @@ export const ICONS = {
   bullets: (size = 22) => bullets(size),
   shells: (size = 22) => shells(size),
   rockets: (size = 22) => fa(faRocket, '#ffd028', size),
+  special: (size = 22) => fa(faBatteryFull, '#c68aff', size),
   cells: (size = 22) => fa(faBatteryFull, '#55e0ff', size),
   /** objective / keycard icons take the current CSS color (lock / stage color) */
   keycard: (size = 18) => fa(faIdCard, C, size),
@@ -126,4 +127,4 @@ export function perkIcon(id: OfferId, size = 34): string {
   return fa(PERK_ICON[id].icon, PERK_ICON[id].color, size);
 }
 
-export type AmmoIcon = 'bullets' | 'shells' | 'rockets' | 'cells';
+export type AmmoIcon = 'bullets' | 'shells' | 'rockets' | 'cells' | 'special';

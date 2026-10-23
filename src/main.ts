@@ -1,6 +1,8 @@
 import { Game } from './game';
 import { POKI, poki, blockPageScroll } from './platform/poki';
 import { biofoundry } from './preview/biofoundry';
+import { environmentPreview } from './preview/environments';
+import { isNewTheme } from './world/environments';
 
 const app = document.getElementById('app');
 if (!app) throw new Error('missing #app root');
@@ -20,6 +22,8 @@ if (POKI) {
   const params = new URLSearchParams(location.search);
   if (params.has('operative')) {
     void import('./preview/operative-viewer').then(({ startOperativeViewer }) => startOperativeViewer(app));
+  } else if (isNewTheme(params.get('map') ?? '')) {
+    new Game(app, environmentPreview(params.get('map') as import('./world/environments').NewTheme));
   } else if (params.has('sector6')) {
     void import('./preview/geothermal').then(({ geothermal }) => new Game(app, geothermal));
   } else if (params.has('sector4')) {

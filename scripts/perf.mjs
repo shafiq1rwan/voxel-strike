@@ -183,6 +183,23 @@ try {
   check(geo.scene < SCENE_MAX_DRAWS, `Geothermal Core, all awake: ${geo.scene.toFixed(0)} world draws per frame (< ${SCENE_MAX_DRAWS})`);
   check(geoInfo.after === geoInfo.before, `Geothermal Core: shader programs stable after level start (${geoInfo.before} -> ${geoInfo.after})`);
 
+  // Each new theme at late-campaign pressure, including all landmark instances.
+  for (const [depth, theme] of [[8, 'freight'], [11, 'excavation'], [12, 'medical']]) {
+    await page.evaluate((n) => {
+      const g = window.__voxelstrike;
+      g.levelIndex = n; g.buildLevel(); g.state = 'playing';
+      g.player.dead = false; g.player.health = 99999; g.input.locked = true;
+      for (const e of g.enemies.list) e.wake(g);
+      window.__newPrograms = g.rendererSys.renderer.info.programs.length;
+    }, depth);
+    await sleep(1200);
+    const tally = await drawsOver(30);
+    const info = await page.evaluate(() => ({ theme: window.__voxelstrike.level.theme, before: window.__newPrograms, after: window.__voxelstrike.rendererSys.renderer.info.programs.length }));
+    check(info.theme === theme, `${theme}: real endless theme`);
+    check(tally.scene < SCENE_MAX_DRAWS, `${theme}, all awake: ${tally.scene.toFixed(0)} world draws per frame (< ${SCENE_MAX_DRAWS})`);
+    check(info.before === info.after, `${theme}: shaders stable after warm-up (${info.before} -> ${info.after})`);
+  }
+
   // 7. Survival at full pressure: the big dressed arena, the wave cap of
   // enemies alive at once, warnings and drops — same budget, no late compiles
   await page.evaluate(() => {

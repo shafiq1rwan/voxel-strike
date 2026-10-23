@@ -45,7 +45,7 @@ export interface SkinDef {
 }
 
 export const WEAPON_LABEL: Record<WeaponId, string> = {
-  pistol: 'SIDEARM', shotgun: 'SCATTERGUN', smg: 'RIPPER', rocket: 'THUMPER', arc: 'ARC CASTER',
+  pistol: 'SIDEARM', shotgun: 'SCATTERGUN', smg: 'RIPPER', rocket: 'THUMPER', arc: 'ARC CASTER', special: 'SECRET PROTOTYPE',
 };
 
 // a paint panel on a gun's left side (x = the face, a hair outside it)
@@ -229,6 +229,7 @@ export const STANDARD_SWATCH: Record<WeaponId, [number, number, number]> = {
   smg: [0x4a5162, 0x353a47, 0xffd028],
   rocket: [0x56784e, 0xffd028, 0x2e3e2e],
   arc: [0x3e4858, 0x34d0ff, 0xffd028],
+  special: [0x566076, 0xa5dc66, 0x24242a],
 };
 
 export function hexCss(c: number): string {

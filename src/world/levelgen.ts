@@ -1,4 +1,6 @@
 import { VoxelWorld } from './world';
+import { generateSectorLayout, type SectorArchitecture } from './sector-layouts';
+import { dressEnvironment, isNewTheme, ENVIRONMENTS } from './environments';
 import { Block } from './blocks';
 import { RNG } from '../core/rng';
 import { ExitSignSpec, LedgeRailSpec,
@@ -6,7 +8,7 @@ import { ExitSignSpec, LedgeRailSpec,
 } from '../types';
 
 /** which look a generated sector wears; the layout rules are the same */
-export type LevelTheme = 'facility' | 'biofoundry' | 'geothermal';
+export type LevelTheme = 'facility' | 'biofoundry' | 'geothermal' | 'freight' | 'excavation' | 'medical';
 
 /** specimen tank footprint: 3 (x) × 2 (z) on a metal base, glass y = 2..4, cap y = 5 */
 export const TANK_W = 3;
@@ -69,6 +71,7 @@ export interface GeoLayout {
 
 export interface LevelData {
   world: VoxelWorld;
+  architecture?: SectorArchitecture;
   theme?: LevelTheme;
   bio?: BioLayout;
   geo?: GeoLayout;
@@ -130,6 +133,7 @@ interface Edge {
  * keep their exact layouts for a given seed.
  */
 export function generateLevel(seed: number, difficulty = 1, theme: LevelTheme = 'facility', withBoss = false, survival = false): LevelData {
+  if (isNewTheme(theme)) return generateSectorLayout(seed, difficulty, theme);
   for (let attempt = 0; attempt < 10; attempt++) {
     const s = (seed + attempt * 7919) >>> 0;
     const data = generateLevelOnce(s, difficulty, theme, withBoss, survival);
@@ -952,6 +956,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   if (secretRect) {
     pickups.push(
       { kind: 'weaponRocket', x: secretRect.x + 2.5, y: 1.4, z: secretRect.z + 2.5 },
+      ...(difficulty <= 5 ? [{ kind: 'weaponSecret' as const, secretSector: difficulty, x: secretRect.x + 1.5, y: 1.4, z: secretRect.z + 1.5 }] : []),
       { kind: 'armorVest', x: secretRect.x + 1.5, y: 1.4, z: secretRect.z + 3.5 },
       { kind: 'ammoRockets', x: secretRect.x + 3.5, y: 1.4, z: secretRect.z + 1.5 }
     );
@@ -1057,7 +1062,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   // Biofoundry has its tanks). Placed AFTER every pickup and enemy, on cells
   // none of them use, so it never touches the layout RNG: a seed's rooms,
   // pickups and enemies are exactly what they were without it.
-  const withLink = isGeo || (theme === 'facility' && difficulty >= 2);
+  const withLink = isNewTheme(theme) || isGeo || (theme === 'facility' && difficulty >= 2);
   const taken = new Set<number>();
   for (const p of [...pickups, ...enemies]) taken.add(Math.floor(p.x) + Math.floor(p.z) * world.sx);
   const powerLink = withLink ? placePowerLink(world, rooms, dhash, boss?.roomId ?? -1, taken) : null;
@@ -1074,6 +1079,11 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   }
   let geo: GeoLayout | undefined;
   if (isGeo) geo = { vents: dressGeothermal(world, rooms, dhash), signs: geoSigns(world, spawnRoom) };
+  if (isNewTheme(theme)) {
+    dressEnvironment(world, rooms, theme);
+    // The optional supply node keeps its amber signal in every environment.
+    if (powerLink) world.set(powerLink.node.x, powerLink.node.y, powerLink.node.z, Block.LampWarm);
+  }
 
   // Give the exit hall its reference surfaces, including the vertical ledge
   // face. This is local to the room; corridor and sector palettes stay intact.
@@ -1111,7 +1121,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     }
   }
   // -- bake lights & finish -------------------------------------------------
-  world.bakeLighting(isBio ? BIO_AMBIENT : isGeo ? GEO_AMBIENT : undefined, lightOverrides);
+  world.bakeLighting(isNewTheme(theme) ? ENVIRONMENTS[theme].ambient : isBio ? BIO_AMBIENT : isGeo ? GEO_AMBIENT : undefined, lightOverrides);
 
   return {
     world,
@@ -1416,7 +1426,7 @@ function dressGeothermal(world: VoxelWorld, rooms: RoomDef[], dhash: Hash): Arra
   return vents;
 }
 
-const PLAIN_WALLS: number[] = [Block.Wall, Block.WallRust, Block.WallWorn, Block.WallVent, Block.WallPipes];
+const PLAIN_WALLS: number[] = [Block.Wall, Block.WallRust, Block.WallWorn, Block.WallVent, Block.WallPipes, Block.FreightWall, Block.ExcavationWall, Block.MedicalWall, Block.MedicalWallLower, Block.FreightCargo];
 
 /** a room's four walls: origin at the a = 0 corner of the face, u along it, n into the room */
 function roomWalls(r: RoomDef): Array<{ ox: number; oz: number; ux: number; uz: number; nx: number; nz: number; len: number; deep: number }> {
@@ -1564,7 +1574,7 @@ function reskinLab(world: VoxelWorld, dhash: Hash): void {
  * door, and the exit elevator must be reachable at all. BFS over floor columns
  * (doors are entities, so their cells read as air).
  */
-function validateLevel(data: LevelData): boolean {
+export function validateLevel(data: LevelData): boolean {
   const { world, doors, pickups, elevator, spawn } = data;
   const lockedDoor = doors.find((d) => d.locked !== null);
   if (!lockedDoor) return false;

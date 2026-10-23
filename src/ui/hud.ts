@@ -9,9 +9,9 @@ import type { OfferId } from '../core/perks';
 import { SKINS, WEAPON_LABEL, needText, swatchHtml, STANDARD_SWATCH, type SkinDef } from '../core/skins';
 import { startArmoryPreview } from './armory-preview';
 
-const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
+const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc', 'special'];
 /** a slot's tiny label: which gun ended up there */
-const SLOT_TAG: Record<WeaponId, string> = { pistol: 'PST', shotgun: 'SG', smg: 'SMG', rocket: 'RKT', arc: 'ARC' };
+const SLOT_TAG: Record<WeaponId, string> = { pistol: 'PST', shotgun: 'SG', smg: 'SMG', rocket: 'RKT', arc: 'ARC', special: 'SEC' };
 
 const CSS = `
 #overload-action { position:absolute; left:50%; bottom:22%; transform:translateX(-50%); max-width:65vw; padding:10px 16px; border:1px solid #34d0ff; color:#8ee8ff; background:rgba(5,10,18,.9); font-weight:bold; font-size:13px; pointer-events:auto; touch-action:manipulation; z-index:7; }
@@ -1046,6 +1046,8 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
 .title-menu.title-menu-pair { flex-direction: row; flex-wrap: wrap; justify-content: center; }
 .title-menu-pair .tbtn-play { padding-left: 46px; padding-right: 46px; }
 .title-menu-pair .tbtn-newrun { align-self: stretch; padding-left: 20px; padding-right: 20px; }
+/* the quiet Survival / Co-op rows sit on their own line under a Continue + New run pair */
+.title-menu-pair .title-menu-row { flex-basis: 100%; justify-content: center; }
 .tbtn-quiet { font-size: 12px; padding: 9px 18px; color: #8a94a8; }
 .tbtn-quiet:hover { color: #cfd6e4; border-color: #6a7488; }
 .tbtn-play { font-size: 22px; padding: 18px 76px; letter-spacing: .3em; text-indent: .3em; }
@@ -1296,7 +1298,7 @@ export class HUD {
     this.objNavEl = this.root.querySelector('#obj-nav')!;
     this.killsEl = this.root.querySelector('#kills')!;
     this.killsNumEl = this.root.querySelector('#kills-num')!;
-    for (let i = 0; i < ORDER.length; i++) {
+    for (let i = 0; i < 6; i++) {
       const s = document.createElement('div');
       s.className = 'slot';
       s.textContent = String(i + 1);
@@ -1338,9 +1340,10 @@ export class HUD {
     const tNum = this.root.querySelector('#tweapon-num');
     const tName = this.root.querySelector('#tweapon-name');
     if (tNum) tNum.textContent = String(ORDER.indexOf(w.current) + 1);
-    if (tName) tName.textContent = w.focusedShotgun && w.current === 'shotgun' ? 'FOCUSED' : WEAPONS[w.current].name;
+    if (tName) tName.textContent = w.current === 'special' ? w.definition().name : w.focusedShotgun && w.current === 'shotgun' ? 'FOCUSED' : WEAPONS[w.current].name;
     // slots fill in the order the guns were picked up
-    const order = w.slots();
+    const order: Array<WeaponId | undefined> = [...w.slots().filter((id) => id !== 'special')];
+    if (w.has('special')) order[5] = 'special';
     if (tNum) tNum.textContent = String(order.indexOf(w.current) + 1);
     const slots = this.slotsEl.querySelectorAll<HTMLElement>('.slot');
     slots.forEach((el, i) => {
@@ -1348,7 +1351,7 @@ export class HUD {
       el.classList.toggle('owned', !!id);
       el.classList.toggle('active', !!id && w.current === id);
       el.innerHTML = id ? `${i + 1}<small>${SLOT_TAG[id]}</small>` : String(i + 1);
-      el.title = id ? WEAPONS[id].name : '';
+      el.title = id ? w.definition(id).name : '';
     });
   }
 
@@ -2053,7 +2056,12 @@ export class HUD {
      */
     returning?: boolean;
     onSettings: () => void;
-    /** Survival is PLAY (the main mode since 2026-10-23); the campaign moves to a quiet row */
+    /**
+     * Survival, as a quiet secondary button under PLAY (the campaign). It was
+     * PLAY for one Player Fit Test (2026-10-23) and average playtime fell
+     * from ~5:00 to ~2:00 with the same audience, so the campaign is the
+     * first impression again.
+     */
     onSurvival?: () => void;
     /** best Survival wave reached on this device (0 = never) */
     survivalBest?: number;
@@ -2092,15 +2100,7 @@ export class HUD {
       ${armoryBtn}
       <div class="title-center">
         <canvas id="title-logo"></canvas>
-        ${showGoal && survival ? `<div class="title-goal">Survive the waves</div>
-        <div id="title-steps" class="tsteps">
-          ${step(1, ICONS.boss(28), '#ff3428', 'Clear each<br>wave')}
-          <span class="tstep-sep">&#9656;</span>
-          ${step(2, ICONS.armory(28), '#ffd028', 'Pick an<br>upgrade')}
-          <span class="tstep-sep">&#9656;</span>
-          ${step(3, ICONS.pad(28), '#4cc26a', 'Beat your<br>best')}
-        </div>` : ''}
-        ${showGoal && !survival ? `<div class="title-goal">Escape the facility</div>
+        ${showGoal ? `<div class="title-goal">Escape the facility</div>
         <div id="title-steps" class="tsteps">
           ${step(1, ICONS.keycard(28), '#ff3428', 'Find the<br>red keycard')}
           <span class="tstep-sep">&#9656;</span>
@@ -2112,20 +2112,14 @@ export class HUD {
           <span class="ns-tag">NEW SECTOR</span>
           <span class="ns-text"><b>THE GEOTHERMAL CORE</b><i>&middot;</i>SECTORS 6&ndash;7<i>&middot;</i>MIND THE HEAT</span>
         </div>` : ''}
-        ${survival ? `<div class="title-menu">
-          <button id="play-btn" class="tbtn tbtn-primary tbtn-play">Play</button>
-          <div class="title-menu-row">
-            ${cont ? `<button id="continue-btn" class="tbtn tbtn-quiet">Campaign &middot; ${opts.continueLabel ?? `Sector ${cont}`}</button>
-            <button id="start-btn" class="tbtn tbtn-quiet">New campaign</button>` : '<button id="start-btn" class="tbtn tbtn-quiet">Campaign</button>'}
-          </div>
-          ${opts.onCoop ? '<div class="title-menu-row"><button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button></div>' : ''}
-        </div>` : `<div class="title-menu${cont ? ' title-menu-pair' : ''}">
+        <div class="title-menu${cont ? ' title-menu-pair' : ''}">
           ${cont
             ? `<button id="continue-btn" class="tbtn tbtn-primary tbtn-play">Continue &middot; ${opts.continueLabel ?? `Sector ${cont}`}</button>
               <button id="start-btn" class="tbtn tbtn-quiet tbtn-newrun">New run</button>`
             : '<button id="start-btn" class="tbtn tbtn-primary tbtn-play">Play</button>'}
+          ${survival ? '<div class="title-menu-row"><button id="survival-btn" class="tbtn tbtn-quiet">Survival</button></div>' : ''}
           ${opts.onCoop ? '<div class="title-menu-row"><button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button></div>' : ''}
-        </div>`}
+        </div>
         ${showControls ? `<div class="title-controls">${controls}</div>` : ''}
       </div>
       <div class="title-foot has-mid">
@@ -2142,15 +2136,14 @@ export class HUD {
     this.logoStop = startVoxelLogo(el.querySelector('#title-logo') as HTMLCanvasElement, 'VOXELSTRIKE');
 
     el.querySelector('#start-btn')!.addEventListener('click', () => opts.onStart());
-    el.querySelector('#play-btn')?.addEventListener('click', () => opts.onSurvival?.());
+    el.querySelector('#survival-btn')?.addEventListener('click', () => opts.onSurvival?.());
     el.querySelector('#continue-btn')?.addEventListener('click', () => opts.onContinue?.());
     el.querySelector('#title-settings-btn')!.addEventListener('click', () => opts.onSettings());
     el.querySelector('#coop-btn')?.addEventListener('click', () => opts.onCoop?.());
     el.querySelector('#title-armory-btn')?.addEventListener('click', () => opts.onArmory?.());
     this.titleKey = (ev: KeyboardEvent) => {
       if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') {
-        if (survival) opts.onSurvival?.();
-        else if (cont) opts.onContinue?.();
+        if (cont) opts.onContinue?.();
         else opts.onStart();
       }
     };

@@ -8,6 +8,7 @@ export type PickupKind =
   | 'ammoBullets' | 'ammoShells' | 'ammoRockets'
   | 'keyRed' | 'keyBlue' | 'keyYellow'
   | 'weaponShotgun' | 'weaponSMG' | 'weaponRocket' | 'weaponArc'
+  | 'weaponSecret' | 'ammoSpecial'
   | 'ammoCells'
   | 'powerQuad' | 'powerShield' | 'powerHaste'
   /** scrap a kill dropped: walk over it (it flies to you) to bank `amount` */
@@ -17,9 +18,9 @@ export type PickupKind =
 export type EnemyKind = 'husk' | 'sentinel' | 'ticker' | 'brute' | 'vatborn' | 'broodkeeper'
   | 'cinderHulk' | 'ventStalker' | 'kilnDrone';
 
-export type WeaponId = 'pistol' | 'shotgun' | 'smg' | 'rocket' | 'arc';
+export type WeaponId = 'pistol' | 'shotgun' | 'smg' | 'rocket' | 'arc' | 'special';
 
-export type AmmoType = 'bullets' | 'shells' | 'rockets' | 'cells';
+export type AmmoType = 'bullets' | 'shells' | 'rockets' | 'cells' | 'special';
 
 export interface RoomDef {
   id: number;
@@ -47,6 +48,7 @@ export interface DoorSpec {
 export interface PickupSpec {
   /** Visible supplies in a puzzle cache cannot drift or be collected until opened. */
   sealed?: boolean;
+  secretSector?: number;
   /** a gun the player threw when it ran dry: picking it up gives the gun back, no ammo */
   thrown?: boolean;
   /** 'scrap' pickups: how much it is worth */

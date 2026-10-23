@@ -38,7 +38,7 @@ session adds 0.4 s to it; keeping a third of the sector 2 death-quitters adds
 |---|---|---|---|---|
 | 0 | Measurement: `start`, `death`, `playtime` events | tells us why | done, uncommitted | Claude |
 | 1 | **Scrap + permanent upgrades** (section 3) — **built 2026-10-23** | yes, directly | medium | Claude |
-| 2 | **Survival mode as the main mode** (section 4, owner 2026-10-23) | yes: first minute + death-quits | large | Claude |
+| 2 | **Survival mode** (section 4) — built 2026-10-23; was the main mode for one Fit Test (~2:00 vs ~5:00), now the secondary mode | not as the first impression | large | Claude |
 | 3 | **Three new map themes** (section 6) | variety | large | Codex |
 | 4 | **Secret map weapons**, 3 first (section 5) | indirectly | medium–large | Claude + Codex art |
 | 5 | AI companion drone (an upgrade) | no | medium | later |
@@ -110,7 +110,17 @@ Guardrails:
 - `upgrade` → `<id>` → `buy` with each purchase.
 - Success means sector 2 deaths per clear fall from ~6 toward ~3, the sector 2 clear rate rises from 26% toward 40%, and average playtime rises.
 
-## 4. Survival mode: now the main mode (phase 2)
+## 4. Survival mode (phase 2)
+
+**Result (Player Fit Test, 0.3.5, 2026-10-23): with Survival as PLAY,
+average playtime fell from ~5:00 to ~2:00 — 132 players, the same audience
+as the 5:00 test.** The owner moved PLAY back to the campaign (0.3.6) and
+kept Survival as a quiet second button; scrap drops, the HUD counter and the
+upgrades stay in both modes. Likely reasons: the campaign gives a stranger
+something to explore and a visible goal (keycard → door → lift → a new
+sector), while an arena of waves only holds players who already like wave
+shooters, and every wave break put two screens in front of players who
+weren't hooked yet. The original decision follows, for the record.
 
 **Decision (owner, 2026-10-23): Survival becomes PLAY.** The campaign stays,
 behind a quiet *Campaign* button on the title. Research on what keeps web
@@ -241,3 +251,15 @@ drone** (phase 5) gives every player a co-op feel instead.
    dropped.)
 4. Upgrade length (~5–6 full campaigns to max everything): **not sure** —
    ship the costs as written and tune from the `upgrade` buy events.
+
+
+Secret-weapon implementation update (2026-10-23): the owner selected five campaign sectors for this build. Sectors 1?5 now contain Rivet Riot, Breacher, Lance, Spore Popper and Brood Breaker respectively, sharing slot 6 with independent ammo and checkpoint support. This is the implemented scope; the three-environment table above remains a future-content proposal. Permanent Armory discovery unlocks and Survival wave drops remain pending.
+
+
+Map implementation update (2026-10-23): the three approved themes in section
+6 are now built. Freight Depot, Deep Excavation and Medical Wing join Survival
+maps 4-6 and the endless campaign rotation from depth 8, keeping the original
+seven campaign sectors. They include procedural landmarks, dedicated
+materials/lighting, Power Link caches and secret rooms. Standalone web
+playtests use `?map=freight`, `?map=excavation`, `?map=medical`. The alternate
+Coolant Works, Security Nexus and Extraction Hangar concepts remain pending.

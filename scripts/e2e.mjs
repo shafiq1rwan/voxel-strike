@@ -374,7 +374,7 @@ try {
       best: Number(localStorage.getItem('voxelstrike-best-depth') || 0),
     };
   });
-  check(depth6.idx === 8 && depth6.state === 'playing' && depth6.theme === 'facility',
+  check(depth6.idx === 8 && depth6.state === 'playing' && depth6.theme === 'freight',
     `Keep descending → depth 8 (${depth6.theme}, state ${depth6.state})`);
   check(depth6.label === 'DEPTH' && depth6.num === '8', `the HUD reads DEPTH 8 (${depth6.label} ${depth6.num})`);
   check(depth6.save?.sector === 8 && depth6.best >= 8, `depth 8 is saved and recorded as the deepest (${depth6.save?.sector}, best ${depth6.best})`);
@@ -415,6 +415,18 @@ try {
     'every Biofoundry layout has the keycard → red door → lift → pad phases');
   check(variety.every((v) => v.tanks >= 4 && v.occupied >= 1 && v.dormant === v.occupied),
     `every layout has tanks with dormant occupants (${variety.map((v) => `${v.occupied}/${v.tanks}`).join(', ')})`);
+
+  // New endless environments: use the same key / door / lift completion path.
+  for (const [depth, theme] of [[8, 'freight'], [11, 'excavation'], [12, 'medical']]) {
+    await page.evaluate((n) => {
+      const g = window.__voxelstrike;
+      g.hud.hideScreen(); g.levelIndex = n; g.buildLevel(); g.state = 'playing';
+      g.player.dead = false; g.player.health = 99999; g.input.locked = true;
+    }, depth);
+    check(await page.evaluate(() => window.__voxelstrike.level.theme) === theme, `depth ${depth}: ${theme} theme`);
+    const state = await completeLevel(depth);
+    check(state === 'intermission', `${theme}: key, door, lift and exit complete (${state})`);
+  }
 
   // --- sector 5 is the same Biofoundry, slightly harder ---------------------
   const harder = await page.evaluate(() => {

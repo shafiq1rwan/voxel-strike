@@ -1,3 +1,4 @@
+import { SECRET_WEAPONS, secretIndex } from './secrets';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { AmmoType, WeaponId } from '../types';
@@ -40,6 +41,7 @@ interface WeaponDef {
 }
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
+  special: { id: 'special', name: 'SECRET PROTOTYPE', ammoType: 'special', ammoPerShot: 1, damage: 55, pellets: 1, spread: 0.008, rate: 2.2, projectile: false, recoil: 0.055, kick: 0.13, sound: 'shotgun', flashScale: 0.8 },
   pistol: {
     id: 'pistol', name: 'SIDEARM', ammoType: 'bullets', ammoPerShot: 1,
     damage: 14, pellets: 1, spread: 0.012, rate: 3.4,
@@ -68,8 +70,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   },
 };
 
-/** slot order (keys 1-5); touch.ts maps wheel picks through it */
-export const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
+/** All model ids. Regular slots follow pickup order; prototypes always use key 6. */
+export const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc', 'special'];
 
 const FOCUSED_SHOTGUN: WeaponDef = {
   ...WEAPONS.shotgun, name: 'FOCUSED SCATTERGUN',
@@ -77,7 +79,7 @@ const FOCUSED_SHOTGUN: WeaponDef = {
 };
 
 /** touch auto-switch preference when the weapon in hand runs dry (rockets last: self-splash) */
-const DRY_SWITCH: WeaponId[] = ['shotgun', 'smg', 'arc', 'pistol', 'rocket'];
+const DRY_SWITCH: WeaponId[] = ['special', 'shotgun', 'smg', 'arc', 'pistol', 'rocket'];
 
 // view-model palette (theme-locked)
 const VOID = 0x05060a;
@@ -337,7 +339,7 @@ export interface WeaponModel {
  * weapon looks like: the first-person view model AND the floor pickup
  * (pickups.ts) both come from here, so they can never drift apart.
  */
-export function buildWeaponModel(id: WeaponId, skin: SkinDef | null = null): WeaponModel {
+export function buildWeaponModel(id: WeaponId, skin: SkinDef | null = null, prototype = 0): WeaponModel {
   const g = new THREE.Group();
   const m: WeaponModel = { group: g, tip: -0.5, coils: [], tips: [] };
   // paint: the gun's own colours, overridden by the skin's (signal colours —
@@ -345,6 +347,35 @@ export function buildWeaponModel(id: WeaponId, skin: SkinDef | null = null): Wea
   const paint = (defaults: Partial<Record<SkinRole, number>>): Record<SkinRole, number> =>
     ({ ...defaults, ...(skin?.colors ?? {}) }) as Record<SkinRole, number>;
   switch (id) {
+    case 'special': {
+      const index = secretIndex(prototype + 1);
+      const c = SECRET_WEAPONS[index].color;
+      vmPart(g, 0.16, 0.15, 0.32, STEEL, 0, 0, 0);
+      vmPart(g, 0.075, 0.18, 0.09, GRIP, 0, -0.15, 0.1, { rx: 0.2 });
+      if (index === 0) { // pneumatic ram, side feed and pressure piston
+        vmPart(g, 0.085, 0.09, 0.4, GUNMETAL, 0, 0.015, -0.32);
+        vmPart(g, 0.24, 0.1, 0.14, c, -0.13, -0.025, 0.015);
+        vmPart(g, 0.065, 0.075, 0.28, c, 0, 0.12, -0.025);
+      } else if (index === 1) { // two broad squared barrels
+        for (const x of [-0.065, 0.065]) {
+          vmPart(g, 0.11, 0.11, 0.4, GUNMETAL, x, 0, -0.3);
+          vmPart(g, 0.085, 0.085, 0.025, VOID, x, 0, -0.51);
+        }
+        vmPart(g, 0.23, 0.04, 0.18, c, 0, 0.095, 0);
+      } else if (index === 2) { // long separated accelerator rails
+        for (const x of [-0.065, 0.065]) vmPart(g, 0.045, 0.08, 0.56, STEEL_LIGHT, x, 0.025, -0.3);
+        vmPart(g, 0.035, 0.035, 0.5, c, 0, 0.025, -0.28, { glow: true });
+      } else { // specimen cartridges and containment cage
+        vmPart(g, 0.24, 0.13, 0.25, index === 3 ? 0x544060 : 0x433453, 0, 0.015, -0.22);
+        for (const x of [-0.075, 0.075]) {
+          vmPart(g, 0.095, index === 3 ? 0.16 : 0.23, 0.11, c, x, 0.14, -0.02, { glow: true });
+          vmPart(g, 0.115, 0.035, 0.13, GUNMETAL, x, 0.24, -0.02);
+        }
+        vmPart(g, 0.12, 0.08, 0.08, VOID, 0, 0.015, -0.38);
+      }
+      m.tip = index === 2 ? -0.59 : index < 2 ? -0.53 : -0.43;
+      break;
+    }
     // SIDEARM — compact pistol: blowback slide, glowing three-dot sights
     case 'pistol': {
       const P = paint({ main: STEEL, second: GUNMETAL, dark: GRIP, accent: HAZARD, trim: GUNMETAL, metal: STEEL });
@@ -491,8 +522,30 @@ export class WeaponSystem {
   quickHands = 0;
   /** One non-stacking Overload sidegrade, retained only for the current run. */
   focusedShotgun = false;
+  secret = 0;
+  private pods: Array<{ world: Game['world']; enemy: Enemy | null; x: number; y: number; z: number; t: number; damage: number }> = [];
+
+  equipSecret(sector: number): void {
+    this.secret = secretIndex(sector);
+    this.skinIds.set('special', 'rebuild');
+    this.setSkin('special', null);
+    this.give('special');
+  }
+
+  clearSecretEffects(): void {
+    this.pods = [];
+  }
+
+  restoreSecret(index: number): void {
+    this.secret = secretIndex((Number.isFinite(index) ? index : 0) + 1);
+    this.pods = [];
+    this.skinIds.set('special', 'rebuild');
+    this.setSkin('special', null);
+  }
+
 
   definition(id = this.current): WeaponDef {
+    if (id === 'special') return { ...WEAPONS.special, ...SECRET_WEAPONS[this.secret] };
     return id === 'shotgun' && this.focusedShotgun ? FOCUSED_SHOTGUN : WEAPONS[id];
   }
   private pending: WeaponId | null = null;
@@ -636,6 +689,7 @@ export class WeaponSystem {
       // caster body — under the gun the gun itself hid them
       shotgun: { r: { at: [0, -0.085, 0.14], pose: 'grip', hw: 0.045, hd: 0.05 }, l: { at: [0, 0, 0.02], pose: 'side', hw: 0.0625, hd: 0.0475 }, lOnPump: true },
       smg: { r: { at: [0, -0.12, 0.1], pose: 'grip', hw: 0.035, hd: 0.04 }, l: { at: [0, 0, -0.36], pose: 'side', hw: 0.05, hd: 0.05 } },
+      special: { r: { at: [0, -0.13, 0.1], pose: 'grip', hw: 0.03, hd: 0.04 }, l: { at: [0, -0.1, -0.2], pose: 'side', hw: 0.06, hd: 0.06 } },
       rocket: { r: { at: [0, -0.13, 0], pose: 'grip', hw: 0.03, hd: 0.04 }, l: { at: [0, 0.02, -0.26], pose: 'side', hw: 0.085, hd: 0.085 } },
       arc: { r: { at: [0, -0.14, 0.1], pose: 'grip', hw: 0.035, hd: 0.045 }, l: { at: [0, -0.02, -0.07], pose: 'side', hw: 0.06, hd: 0.065 } },
     };
@@ -696,7 +750,7 @@ export class WeaponSystem {
         }
       });
     }
-    const m = buildWeaponModel(id, skin);
+    const m = buildWeaponModel(id, skin, this.secret);
     m.group.visible = id === this.current;
     this.viewModel.add(m.group);
     this.models.set(id, m.group);
@@ -733,6 +787,7 @@ export class WeaponSystem {
   give(id: WeaponId): void {
     this.owned.add(id);
     if (!this.slotOrder.includes(id)) this.slotOrder.push(id);
+    this.slotOrder.sort((a, b) => Number(a === 'special') - Number(b === 'special'));
     this.switchTo(id);
   }
 
@@ -740,6 +795,7 @@ export class WeaponSystem {
   reclaim(id: WeaponId, game: Game): void {
     this.owned.add(id);
     if (!this.slotOrder.includes(id)) this.slotOrder.push(id);
+    this.slotOrder.sort((a, b) => Number(a === 'special') - Number(b === 'special'));
     game.hud.updateWeapon(this);
   }
 
@@ -779,7 +835,7 @@ export class WeaponSystem {
     const req = input.consumeSwitch();
     if (req !== null && !game.player.dead) {
       if (req >= 0) {
-        const id = this.slotOrder[req];
+        const id = req === 5 ? (this.has('special') ? 'special' : undefined) : this.slotOrder.filter((id) => id !== 'special')[req];
         if (id) this.switchTo(id);
       } else {
         // wheel: -1 prev, -2 next among owned
@@ -838,14 +894,14 @@ export class WeaponSystem {
         this.dryFired = true;
         const next = DRY_SWITCH.find((id) =>
           id !== this.current && this.owned.has(id) && game.player.ammo[WEAPONS[id].ammoType] >= WEAPONS[id].ammoPerShot);
-        if (next && this.current !== 'pistol' && !game.net) {
+        if (next && this.current !== 'pistol' && this.current !== 'special' && !game.net) {
           // out of ammo with something else loaded: throw the empty gun at
           // them and bring the next one up (it lands as a pickup to reclaim)
           this.throwCurrent(next, game);
         } else {
           game.audio.play('dryfire');
           // the sidearm (never thrown), co-op and touch hop to the best loaded weapon
-          if (next && (this.current === 'pistol' || game.isTouch)) this.switchTo(next);
+          if (next && (this.current === 'pistol' || this.current === 'special' || game.isTouch)) this.switchTo(next);
         }
       }
       // adrenaline powerup: faster trigger
@@ -853,6 +909,22 @@ export class WeaponSystem {
       this.queuedShot = 0;
     }
 
+    for (const pod of this.pods) {
+      if (pod.world !== game.world) { pod.t = -1; continue; }
+      pod.t -= dt;
+      if (pod.enemy?.alive) { pod.x = pod.enemy.pos.x; pod.y = pod.enemy.pos.y; pod.z = pod.enemy.pos.z; }
+      game.dynLights.flash(pod.x, pod.y, pod.z, 0.55, 0.85, 0.25, 0.4, 2, 0.08);
+      if (Math.floor((pod.t + dt) * 10) !== Math.floor(pod.t * 10)) game.particles.impact(pod.x, pod.y, pod.z, 0, 1, 0, 0.55, 0.85, 0.25);
+      if (pod.t <= 0) {
+        for (const e of game.enemies.list) {
+          if (!e.alive || (e.pos.x - pod.x) ** 2 + (e.pos.y - pod.y) ** 2 + (e.pos.z - pod.z) ** 2 > 9) continue;
+          if (e !== pod.enemy && !game.hasLOS(pod.x, pod.y, pod.z, e.pos.x, e.pos.y, e.pos.z)) continue;
+          game.applyEnemyHit(e, pod.damage, 0, 0, false);
+        }
+        game.audio.play('boltHit', { x: pod.x, y: pod.y, z: pod.z });
+      }
+    }
+    this.pods = this.pods.filter((p) => p.t > 0);
     this.animate(dt, game);
   }
 
@@ -909,6 +981,15 @@ export class WeaponSystem {
     // quad damage powerup
     const dmgMult = pl.buffs.quad > 0 ? 4 : 1;
 
+    if (def.id === 'special' && this.secret === 4) {
+      this.fireArc(origin, fwd, def.damage * dmgMult, game, muzzle);
+      return;
+    }
+    if (def.id === 'special' && (this.secret === 2 || this.secret === 3)) {
+      this.firePrototype(origin, fwd, def.damage * dmgMult, game, muzzle);
+      return;
+    }
+
     if (def.id === 'arc') {
       // muzzle light is electric blue
       game.dynLights.flash(pl.pos.x, pl.eyeY(), pl.pos.z, 0.4, 0.85, 1, 1.4, 9, 0.09);
@@ -935,6 +1016,34 @@ export class WeaponSystem {
         .addScaledVector(up, (Math.random() * 2 - 1) * def.spread)
         .normalize();
       this.hitscan(origin, dir, def.damage * dmgMult, game, muzzle);
+    }
+  }
+
+  /** Piercing beam or a sticky pod, bounded by the first wall or closed door. */
+  private firePrototype(origin: THREE.Vector3, dir: THREE.Vector3, damage: number, game: Game, muzzle: THREE.Vector3): void {
+    const wall = game.world.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, 60);
+    let limit = wall?.t ?? 60;
+    for (const door of game.doors) {
+      if (door.isOpen) continue;
+      const t = rayBox(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, limit, door.box());
+      if (t !== null) limit = Math.min(limit, t);
+    }
+    const hits = game.enemies.list.filter((e) => e.alive).map((enemy) => ({ enemy, t: rayBox(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, limit, {
+      minX: enemy.pos.x - enemy.half.x, maxX: enemy.pos.x + enemy.half.x,
+      minY: enemy.pos.y - enemy.half.y, maxY: enemy.pos.y + enemy.half.y,
+      minZ: enemy.pos.z - enemy.half.z, maxZ: enemy.pos.z + enemy.half.z,
+    }) })).filter((h): h is { enemy: Enemy; t: number } => h.t !== null).sort((a, b) => a.t - b.t);
+    if (this.secret === 3) {
+      const hit = hits[0];
+      const t = Math.max(0, (hit?.t ?? limit) - 0.05);
+      const x = origin.x + dir.x * t, y = origin.y + dir.y * t, z = origin.z + dir.z * t;
+      this.pods.push({ world: game.world, enemy: hit?.enemy ?? null, x, y, z, t: 0.85, damage });
+      game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, x, y, z, 0xa5dc66, 0.2);
+    } else {
+      for (const h of hits.slice(0, 4)) game.applyEnemyHit(h.enemy, damage, dir.x, dir.z, false);
+      game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, origin.x + dir.x * limit, origin.y + dir.y * limit, origin.z + dir.z * limit, 0x55d8ff, 0.2);
+      if (hits.length) game.hud.hitMarker();
+      if (wall && wall.t <= limit) game.applyVoxelDamage(wall.x, wall.y, wall.z, damage);
     }
   }
 
@@ -1143,6 +1252,10 @@ export class WeaponSystem {
         game.hud.hitMarker();
       }
       game.applyEnemyHit(e, headshot ? damage * 2 : damage, dir.x, dir.z, headshot);
+      if (this.current === 'special' && this.secret === 0 && e.alive && e.kind !== 'broodkeeper' && !game.isNetClient) {
+        e.vel.x += dir.x * 9;
+        e.vel.z += dir.z * 9;
+      }
       return;
     }
     if (wHit && wHit.t <= wallT) {

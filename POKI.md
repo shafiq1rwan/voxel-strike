@@ -105,7 +105,7 @@ ads, playtime) Poki already tracks on its own. None of the values may contain
 | `endless` | `8` – `20` | `complete` | An endless depth past sector 7 is cleared (depth 20 and deeper all report as `20`) |
 | `endless` | `8` – `20` | `fail` | The player dies at that endless depth (same cap) |
 | `death` | `1` – `20` (sector / depth, capped) | what landed the killing hit: `husk`, `sentinel`, `ticker`, `brute`, `vatborn`, `broodkeeper`, `cinderHulk`, `ventStalker`, `kilnDrone`, `barrel`, `rocket` (their own), `explosion`, `unknown` | Sent with every `fail` (solo). In the dashboard: death → 2 → ticker / brute / … — a difficulty spike shows up as one killer |
-| `wave` | `1` – `30` (capped) | `start` / `complete` / `fail` | SURVIVAL (the main mode): a wave begins, is cleared, or the run dies in it. Survival sends no `level` events; its deaths send `death` → `wN` → killer |
+| `wave` | `1` – `30` (capped) | `start` / `complete` / `fail` | SURVIVAL (the quiet button under PLAY): a wave begins, is cleared, or the run dies in it. Survival sends no `level` events; its deaths send `death` → `wN` → killer |
 | `upgrade` | `suit` `plates` `medic` `belt` `hands` `headstart` `scanner` | `tier1` – `tier3` | A scrap upgrade is bought (docs/RETENTION_PLAN.md). Shows which upgrades players want and how far they save up; tune the costs from it |
 | `playtime` | `1` `2` `3` `4` `5` `6` `7` `8` `10` `12` `15` `20` `30` | `reached` | That many minutes of real play this page load (state `playing` only: menus, ads, death and clear screens don't count). Once per mark per load. Shows when sessions end — e.g. whether sector 1 quitters leave in the first minute or after three |
 
