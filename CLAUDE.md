@@ -814,7 +814,15 @@ ceiling with white troffers and dark ducts, bed bays + teal screens + ECG
 monitors behind cream pillars, an operating room through a framed opening
 in a partition, triage + a medicine cabinet, a red double door. Excavation
 and Medical share the framed double door (leaves round the real door, light
-bar, hazard posts, reader). `src/world/environments.ts` keeps the palette;
+bar, hazard posts, reader). Props added after the first pass (owner: "all the missing
+props"): Freight — 2×2 concrete pillars carrying the crane runways, 2×2×2
+crate stacks, catwalk office doors / lit windows / door lamps; Excavation —
+a caged service lift by the galleries, green + steel lockers and crates by
+the door, lamp posts round the drill pit, rubble in it; Medical — bedside
+drawers, wheeled carts, wall vents, a DULL brass cable + junction box on the
+partition (unlit on purpose: a glowing amber box reads as the Power Link
+node). Medical props get a brighter light floor in sector-landmarks.ts
+(white beds went grey). `src/world/environments.ts` keeps the palette;
 its `dressEnvironment` is no longer reached (new themes return early from
 `generateLevel`). Existing block and tile ids are unchanged; appended block
 ids 40–56 and tiles 41–58 (59 of the 8×8 atlas's 64).

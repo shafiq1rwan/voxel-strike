@@ -32,8 +32,10 @@ export function decorateSectorLandmarks(level: LevelData): PreviewArt {
     items.forEach((it, i) => {
       mesh.setMatrixAt(i, matrix.compose(pos.set(it.x, it.y, it.z), q, scale.set(it.w, it.h, it.d)));
       const l = level.world.sampleLight01(it.x, it.y, it.z);
-      const floor = glow ? 1 : 0.62;
-      mesh.setColorAt(i, new THREE.Color().setRGB((it.color >> 16 & 255) / 255 * Math.max(floor, l[0]), (it.color >> 8 & 255) / 255 * Math.max(floor, l[1]), (it.color & 255) / 255 * Math.max(floor, l[2])));
+      // props read a little brighter than the voxels round them (white beds went grey)
+      const floor = glow ? 1 : level.theme === 'medical' ? 0.98 : 0.7; // the ward is brightly lit: its white props stay white
+      const lit = (v: number): number => glow ? 1 : Math.min(1, Math.max(floor, v * 1.25));
+      mesh.setColorAt(i, new THREE.Color().setRGB((it.color >> 16 & 255) / 255 * lit(l[0]), (it.color >> 8 & 255) / 255 * lit(l[1]), (it.color & 255) / 255 * lit(l[2])));
     });
     mesh.computeBoundingBox(); mesh.computeBoundingSphere(); meshes.push(mesh); group.add(mesh);
   }

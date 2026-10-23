@@ -98,7 +98,7 @@ export function generateSectorLayout(seed: number, difficulty: number, theme: Ne
     // After reference/new-sector-mockups/deep-excavation.png: the drilling
     // rig — a yellow machine on dark tracks with a cab, and a big grey cutter
     // head built as a stepped block sphere studded with teeth, facing the aisle.
-    const MACHINE = 0xd0a030, MACHINE_D = 0x9a7420, STONE = 0x8c9097, STONE_D = 0x6a6e75, TOOTH = 0xb6bac0;
+    const MACHINE = 0xd0a030, MACHINE_D = 0x9a7420, STONE = 0x8c9097, STONE_D = 0x6a6e75, TOOTH = 0xb6bac0, HAZD_X = 0x26282c;
     fill(45, 1, 32, 5, 5, 8, Block.PowerBarrier);
     for (const z of [32.45, 39.55]) box(47.5, 1.45, z, 5.6, 0.9, 0.9, 0x2a2d31);
     box(47.6, 3.1, 36, 4.6, 2.6, 7.0, MACHINE);
@@ -151,6 +151,41 @@ export function generateSectorLayout(seed: number, difficulty: number, theme: Ne
     // small work lamps on the rock and the galleries (the mockup is dotted with them)
     for (const [x, y, z] of [[16, 9, 33], [16, 11, 44], [51, 6, 35], [51, 9, 46], [25, 6, 31], [42, 7, 28]]) lamp(x, y, z, x === 16 ? 'west' : x === 51 ? 'east' : 'north');
     architecture.signs.push({ text: 'DEEP EXCAVATION', x: cx, y: 6.0, z: 22.04, w: 7 });
+    // the caged service lift beside the galleries: corner posts, mesh walls,
+    // the car parked halfway up with a hazard band, a head frame and a lamp
+    fill(23, 1, 33, 3, 9, 3, Block.PowerBarrier);
+    const CAGE = 0x3a3f45, MESH = 0x565c63;
+    for (const x of [23.05, 25.95]) for (const z of [33.05, 35.95]) box(x, 5.5, z, 0.16, 9, 0.16, CAGE);
+    for (let y = 1.5; y <= 9.5; y += 1) {
+      for (const z of [33.04, 35.96]) box(24.5, y, z, 2.9, 0.06, 0.06, MESH);
+      for (const x of [23.04, 25.96]) box(x, y, 34.5, 0.06, 0.06, 2.9, MESH);
+    }
+    for (let t = 0.4; t < 3; t += 0.5) {
+      for (const z of [33.04, 35.96]) box(23 + t, 5.5, z, 0.05, 9, 0.05, MESH);
+      for (const x of [23.04, 25.96]) box(x, 5.5, 33 + t, 0.05, 9, 0.05, MESH);
+    }
+    box(24.5, 4.0, 34.5, 2.8, 0.2, 2.8, 0x4a5056);
+    for (let t = 0; t < 2.8; t += 0.4) box(23.3 + t, 4.18, 35.9, 0.4, 0.16, 0.06, Math.round(t / 0.4) % 2 ? HAZD_X : 0xd8a830);
+    box(24.5, 10.2, 34.5, 3.2, 0.5, 3.2, 0x2c3035);
+    box(24.5, 10.5, 34.5, 0.9, 0.3, 0.9, 0xffb050, true);
+    // lockers (one green, one steel) and crates either side of the door
+    fill(27, 1, 22, 3, 2, 1, Block.PowerBarrier);
+    for (const [x, c] of [[27.5, 0x3f6a4e], [28.5, 0x6a7078], [29.5, 0x3f6a4e]] as const) {
+      box(x, 2.0, 22.5, 0.92, 1.95, 0.9, c);
+      for (const y of [1.6, 2.6]) box(x, y, 22.96, 0.6, 0.06, 0.04, 0x23272c);
+      box(x + 0.28, 2.0, 22.97, 0.06, 0.3, 0.04, 0xa0a6ac);
+    }
+    for (const [x, y, z] of [[38, 1, 22], [39, 1, 22], [38, 2, 22], [38, 1, 23], [40, 1, 22]] as const) world.set(x, y, z, Block.Crate);
+    // short lamp posts round the drill pit, and rubble down in it
+    for (const [x, z] of [[37.25, 40.75], [48.75, 40.75], [37.25, 50.25], [48.75, 50.25], [37.25, 45.5], [43, 50.25]]) {
+      box(x, 1.55, z, 0.16, 1.1, 0.16, 0x2c3035);
+      box(x, 2.15, z, 0.34, 0.24, 0.34, 0x2c3035);
+      box(x, 2.15, z, 0.26, 0.18, 0.36, 0xffc070, true);
+    }
+    for (let i = 0; i < 26; i++) {
+      const x = 38.4 + ((i * 37) % 92) / 10, z = 41.4 + ((i * 53) % 80) / 10, sz = 0.25 + ((i * 13) % 5) * 0.12;
+      box(x, 0.3 + sz / 2, z, sz, sz * 0.8, sz * 1.1, [0x5a5e66, 0x464a52, 0x6c7078, 0x7a6448][i % 4]);
+    }
   } else if (theme === 'freight') {
     // After reference/new-sector-mockups/freight-depot.png: a tall loading
     // hall — stacked containers either side of a broad aisle with a grated
@@ -183,7 +218,11 @@ export function generateSectorLayout(seed: number, difficulty: number, theme: Ne
     container(42, 1, 39, 6, 3, 7, true); container(42, 4, 39, 6, 3, 7, false);
     container(42, 1, 27, 5, 3, 7, false);
     // wooden crates frame the arrival without blocking the aisle
-    for (const [x, y, z] of [[27, 1, 50], [28, 1, 50], [27, 2, 50], [27, 1, 49], [40, 1, 50], [41, 1, 49], [41, 1, 50], [41, 2, 50], [38, 1, 26], [29, 1, 25], [30, 1, 25]] as const) world.set(x, y, z, Block.Crate);
+    // wooden crates in 2×2×2 stacks (the mockup's crates are big), a few loose ones
+    for (const [x0, z0, h] of [[26, 49, 2], [41, 49, 2], [37, 24, 1], [29, 24, 2]] as const) {
+      for (let x = x0; x < x0 + 2; x++) for (let z = z0; z < z0 + 2; z++) for (let y = 1; y <= h; y++) world.set(x, y, z, Block.Crate);
+    }
+    for (const [x, z] of [[28, 51], [40, 51], [31, 25]] as const) world.set(x, 1, z, Block.Crate);
     // catwalks down both walls at y = 5, a railing on the open edge, stairs to the floor
     for (const [x0, railX, stairX] of [[16, 18.92, 16], [49, 49.08, 50]] as const) {
       fill(x0, 5, 23, 3, 1, 19, Block.Metal);
@@ -246,6 +285,22 @@ export function generateSectorLayout(seed: number, difficulty: number, theme: Ne
     for (const x of [cx - 6, cx + 5]) for (let y = 1; y <= 4; y++) world.set(x, y, 21, Block.FreightHazardFloor);
     lamp(cx - 2, 5, 21); lamp(cx + 1, 5, 21);
     architecture.signs.push({ text: 'FREIGHT DEPOT', x: cx, y: 6.35, z: 22.04, w: 8 });
+    // big concrete pillars floor to ceiling, carrying the crane runways
+    for (const x of [19, 47]) for (const z of [24, 35, 47]) fill(x, 1, z, 2, hall.h, 2, Block.FreightWall);
+    // the catwalk offices: a second door, lit windows, a lamp over each door
+    for (const face of [16.04, 51.96]) {
+      box(face, 7.2, 39, 0.08, 2.4, 1.5, 0x3b4148);
+      box(face, 7.2, 39, 0.1, 2.5, 0.08, 0x23272c);
+      for (const z of [31, 39]) {
+        box(face, 9.0, z, 0.14, 0.26, 0.6, 0x2e3237);
+        box(face + (face < cx ? 0.06 : -0.06), 9.0, z, 0.06, 0.16, 0.46, 0xffd890, true);
+      }
+      for (const z of [26.5, 35]) {
+        box(face, 7.6, z, 0.1, 1.2, 2.0, 0x6a7078);
+        box(face + (face < cx ? 0.05 : -0.05), 7.6, z, 0.06, 0.95, 1.75, 0x6f8a96, true);
+        box(face + (face < cx ? 0.08 : -0.08), 7.6, z, 0.04, 0.95, 0.08, 0x3b4148);
+      }
+    }
   } else {
     // After reference/sector7-medical-wing-v1.png: a bright tiled ward — a
     // central aisle under fluorescent troffers and dark ducts, bed bays behind
@@ -316,6 +371,37 @@ export function generateSectorLayout(seed: number, difficulty: number, theme: Ne
     }
     for (const z of [30, 40, 50]) { world.set(cx - 1, 0, z, Block.FreightGrate); world.set(cx, 0, z, Block.FreightGrate); }
     architecture.signs.push({ text: 'MEDICAL WING', x: cx, y: 5.45, z: 22.04, w: 4.6 });
+    // bedside drawers between each bed and its screen
+    for (const z0 of [25, 29, 33, 37, 41, 45]) {
+      fill(19, 1, z0 + 2, 1, 1, 1, Block.PowerBarrier);
+      box(19.45, 1.5, z0 + 2.5, 0.8, 1.0, 0.8, WHITE);
+      for (const y of [1.3, 1.65]) box(19.86, y, z0 + 2.5, 0.04, 0.05, 0.6, 0x9aa0a4);
+      box(19.88, 1.48, z0 + 2.5, 0.04, 0.06, 0.2, 0x5a5e62);
+    }
+    // wheeled carts at the foot of the bays
+    for (const [x, z] of [[24, 30], [25, 42]] as const) {
+      fill(x, 1, z, 1, 1, 1, Block.PowerBarrier);
+      box(x + 0.5, 1.55, z + 0.5, 0.8, 0.55, 0.62, WHITE);
+      box(x + 0.5, 1.88, z + 0.5, 0.88, 0.06, 0.7, FRAME);
+      box(x + 0.5, 1.28, z + 0.5, 0.82, 0.06, 0.64, FRAME);
+      for (const dx of [-0.32, 0.32]) for (const dz of [-0.24, 0.24]) box(x + 0.5 + dx, 1.08, z + 0.5 + dz, 0.12, 0.16, 0.12, 0x2a2d31);
+      box(x + 0.94, 2.0, z + 0.5, 0.05, 0.3, 0.5, FRAME);
+    }
+    // vent grilles high on the walls
+    const vent = (x: number, y: number, z: number, alongX: boolean): void => {
+      box(x, y, z, alongX ? 1.2 : 0.08, 0.8, alongX ? 0.08 : 1.2, 0x5a5e62);
+      for (let t = -0.28; t <= 0.29; t += 0.14) box(x + (alongX ? 0 : (x < cx ? 0.03 : -0.03)), y + t, z + (alongX ? 0.03 : 0), alongX ? 1.0 : 0.04, 0.06, alongX ? 0.04 : 1.0, 0x2a2d31);
+    };
+    vent(cx - 5.5, 4.6, 22.05, true); vent(cx + 5.5, 4.6, 22.05, true);
+    for (const z of [27, 39]) vent(19.05, 5.0, z, false);
+    for (const z of [25, 46]) vent(40.95, 5.0, z, false);
+    // a brass cable from a junction box up the partition and along the top
+    // (dull, unlit: the glowing amber node means the Power Link puzzle)
+    const CABLE = 0xb07a28;
+    box(40.88, 3.4, 43.5, 0.14, 0.7, 0.7, 0x8a6a30); box(40.82, 3.4, 43.5, 0.04, 0.42, 0.42, 0x4a3a20);
+    box(40.9, 4.7, 43.5, 0.12, 1.9, 0.12, CABLE);
+    box(40.9, 5.6, 48.0, 0.12, 0.12, 9.0, CABLE);
+    box(40.9, 2.4, 43.5, 0.12, 1.3, 0.12, CABLE);
   }
 
   if (theme !== 'freight') {
