@@ -119,7 +119,7 @@ export class RemotePlayer {
   }
 
   /** enemy AI / explosions land a hit on the partner → relay it to their game */
-  damage(amount: number, _game: Game, source?: { x: number; z: number }): void {
+  damage(amount: number, _game: Game, source?: { x: number; z: number; by?: string }): void {
     this.onDamage?.(amount, source?.x ?? this.pos.x, source?.z ?? this.pos.z);
   }
 

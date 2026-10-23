@@ -141,7 +141,7 @@ export class ThrownGuns {
       if (w.isSolid(bx, yy, bz)) { floor = yy + 1; break; }
     }
     const kind = GUN_PICKUP[f.id];
-    if (kind) game.spawnPickup(kind, x, floor + 0.4, z, true);
+    if (kind) game.spawnPickup(kind, x, floor + 0.4, z, { thrown: true });
   }
 
   private free(f: Flying): void {

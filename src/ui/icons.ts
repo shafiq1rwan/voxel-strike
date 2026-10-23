@@ -90,6 +90,8 @@ export const ICONS = {
   ad: (size = 16) => fa(faClapperboard, C, size),
   /** title screen: the Settings corner button */
   gear: (size = 18) => fa(faGear, C, size),
+  /** scrap (the one currency): a brass cog */
+  scrap: (size = 16) => fa(faGear, '#e0b040', size),
   /** title screen: the Armory corner button (weapon skins) */
   armory: (size = 18) => fa(faGun, C, size),
 };

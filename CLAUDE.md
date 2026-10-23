@@ -24,6 +24,8 @@ GPU memory on iOS).
 - `docs/TESTING.md` — every suite, running/writing them, gotchas. Update when
   a suite is added or its coverage changes (and the command list below).
 - `POKI.md` — the Poki build, SDK lifecycle, `measure()` events.
+- `docs/RETENTION_PLAN.md` — the retention design (scrap + upgrades, Survival
+  mode, secret map weapons) and the brief for new map themes (Codex).
 - `docs/ROADMAP.md` — planned work in priority order with the reasoning
   (driven by the Poki Web Fit Test numbers). Add decided features there;
   move them to its Done list when shipped.
@@ -40,7 +42,10 @@ npm run build:poki # Poki build → dist-poki/ (also dev:poki / preview:poki; zi
 Headless test suites (need a dev or preview server running; they drive Edge at
 `C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe` via
 puppeteer-core — or the Chromium named by the `VOXEL_BROWSER` env var — and
-save screenshots to `scripts/shots/`):
+save screenshots to `scripts/shots/`). Use a FULL Chrome for Testing build
+for `VOXEL_BROWSER` (`npx @puppeteer/browsers install chrome@stable`), never
+`chrome-headless-shell`: it froze the renderer in native WebGL (protocol
+timeouts that looked like game hangs):
 
 ```bash
 node scripts/smoke.mjs      # boot, move, shoot, explode; fails on any console error; enemy-bounds watchdog
@@ -50,7 +55,8 @@ node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consi
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + full-length but gentle sector 2 (11–13 rooms, quiet rooms, lone tickers), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + sector 2 as in 0.3.4 (11–13 rooms, no empty rooms), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), scrap + upgrades (kills DROP scrap pickups that bank when walked over + HUD counter, clears earn scrap, death screen shows it + Upgrades, buys cost and save, Suit/Plates/Medic/Hands/Head Start work, survives a reload, Armory entry, phone fit), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
+node scripts/survival.mjs   # SURVIVAL (the main mode): title PLAY = Survival + quiet Campaign, sealed arena, waves spawn ≥5 u away, kills drop supplies + scrap pickups (swept home at the clear), wave-clear pick of 3 then the SHOP (gun pictures, Scattergun 20 scrap → slot 2, CONTINUE), scrap flies in + HUD counter, wave 5 → Biofoundry map, death = reached/best wave + Try again / Upgrades / Main menu, best saved, phone pick + shop fit
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/exit-room-props.mjs [url] # seven props, 24 layouts/four lift directions, boarding route, ride/status/exit, ?exitroom shortcut, ready/docked screenshots
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
@@ -58,7 +64,7 @@ node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull wit
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, free revive in place once per attempt, keycard checkpoint retry (world untouched) + Restart sector, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
 node scripts/sector4.mjs <url> [--poki]  # the hand-built ?sector4 preview: route, key gate, door, lift, completion, replay, retry, save isolation, mobile; --poki: the flag is ignored
 node scripts/breach.mjs     # sector 4 (`?sector4` opens it alone): dormant Vatborn in each occupied tank; shoot one → sealed during agitation, real collision gap, liquid gush, it walks out and hunts, releases once
-node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 fresh-start, level complete/fail, endless N complete/fail capped at 20), rewarded revive (ad icon, equal-size beside retry, muted, pays only on a watched video, once per attempt, hidden without the SDK), hidden co-op, boots with SDK blocked
+node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 fresh-start, level N start/complete/fail — start fills Poki's Started/Completed/Failed/Left columns — endless N start/complete/fail capped at 20, death N <killer> with every fail, playtime N reached at minute marks, upgrade <id> tier<N> on a buy), rewarded revive (ad icon, equal-size beside retry, muted, pays only on a watched video, once per attempt, hidden without the SDK), hidden co-op, boots with SDK blocked
 ```
 
 `?seed=N` on the URL reproduces a layout deterministically. `window.__voxelstrike`
@@ -74,6 +80,60 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 
 ## Architecture
 
+- SURVIVAL is the main mode (owner, 2026-10-23; docs/RETENTION_PLAN.md §4):
+  the title's PLAY (`#play-btn`, `showTitle({ onSurvival })`) starts it; the
+  campaign is the quiet *Campaign* / *Campaign · Sector N* + *New campaign*
+  row (`#start-btn` still starts the campaign — the suites rely on it).
+  `src/modes/survival.ts`: `prepareSurvivalLevel` turns a generated sector
+  into a stage (seals the arena room's ring with its own wall block, drops
+  the level's enemies/pickups/secret/Power Link, spawn in the arena's
+  middle); `SurvivalRun` (`Game.survival`, null = campaign) runs intro →
+  fight → offer → break: `waveRoster` (size 4 + 2w capped 32, pool widens
+  with the wave, the map's own enemies, heavies on each map's last wave),
+  `waveCap` alive + rising at once. Arrivals (owner's feedback): a red
+  warning glow (`TELEGRAPH_S` 1.1 s, pooled ring + beam in `SurvivalRun.fx`,
+  added to the scene BEFORE the build so the warm-up compiles it) on open,
+  reachable floor ≥ 8 u away (5 u fallback) and IN THE PLAYER'S LINE OF
+  SIGHT (never behind cover), then the enemy rises out of the floor
+  (`Enemy.rise`, `RISE_S` 0.6 — no AI meanwhile, can be shot); HP
+  ×`waveHpMult`. Enemies have no pathfinding, so Survival has a
+  `FlowField` (BFS over the arena floor, 8-dir, no corner cutting, rebuilt
+  on the player's cell change / every 0.5 s): `Enemy.navAround` (walkers +
+  geothermal kinds) follows it whenever knee-height LOS to the target is
+  blocked. Kills: `dropFor` (ammo 43%, 73% when the gun in hand is under
+  30%; health 8%, armor 6%, powerup 3%) dropped ON THE FLOOR under the body
+  (`floorTopAt` — flyers used to drop mid-air), plus SCRAP — the ONE
+  currency (owner's feedback: credits were merged into it): every kill drops
+  `SCRAP_FOR_KILL` × `SURVIVAL_KILL_SCRAP` (2) as a scrap pickup, a clear
+  pays `scrapForWave` (8 + 2w, + `SCRAP_MAP_BONUS` 15 on a map's last).
+  Wave break = TWO screens, one decision each (owner: the combined one was
+  too much): `showWaveClear` (title, EVAC line, the pick of 3 — nothing
+  else), then `showShop` — opened only by `shopWorthOpening` (an unowned
+  gun affordable, or ammo affordable and a gun under half): the scrap bank,
+  one card per gun not owned when it opened (a picture from
+  `gunSnapshot`, name, `GUN_ROLE` line, price; bought → OWNED), an AMMO
+  card (FULL when nothing is missing) and CONTINUE (Enter; keys 1–5 buy).
+  `SHOP` in scrap: Scattergun 20, Ripper 45, Thumper 75, Arc 110, ammo 15
+  (`buySurvival` → `UpgradeBook.spend`) — guns are bought, not scheduled.
+  Banked scrap from earlier runs spends here too, the same bank the
+  upgrades use. The stage comes
+  from `generateLevel(…, survival=true)`: a 31–35 × 29–33, 7-high arena with
+  `dressSurvivalArena` cover (3×3 grid, open middle: 2-high walls, half
+  walls, an L, a container, a lit pillar, crate stacks, barrel clusters, plus
+  scattered crates/barrels) and only 5 rooms; the campaign draws the same
+  numbers as before. Game: `buildLevel`
+  uses `themeOfMap(levelIndex-1)` (Facility → Biofoundry → Geothermal, map
+  = every `WAVES_PER_MAP` 5 waves) and never a boss; `survivalWaveStarted` /
+  `survivalWaveCleared` (scrap, +250·w score, `state='intermission'`,
+  `HUD.showWaveClear` pick of 3 from `rollPerkOffer`, `applyOffer`; the
+  map's last wave goes through `afterBreak` into the next map, gear kept);
+  `updateSurvivalHud` → `HUD.setWave` (WAVE n · N LEFT, no compass);
+  death → `showSurvivalDeath` (reached / best wave, Try again, Upgrades,
+  Main menu; one revive per map); best in `voxelstrike-survival-best`
+  (title footer BEST WAVE). Poki: `wave N start/complete/fail` (capped 30),
+  `death wN <killer>`; no level events. Every campaign entry
+  (`startGame`, `newRunNow`, `continueRun`, `goToTitle`) sets
+  `survival = null`. Not yet: the Broodkeeper as a boss wave, co-op.
 - `src/game.ts` — orchestrator: state machine (title/playing/paused/dead/
   intermission/won), 7-sector campaign flow with in-place level teardown.
   ALL sectors are generated fresh each run with the same keycard → red door
@@ -153,6 +213,29 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   `updateBossBar()` drives `hud.setBoss()` each frame; `onBossDefeated`
   (from `Enemy.die`) clears acid, spawns the key, hides the bar. The key
   ambush is skipped on boss levels and the living boss is in `solidBoxes`.
+  SCRAP + PERMANENT UPGRADES (`src/core/upgrades.ts`, docs/RETENTION_PLAN.md
+  phase 1): `UpgradeBook` (`Game.upgrades`, localStorage
+  `voxelstrike-upgrades`: scrap, lifetime earned, levels) — never reset by a
+  new run. `Game.earnScrap` (solo only — `scrapEnabled`: never co-op or
+  previews; it also pops the HUD counter) is fed by kills — which DROP it
+  as a `'scrap'` pickup (`dropScrap`, `PickupSpec.amount`, a step off the
+  body; a drop within 1.4u of loose scrap joins it, one pickup; it flies in
+  from ~4.5u and banks via `collectScrap`; `sweepScrap` banks what's left
+  at a wave / sector clear; uncollected scrap is lost on death) —, sector clears (`scrapForClear`: 15 + 5/sector
+  capped at 10 + rank bonus), the secret room and an opened Power Link;
+  `attemptScrap` (reset on every attempt) is what the death screen and the
+  clear tally show. 7 upgrades × 3 tiers (50 / 120 / 250): Reinforced Suit
+  and Ammo Belt go through `applyPerkStats` (with the perks; it also runs at
+  startup and in `applyRunStart`), Quick Hands → `WeaponSystem.quickHands`
+  (switch + bash cooldown), Starter Plates → armor floor in `enterSector`,
+  Field Medic → `healMult()` in pickups, Head Start → `applyRunStart` (new
+  runs: SMG / +shells / a random perk, full health), Scanner →
+  `scannerLevel` in automap `drawRegion` (keycard / cracked secret wall /
+  Power Link node shown unexplored). Bought on the Upgrades screen
+  (`openUpgrades` → `HUD.showUpgrades`), reached from the death screen's
+  *Upgrades* button and the Armory header — the title stays bare. No
+  free-revive upgrade (the revive is a Poki rewarded video) and no paid
+  scrap (owner's call). Poki: `upgrade <id> tier<N>`. `features.mjs` #24.
   Perks (`Game.perks`, `hasPerk`) live in `Checkpoint.perks` — retry / save /
   Continue keep them, a new run clears them; `applyPerkStats` sets the caps
   they change (`Player.maxHealth`, `ammoMax` from `BASE_*`). Hooks: Volatile
@@ -258,18 +341,16 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   Difficulty = sector/depth number. Sector 1 is a short OPENER (6–7 rooms,
   shotgun in the spawn room, no ticker nests, no brute — 1 brute at 2, 2
   from 3 — plus a hashed barrel pair in the first room; e2e needs a barrel).
-  Sectors 2–3 are FULL LENGTH but gentle. Player Fit Test 2026-10-19: sector
-  2 lost ~74% of players with 11–13 rooms AND ~4× sector 1's enemies; cutting
-  it to 8–9 rooms then felt too short to the owner ("we want to retain and
-  let them explore"), so the length is back (11–13 rooms, 12–14 from
-  sector 3) and the enemy count is what stays down: `QUIET_ROOMS_S2` (40%)
-  / `QUIET_ROOMS_S3` (25%) of plain rooms past the first hold no enemies
-  (position-hashed), sector 2 meets lone tickers only (25% of rooms, plus
-  one guaranteed in a far room) and no extra far-room enemy; sector 3 ticker
-  pairs at most (35%), the far-room +1 starts there; sector 4 on unchanged
-  (full packs). Over 30 seeds: rooms ~6.4 → 11.7 → 12.9 → 12.9, enemies
-  ~12 → ~23 → ~43 → ~65 (pre-ramp ~46 in sector 2); `features.mjs` checks
-  sector 2.
+  Sectors 2–5 use the 0.3.4 rules (OWNER'S CALL, 2026-10-20): 11–13 rooms
+  in sector 2, 12–14 from 3, +1 enemy in rooms ≥2 steps out from sector 2,
+  tickers in 30% + 15%/sector of rooms in packs up to 3. A gentler sector 2
+  (8–9 rooms, then quiet rooms + lone tickers) was tried after the Player
+  Fit Test lost ~74% of players there, and reverted: it felt too short and
+  too empty. Enemies per sector average ~12.6 → ~46 → ~57 → ~67 → ~70 over
+  40 seeds, the same as 0.3.4. Anything added since (the Power Link cage)
+  is placed AFTER pickups and enemies so it never consumes the layout RNG;
+  keep it that way — seeds then differ from 0.3.4 only where the exit room
+  was rebuilt. `features.mjs` checks sector 2.
   `generateLevel(seed, n, theme, withBoss)`: with a boss, `placeBoss` puts
   the Broodkeeper on a doorway-free N/S (then W/E) wall of the arena with a
   clear 3.4×3.4 footprint (crates/barrels cleared), empties the arena's
@@ -461,9 +542,13 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   (pain/stun or the recover phase); with no enemy in reach it damages the
   destructible voxel at arm's length (crate / barrel / cracked wall). The
   view model jabs via `meleeT` in `animate()`. `lastMelee` is for tests.
-  Adding a weapon means updating BOTH `ORDER` arrays (weapons.ts — exported,
-  also used by touch.ts's weapon wheel — + hud.ts), `DRY_SWITCH` in weapons.ts,
-  and the Digit list in input.ts. Hitscan headshots: husk/brute hits above
+  WEAPON SLOTS fill in PICKUP ORDER (owner's call): `WeaponSystem.slots()`
+  (`slotOrder`, kept by give / reclaim / throw / `restoreLoadout`, saved as
+  `loadout().owned`) — keys 1–5, the HUD bar (number + a tiny gun tag) and
+  the touch wheel all read it, so slot 2 is the second gun found.
+  Adding a weapon means updating BOTH `ORDER` arrays (weapons.ts + hud.ts —
+  now only the canonical list, not the slot mapping), `DRY_SWITCH` in
+  weapons.ts, `SLOT_TAG` in hud.ts, and the Digit list in input.ts. Hitscan headshots: husk/brute hits above
   `pos.y + half.y * 0.45` deal ×2 (gold marker, +50 kill bonus via
   `Enemy.lastHitHead`, which damage() clears after each hit so splash kills
   don't inherit it). Every gun's look comes from `buildWeaponModel(id)` —
@@ -512,9 +597,11 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   default (240) is moved to the device default once.
 - Title screen: identical on web and Poki — no Co-op button anywhere.
   Kept bare on purpose (playtime fell to under 2 minutes): wordmark,
-  ESCAPE THE FACILITY, three step tiles (keycard → door → lift, the HUD's
-  objective icons/colours), one PLAY (`#start-btn`; with a save Continue
-  and New run share ONE row), one controls line (first visit on desktop
+  SURVIVE THE WAVES, three step tiles (clear each wave → pick an upgrade →
+  beat your best), one PLAY (`#play-btn` = SURVIVAL, owner's call 2026-10-23)
+  over ONE quiet row for the campaign (`#start-btn` *Campaign*, or with a save
+  *Campaign · Sector N* + *New campaign*; without `onSurvival` the old
+  keycard → door → lift tiles and PLAY = campaign come back), one controls line (first visit on desktop
   only), the NEXT SKIN goal line, a Settings gear
   (`#title-settings-btn`) top-right and an Armory button
   (`#title-armory-btn`) top-left (owner's call) — don't add menu items
@@ -556,6 +643,9 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   `poki.measure()` (no `/` or `^` in any value — Poki reserves them) plus a
   row in POKI.md and an assert in `poki.mjs`. Poki builds hide co-op and
   skip the SW/manifest/fullscreen.
+- SCRAP counter: `#scrap` (a brass cog + the bank) under KILLS top-right,
+  solo only (`hud.setScrap(n | null, gain)`: set in `enterSector`, popped
+  with a floating "+N" by `earnScrap`, updated on every spend).
 - HUD layout (desktop): HP/armor pills + minimap top-left, objective
   (stage icon + text + arrow/distance) top-center, SECTOR + MAP/pause
   buttons + score/kills/buffs top-right, weapon slots + keycards

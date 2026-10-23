@@ -13,7 +13,7 @@ export type SoundName =
   | 'tickerAlert' | 'tickerBeep' | 'alarm'
   | 'bruteRoar' | 'bruteStep' | 'bruteSlam'
   | 'playerPain' | 'playerDie'
-  | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup' | 'secret'
+  | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup' | 'secret' | 'scrap'
   | 'doorOpen' | 'doorClose' | 'doorLocked' | 'elevator' | 'teleport'
   | 'step' | 'clank' | 'termKey' | 'termOff' | 'rankStamp'
   | 'meleeSwing' | 'meleeHit' | 'secretHint'
@@ -411,6 +411,11 @@ export class AudioMan {
       case 'pickup':
         this.tone(out, 'square', 0.3, 0.005, 0.07, 660);
         this.tone(out, 'square', 0.3, 0.005, 0.09, 880, undefined, 0.07);
+        break;
+      case 'scrap':
+        // a light metallic clink: scrap is picked up all the time, keep it small
+        this.tone(out, 'triangle', 0.22, 0.002, 0.05, 1480);
+        this.tone(out, 'square', 0.12, 0.002, 0.06, 1980, undefined, 0.035);
         break;
       case 'pickupKey':
         this.tone(out, 'triangle', 0.4, 0.005, 0.1, 523);

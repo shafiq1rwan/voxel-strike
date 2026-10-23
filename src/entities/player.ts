@@ -85,7 +85,10 @@ export class Player {
     return true;
   }
 
-  damage(amount: number, game: Game, source?: { x: number; z: number }): void {
+  /** what landed the last hit that got through the overshield (the Poki "killed by" event) */
+  lastHitBy = '';
+
+  damage(amount: number, game: Game, source?: { x: number; z: number; by?: string }): void {
     if (this.dead) return;
     // overshield: absorbs the hit entirely (direction indicator still shows)
     if (this.buffs.shield > 0) {
@@ -95,6 +98,7 @@ export class Player {
       this.shake = Math.min(0.3, this.shake + amount * 0.004);
       return;
     }
+    this.lastHitBy = source?.by ?? 'unknown';
     // armor soaks a third of incoming damage
     const soak = Math.min(this.armor, Math.ceil(amount / 3));
     this.armor -= soak;

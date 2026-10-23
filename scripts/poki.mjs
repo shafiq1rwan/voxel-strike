@@ -19,6 +19,8 @@ const SDK_URL = 'https://game-cdn.poki.com/scripts/v2/poki-sdk.js';
 mkdirSync(OUT, { recursive: true });
 
 const errors = [];
+/** level / endless progress events only (death + playtime are checked separately) */
+const prog = (c) => c.filter((x) => /^measure (level|endless) /.test(x));
 const check = (cond, msg) => {
   console.log(`${cond ? 'PASS' : 'FAIL'}: ${msg}`);
   if (!cond) errors.push(msg);
@@ -125,7 +127,8 @@ try {
   c = await calls(page);
   check(c.includes('commercialBreak'), 'commercialBreak before the run');
   check(c.indexOf('commercialBreak') < c.indexOf('gameplayStart'), 'ad comes before gameplayStart');
-  check(c.filter((x) => x.startsWith('measure')).join() === 'measure level 1 fresh-start', 'starting a run sends exactly one level 1 fresh-start');
+  check(prog(c).join() === 'measure level 1 fresh-start,measure level 1 start',
+    'starting a run sends level 1 fresh-start + level 1 start (Poki\'s Started column needs start)');
 
   // pause / resume
   await page.evaluate(() => window.__voxelstrike.requestPause());
@@ -142,7 +145,7 @@ try {
 
   // side objectives are not measured
   await page.evaluate(() => window.__voxelstrike.onKeyPickup());
-  check((await calls(page)).filter((x) => x.startsWith('measure')).length === 1, 'keycard pickup sends no game event');
+  check(prog(await calls(page)).length === 2, 'keycard pickup sends no game event');
 
   // clear sector 1 → intermission → ad → sector 2
   await page.evaluate(() => window.__voxelstrike.win());
@@ -167,21 +170,23 @@ try {
   await sleep(400);
   c = await calls(page);
   check(c.filter((x) => x === 'commercialBreak').length === breaks + 1, 'one ad per break, even on double click');
+  check(c.filter((x) => x === 'measure level 2 start').length === 1, 'entering sector 2 sends level 2 start once');
   check((await page.evaluate(() => window.__voxelstrike.levelIndex)) === 2, 'advanced exactly one sector');
   check((await page.evaluate(() => window.__voxelstrike.perks.size)) === 1, 'a double pick still takes exactly one perk');
   check(c[c.length - 1] !== 'gameplayStop', 'sector 2: gameplay resumed');
   await page.screenshot({ path: `${OUT}/poki-sector2.png` });
 
-  // death → fail events + gameplayStop
+  // death → fail events + gameplayStop (a real killing hit, tagged like a ticker blast)
   await page.evaluate(() => {
     const g = window.__voxelstrike;
-    g.player.health = 0;
-    g.player.dead = true;
-    g.onPlayerDeath();
+    g.player.buffs.shield = 0;
+    g.player.damage(9999, g, { x: g.player.pos.x + 2, z: g.player.pos.z, by: 'ticker' });
   });
   await sleep(150);
   c = await calls(page);
   check(c.filter((x) => x === 'measure level 2 fail').length === 1, 'death measured once as level 2 fail');
+  check(c.filter((x) => x.startsWith('measure death')).join() === 'measure death 2 ticker',
+    `the death says what killed them, per sector: death 2 ticker (${c.filter((x) => x.startsWith('measure death')).join(', ')})`);
   check(c[c.length - 1] === 'gameplayStop', 'death → gameplayStop');
   check(!c.some((x) => /[\/^]/.test(x.replace(/^measure /, ''))), "no '/' or '^' in measure values");
 
@@ -195,9 +200,9 @@ try {
   await sleep(400);
   c = await calls(page);
   check(c.filter((x) => x === 'commercialBreak').length === breaksBefore + 1, 'retry is an ad break');
-  const sent = c.filter((x) => x.startsWith('measure'));
-  check(sent.join() === 'measure level 1 fresh-start,measure level 1 complete,measure level 2 fail',
-    `only level 1 fresh-start + level complete / fail were sent, retry adds nothing (${sent.join(', ')})`);
+  const sent = prog(c);
+  check(sent.join() === 'measure level 1 fresh-start,measure level 1 start,measure level 1 complete,measure level 2 start,measure level 2 fail,measure level 2 start',
+    `each attempt sends start, then complete / fail; the retry is a new level 2 start (${sent.join(', ')})`);
   check(c[c.length - 1] === 'gameplayStart' && (await state(page)) === 'playing', 'retry → gameplay resumed');
   check(!c.slice(2).includes('init'), 'retry did not reload the page (no second SDK init)');
   check(await page.evaluate(() => window.__bootMarker === 'same-page'), 'same page after retry');
@@ -268,8 +273,8 @@ try {
   });
   check(noVideo.state === 'dead' && noVideo.dead, 'no video watched → no revive (still dead)');
   check(noVideo.disabled && /no video/i.test(noVideo.text), `the revive button says so and is disabled ("${noVideo.text}")`);
-  const sentNow = (await calls(page)).filter((x) => x.startsWith('measure'));
-  check(sentNow.every((x) => /^measure level [1-7] (fresh-start|complete|fail)$/.test(x)), 'revive adds no game events of its own');
+  const sentNow = prog(await calls(page));
+  check(sentNow.every((x) => /^measure level [1-7] (fresh-start|start|complete|fail)$/.test(x)), 'revive adds no game events of its own');
   // endless descent (past sector 7): depths get their own `endless` bucket, capped at 20;
   // sectors 6-7 (the Geothermal Core) are still campaign `level` events
   await page.evaluate(() => {
@@ -293,9 +298,50 @@ try {
     g.onPlayerDeath();
   });
   await sleep(150);
-  const deep = (await calls(page)).filter((x) => x.startsWith('measure')).slice(-3);
+  const deep = prog(await calls(page)).slice(-3);
   check(deep.join() === 'measure level 7 complete,measure endless 9 complete,measure endless 20 fail',
     `sector 7 is a level; endless depths send endless N complete / fail, capped at 20 (${deep.join(', ')})`);
+  // entering an endless depth starts it in the endless bucket (same cap)
+  await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    g.player.dead = false; g.player.health = 100;
+    g.levelIndex = 12; g.enterSector('test', false);
+    g.levelIndex = 25; g.enterSector('test', false);
+  });
+  const deepStarts = prog(await calls(page)).slice(-2);
+  check(deepStarts.join() === 'measure endless 12 start,measure endless 20 start',
+    `endless depths send endless N start, capped at 20 (${deepStarts.join(', ')})`);
+  // play-time markers: once per page load at each minute of real play
+  const marks = await page.evaluate(async () => {
+    const g = window.__voxelstrike;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    g.player.dead = false; g.player.health = 100; g.hud.hideScreen(); g.state = 'playing';
+    g.playSeconds = 59.95;
+    await wait(300);
+    g.playSeconds = 185; // two more marks pass in one frame
+    await wait(300);
+    g.state = 'paused';
+    const before = g.playSeconds;
+    await wait(300);
+    return { pausedGrew: g.playSeconds !== before };
+  });
+  const pt = (await calls(page)).filter((x) => x.startsWith('measure playtime'));
+  check(pt.join() === 'measure playtime 1 reached,measure playtime 2 reached,measure playtime 3 reached',
+    `playtime N reached fires once per minute mark (${pt.join(', ')})`);
+  check(!marks.pausedGrew, 'paused time is not play time');
+  // scrap upgrades: a purchase sends upgrade <id> tier<N> (no ad involved)
+  const upg = await page.evaluate(async () => {
+    const g = window.__voxelstrike;
+    g.upgrades.earn(60);
+    g.openUpgrades(() => g.hud.hideScreen());
+    await new Promise((r) => setTimeout(r, 200));
+    document.querySelector('.upg-buy[data-id="scanner"]').click();
+    await new Promise((r) => setTimeout(r, 100));
+    g.hud.hideScreen();
+    return g.upgrades.level('scanner');
+  });
+  const upgEv = (await calls(page)).filter((x) => x.startsWith('measure upgrade'));
+  check(upg === 1 && upgEv.join() === 'measure upgrade scanner tier1', `buying an upgrade sends upgrade scanner tier1 (${upgEv.join(', ')})`);
   // Armory: a locked skin can be unlocked early with a rewarded video — the
   // button says Watch ad with the clapperboard, isn't the primary look, and
   // only a watched video pays out

@@ -9,7 +9,9 @@ export type PickupKind =
   | 'keyRed' | 'keyBlue' | 'keyYellow'
   | 'weaponShotgun' | 'weaponSMG' | 'weaponRocket' | 'weaponArc'
   | 'ammoCells'
-  | 'powerQuad' | 'powerShield' | 'powerHaste';
+  | 'powerQuad' | 'powerShield' | 'powerHaste'
+  /** scrap a kill dropped: walk over it (it flies to you) to bank `amount` */
+  | 'scrap';
 
 /** 'vatborn' is sector 4 preview only — levelgen never places it */
 export type EnemyKind = 'husk' | 'sentinel' | 'ticker' | 'brute' | 'vatborn' | 'broodkeeper'
@@ -47,6 +49,8 @@ export interface PickupSpec {
   sealed?: boolean;
   /** a gun the player threw when it ran dry: picking it up gives the gun back, no ammo */
   thrown?: boolean;
+  /** 'scrap' pickups: how much it is worth */
+  amount?: number;
   kind: PickupKind;
   x: number;
   y: number;

@@ -10,6 +10,8 @@ import { SKINS, WEAPON_LABEL, needText, swatchHtml, STANDARD_SWATCH, type SkinDe
 import { startArmoryPreview } from './armory-preview';
 
 const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc'];
+/** a slot's tiny label: which gun ended up there */
+const SLOT_TAG: Record<WeaponId, string> = { pistol: 'PST', shotgun: 'SG', smg: 'SMG', rocket: 'RKT', arc: 'ARC' };
 
 const CSS = `
 #overload-action { position:absolute; left:50%; bottom:22%; transform:translateX(-50%); max-width:65vw; padding:10px 16px; border:1px solid #34d0ff; color:#8ee8ff; background:rgba(5,10,18,.9); font-weight:bold; font-size:13px; pointer-events:auto; touch-action:manipulation; z-index:7; }
@@ -379,6 +381,63 @@ body.touch-mode #boss-head { font-size: 10px; }
   font-size: 14px; font-weight: bold; color: #4a5262; border: 1px solid #39404f; background: rgba(8,10,16,.74);
 }
 .slot.owned { color: #e8ecf4; border-color: #6a7488; }
+/* which gun sits in a slot (slots fill in pickup order) */
+.slot { flex-direction: column; line-height: 1; }
+.slot small { font-size: 7px; letter-spacing: .02em; color: #8a94a8; margin-top: 1px; }
+.slot.active small { color: #ffd028; }
+/* scrap: the one currency, always in view (solo) — a brass cog + the bank, "+N" floats off it */
+#scrap { position: relative; display: flex; align-items: center; gap: 7px; font-size: 20px; font-weight: bold; letter-spacing: 1px; color: #ffe08a; margin-top: -2px; }
+#scrap[hidden] { display: none; }
+#scrap-num { display: inline-block; }
+#scrap.pop #scrap-num { animation: scrappop .35s ease-out; }
+@keyframes scrappop { 0% { transform: scale(1.5); color: #fff; } 100% { transform: scale(1); } }
+#scrap-gain { position: absolute; right: 0; top: 100%; font-size: 13px; color: #e0b040; opacity: 0; pointer-events: none; }
+#scrap-gain.show { animation: scrapgain 1s ease-out; }
+@keyframes scrapgain { 0% { opacity: 0; transform: translateY(-4px); } 15% { opacity: 1; } 100% { opacity: 0; transform: translateY(12px); } }
+body.touch-mode #scrap { font-size: 15px; }
+/* the shop between waves: one card per gun (a picture, a name, one line, the price) + CONTINUE */
+#shop-screen .panel { width: min(760px, 94vw); box-sizing: border-box; padding: 22px 26px 20px; }
+#shop-screen h1 { font-size: 34px; letter-spacing: 6px; margin: 0 0 4px; color: #ffd028; text-shadow: 3px 3px 0 #000, 0 0 24px rgba(255,208,40,.4); }
+.shop-bank { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 14px; font-size: 13px; letter-spacing: .24em; color: #e0b040; }
+.shop-bank b { font-size: 22px; letter-spacing: .04em; color: #ffe08a; }
+.shop-cards { display: flex; gap: 10px; justify-content: center; }
+.shop-card {
+  flex: 0 1 150px; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 8px 6px 0; overflow: hidden; cursor: pointer; text-align: center;
+  font-family: 'Courier New', Courier, monospace; color: #cfd6e4;
+  background: linear-gradient(180deg, rgba(30,36,50,.95), rgba(12,15,22,.95));
+  border: 2px solid #4b5568; border-radius: 3px; box-shadow: 0 4px 0 #05060a;
+  transition: border-color .12s, transform .12s, opacity .2s;
+}
+.shop-pic { align-self: stretch; height: 72px; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(112,216,255,.14), transparent 70%); }
+.shop-pic img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+.shop-name { font-size: 12px; letter-spacing: .12em; color: #f0f2f6; white-space: nowrap; }
+.shop-role { flex: 1; font-size: 11px; line-height: 1.15; color: #8a94a8; min-height: 2.3em; } /* pushes the price bar to the bottom: cards line up */
+.shop-price {
+  align-self: stretch; margin: 2px -6px 0; padding: 7px 0; display: flex; align-items: center; justify-content: center; gap: 5px;
+  font-size: 15px; font-weight: bold; color: #ffd028; background: rgba(255,208,40,.08); border-top: 1px solid rgba(255,208,40,.35);
+}
+.shop-card:not([disabled]):hover { border-color: #ffd028; transform: translateY(-3px); }
+.shop-card:not([disabled]):hover .shop-price { background: #ffd028; color: #0a0c12; }
+.shop-card[disabled] { cursor: default; }
+.shop-card.short { opacity: .5; }
+.shop-card.short .shop-price { color: #8a94a8; }
+.shop-card.bought { border-color: #4cc26a; }
+.shop-card.bought .shop-price { color: #4cc26a; background: rgba(76,194,106,.12); border-top-color: rgba(76,194,106,.4); }
+#shop-go { margin-top: 18px; }
+#shop-go:disabled { opacity: .35; }
+.shop-keys { margin-top: 8px; font-size: 11px; letter-spacing: .14em; color: #566076; }
+@media (max-height: 560px) {
+  #shop-screen .panel { padding: 12px 16px 12px; }
+  #shop-screen h1 { font-size: 22px; letter-spacing: 4px; }
+  .shop-bank { margin-bottom: 8px; }
+  .shop-bank b { font-size: 18px; }
+  .shop-pic { height: 44px; }
+  .shop-card { gap: 3px; }
+  #shop-go { margin-top: 10px; padding: 10px 40px; font-size: 15px; }
+}
+@media (max-width: 520px) { .shop-cards { flex-wrap: wrap; } .shop-card { flex-basis: 30%; } }
 .slot.active { color: #ffd028; border-color: #ffd028; }
 .slot.active::after {
   content: ''; position: absolute; left: -1px; right: -1px; bottom: -7px; height: 3px;
@@ -487,6 +546,55 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 .next-unlock b { color: #f0f2f6; font-size: 13px; }
 .next-unlock .nu-bar { width: 90px; height: 5px; background: rgba(0,0,0,.6); border: 1px solid #39404f; display: block; }
 .next-unlock .nu-bar i { display: block; height: 100%; background: #55e0ff; }
+/* upgrades: permanent buys with scrap (docs/RETENTION_PLAN.md) — Armory's look, a list of rows */
+#upgrades-screen { justify-content: flex-start; background: rgba(5,6,10,.93); }
+.upg-wrap { margin: auto; width: min(760px, 96vw); box-sizing: border-box; padding: 0 8px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.upg-scrap { font-size: 13px; font-weight: bold; letter-spacing: .16em; color: #ffd028; }
+.upg-sub { font-size: 11px; letter-spacing: .12em; color: #8a94a8; }
+.upg-list { display: flex; flex-direction: column; gap: 5px; }
+.upg-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
+  padding: 8px 10px; background: rgba(8,10,16,.8); border: 1px solid #2c3240;
+}
+.upg-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.upg-name { font-size: 14px; font-weight: bold; letter-spacing: .1em; color: #f0f2f6; }
+.upg-now { font-size: 11px; letter-spacing: .06em; color: #aab3c4; }
+.upg-now b { color: #ffd028; font-weight: bold; }
+.upg-pips { display: flex; gap: 3px; }
+.upg-pips i { width: 10px; height: 10px; border: 1px solid #6a7488; background: rgba(0,0,0,.5); }
+.upg-pips i.on { background: #ffd028; border-color: #ffd028; }
+.upg-buy {
+  min-width: 96px; padding: 7px 12px; cursor: pointer; white-space: nowrap;
+  font: bold 12px 'Courier New', Courier, monospace; letter-spacing: .12em;
+  color: #ffd028; background: rgba(10,13,20,.85); border: 1px solid #ffd028;
+}
+.upg-buy:hover:not(:disabled) { background: #ffd028; color: #0a0c12; }
+.upg-buy:disabled { cursor: default; color: #6f7a90; border-color: #39404f; }
+.upg-buy.max { color: #4cc26a; border-color: #4cc26a; }
+.upg-row.flash { border-color: #ffd028; box-shadow: inset 0 0 0 1px #ffd028; }
+#armory-screen .arm-upg { font-size: 12px; padding: 8px 14px; color: #ffd028; border-color: #ffd028; }
+#armory-screen .arm-upg:hover { background: #ffd028; color: #0a0c12; }
+#hud #obj-main.wave-mode #obj-steps { display: none; }
+/* Survival has nothing to point at: no compass under the wave counter */
+#hud #objective.wave-mode #obj-nav { display: none; }
+/* desktop: the three picks in one row (phones keep the stacked rows) */
+@media (min-height: 561px) { #wave-clear .panel { max-width: min(760px, 94vw); } #wave-clear .sc-perks { flex-wrap: nowrap; } }
+#wave-clear h1 { font-size: 34px; letter-spacing: 6px; margin: 0 0 4px; }
+#wave-clear .wc-next { font-size: 14px; letter-spacing: .24em; color: #55e0ff; margin: 0 0 10px; }
+@media (max-height: 560px) {
+  #wave-clear h1 { font-size: 24px; letter-spacing: 4px; }
+  #wave-clear .wc-next { font-size: 11px; margin-bottom: 6px; }
+}
+.death-scrap { margin: -4px 0 4px; font-size: 13px; letter-spacing: .14em; color: #ffd028; }
+.sc-scrap { margin-top: 8px; font-size: 12px; letter-spacing: .14em; color: #ffd028; text-align: center; }
+@media (max-height: 560px) {
+  .upg-wrap { gap: 5px; }
+  .upg-row { padding: 5px 8px; gap: 8px; }
+  .upg-name { font-size: 12px; }
+  .upg-now { font-size: 10px; }
+  .upg-buy { min-width: 80px; padding: 5px 8px; font-size: 11px; }
+  .death-scrap { font-size: 11px; margin: -2px 0 2px; }
+}
 /* armory: a tab per gun, the gun itself on a turntable, its paints beside it */
 #armory-screen { justify-content: flex-start; background: rgba(5,6,10,.93); }
 .arm-wrap {
@@ -496,8 +604,8 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 .arm-head { display: flex; align-items: center; gap: 14px; }
 .arm-back { font-size: 13px; padding: 9px 16px; }
 /* out-ranks .tbtn-quiet (defined later): Back must be easy to find */
-#armory-screen .arm-back { color: #f0f2f6; border-color: #cfd6e4; background: rgba(20,24,34,.95); }
-#armory-screen .arm-back:hover { color: #0a0c12; background: #55e0ff; border-color: #55e0ff; }
+#armory-screen .arm-back, #upgrades-screen .arm-back { color: #f0f2f6; border-color: #cfd6e4; background: rgba(20,24,34,.95); }
+#armory-screen .arm-back:hover, #upgrades-screen .arm-back:hover { color: #0a0c12; background: #55e0ff; border-color: #55e0ff; }
 .arm-title { flex: 1; font-size: 18px; font-weight: bold; letter-spacing: .4em; color: #f0f2f6; text-shadow: 2px 2px 0 #000; }
 .arm-count { font-size: 11px; letter-spacing: .16em; color: #55e0ff; }
 .arm-tabs { display: flex; gap: 4px; border-bottom: 1px solid #2c3240; }
@@ -1124,6 +1232,7 @@ export class HUD {
         </div>
         <div id="score"><span class="label">SCORE</span><span id="score-num">000000</span><span id="score-mult"></span></div>
         <div id="kills"><span class="label">KILLS</span><span id="kills-num">0 / 0</span></div>
+        <div id="scrap" hidden title="Scrap: spend it in the shop and on upgrades">${ICONS.scrap(19)}<span id="scrap-num">0</span><span id="scrap-gain"></span></div>
         <div id="buffs"></div>
       </div>
       <div id="objective">
@@ -1230,10 +1339,16 @@ export class HUD {
     const tName = this.root.querySelector('#tweapon-name');
     if (tNum) tNum.textContent = String(ORDER.indexOf(w.current) + 1);
     if (tName) tName.textContent = w.focusedShotgun && w.current === 'shotgun' ? 'FOCUSED' : WEAPONS[w.current].name;
-    const slots = this.slotsEl.querySelectorAll('.slot');
-    ORDER.forEach((id, i) => {
-      slots[i].classList.toggle('owned', w.has(id));
-      slots[i].classList.toggle('active', w.current === id);
+    // slots fill in the order the guns were picked up
+    const order = w.slots();
+    if (tNum) tNum.textContent = String(order.indexOf(w.current) + 1);
+    const slots = this.slotsEl.querySelectorAll<HTMLElement>('.slot');
+    slots.forEach((el, i) => {
+      const id = order[i];
+      el.classList.toggle('owned', !!id);
+      el.classList.toggle('active', !!id && w.current === id);
+      el.innerHTML = id ? `${i + 1}<small>${SLOT_TAG[id]}</small>` : String(i + 1);
+      el.title = id ? WEAPONS[id].name : '';
     });
   }
 
@@ -1286,11 +1401,197 @@ export class HUD {
   }
 
   /** objective tracker: step icon + text in its color; `flash` pops it on a change */
+  /** run `fn` after `ms` unless the screen changes first (hideScreen clears it) */
+  screenTimer(fn: () => void, ms: number): void {
+    this.screenTimers.push(window.setTimeout(fn, ms));
+  }
+
+  private scrapGain = 0;
+  private scrapGainTimer = 0;
+
+  /**
+   * The scrap bank in the top-right (null hides it: co-op, previews). `gain`
+   * pops the number and floats "+N" off it (gains close together add up).
+   */
+  setScrap(n: number | null, gain = 0): void {
+    const el = this.root.querySelector('#scrap') as HTMLElement | null;
+    if (!el) return;
+    el.hidden = n === null;
+    if (n === null) return;
+    (el.querySelector('#scrap-num') as HTMLElement).textContent = String(n);
+    if (gain <= 0) return;
+    this.scrapGain += gain;
+    window.clearTimeout(this.scrapGainTimer);
+    this.scrapGainTimer = window.setTimeout(() => { this.scrapGain = 0; }, 900);
+    const g = el.querySelector('#scrap-gain') as HTMLElement;
+    g.textContent = `+${this.scrapGain}`;
+    el.classList.remove('pop');
+    g.classList.remove('show');
+    void el.offsetWidth; // restart the animations
+    el.classList.add('pop');
+    g.classList.add('show');
+  }
+
+  /** Survival: WAVE n and what's left, in the objective box (no step pips) */
+  setWave(wave: number, text: string, flash: boolean): void {
+    (this.root.querySelector('#obj-label') as HTMLElement).textContent = 'WAVE';
+    (this.root.querySelector('#obj-sector') as HTMLElement).textContent = String(wave);
+    (this.root.querySelector('#obj-of') as HTMLElement).style.display = 'none';
+    this.objTextEl.textContent = text;
+    if (this.objIconCache !== 'boss') {
+      this.objIconCache = 'boss';
+      this.objIconEl.innerHTML = ICONS.boss(20);
+    }
+    this.objMainEl.style.setProperty('--obj-c', '#ff3428');
+    this.objMainEl.classList.add('wave-mode');
+    this.root.querySelector('#objective')?.classList.add('wave-mode');
+    if (flash) {
+      this.objMainEl.classList.remove('flash');
+      void this.objMainEl.offsetWidth;
+      this.objMainEl.classList.add('flash');
+    }
+  }
+
+  /**
+   * Survival: a wave is down. "WAVE N CLEARED", the next map when it changes,
+   * and a pick of three (the sector-clear perk cards) — nothing else (owner:
+   * one decision per screen; the shop comes after, on its own). The cards
+   * arm after 0.5 s so a held trigger can't pick one. Keys 1–3 pick.
+   */
+  showWaveClear(o: {
+    wave: number;
+    next: string | null;
+    perks: Array<{ id: OfferId; name: string; short: string; desc: string }>;
+    touch: boolean;
+    onPick: (id: OfferId) => void;
+  }): void {
+    this.hideScreen();
+    const el = document.createElement('div');
+    el.id = 'wave-clear';
+    el.className = 'screen sc-screen';
+    el.style.cursor = 'default';
+    el.innerHTML = `<div class="panel">
+      <h1 class="win">WAVE ${o.wave} CLEARED</h1>
+      ${o.next ? `<div class="wc-next">EVAC &#9656; ${o.next}</div>` : ''}
+      <div class="sc-pick-title">CHOOSE ONE</div>
+      <div class="sc-perks">${o.perks.map((p, i) => `
+        <button class="sc-perk" data-id="${p.id}" style="--pc:${perkColor(p.id)}" title="${p.desc}" disabled>
+          <span class="sc-perk-ico">${perkIcon(p.id, 30)}</span>
+          <span class="sc-perk-text"><b>${p.name}</b><span class="sc-perk-short">${p.short}</span></span>
+          <span class="sc-perk-pick">${o.touch ? 'PICK' : `PICK <kbd>${i + 1}</kbd>`}</span>
+        </button>`).join('')}
+      </div>
+    </div>`;
+    document.body.appendChild(el);
+    this.screenEl = el;
+    const cards = [...el.querySelectorAll<HTMLButtonElement>('.sc-perk')];
+    let armed = false;
+    let picked = false;
+    const pick = (i: number): void => {
+      if (!armed || picked || !cards[i]) return;
+      picked = true;
+      cards[i].classList.add('chosen');
+      el.querySelector('.sc-perks')?.classList.add('picked');
+      cards.forEach((c) => (c.disabled = true));
+      o.onPick(cards[i].dataset.id as OfferId);
+    };
+    this.screenTimers.push(window.setTimeout(() => {
+      armed = true;
+      cards.forEach((c) => { c.disabled = false; c.classList.add('armed'); });
+    }, 500));
+    cards.forEach((c, i) => c.addEventListener('click', (ev) => { ev.stopPropagation(); pick(i); }));
+    this.titleKey = (ev: KeyboardEvent) => {
+      const n = ['Digit1', 'Digit2', 'Digit3'].indexOf(ev.code);
+      const m = ['Numpad1', 'Numpad2', 'Numpad3'].indexOf(ev.code);
+      if (n >= 0 || m >= 0) pick(Math.max(n, m));
+    };
+    window.addEventListener('keydown', this.titleKey);
+  }
+
+  /**
+   * Survival's shop, after the wave's pick: the scrap bank, one card per gun
+   * not owned yet (its picture, name, one line, price) + an ammo refill, and
+   * a big CONTINUE. A card buys on click (keys 1–5); a gun bought here stays
+   * on screen as OWNED. Continue arms after 0.5 s (Enter / Space too).
+   */
+  showShop(o: {
+    scrap: () => number;
+    items: () => Array<{ id: string; name: string; role: string; price: number; owned: boolean; full?: boolean; img: string }>;
+    touch: boolean;
+    onBuy: (id: string) => boolean;
+    onDone: () => void;
+  }): void {
+    this.hideScreen();
+    const el = document.createElement('div');
+    el.id = 'shop-screen';
+    el.className = 'screen sc-screen';
+    el.style.cursor = 'default';
+    el.innerHTML = `<div class="panel">
+      <h1>SHOP</h1>
+      <div class="shop-bank">${ICONS.scrap(20)}<b id="shop-scrap"></b>SCRAP</div>
+      <div class="shop-cards" id="shop-cards"></div>
+      <button id="shop-go" class="tbtn tbtn-primary" disabled>Continue</button>
+      ${o.touch ? '' : '<div class="shop-keys">CLICK A CARD TO BUY &middot; ENTER TO CONTINUE</div>'}
+    </div>`;
+    document.body.appendChild(el);
+    this.screenEl = el;
+    // the guns on offer are fixed when it opens: one bought here stays, as OWNED
+    const shown = o.items().filter((it) => !it.owned).map((it) => it.id);
+    const cardsEl = el.querySelector('#shop-cards') as HTMLElement;
+    const go = el.querySelector('#shop-go') as HTMLButtonElement;
+    let armed = false;
+    let done = false;
+    const render = (): void => {
+      const bank = o.scrap();
+      (el.querySelector('#shop-scrap') as HTMLElement).textContent = String(bank);
+      const items = o.items().filter((it) => shown.includes(it.id));
+      cardsEl.innerHTML = items.map((it) => {
+        const short = !it.owned && !it.full && bank < it.price;
+        const price = it.owned ? 'OWNED &#10003;' : it.full ? 'FULL' : `${ICONS.scrap(14)}${it.price}`;
+        const pic = it.img ? `<img src="${it.img}" alt="">` : it.id === 'ammo' ? `${ICONS.bullets(26)}${ICONS.shells(26)}` : '';
+        return `<button class="shop-card${it.owned ? ' bought' : ''}${short ? ' short' : ''}" data-id="${it.id}"${it.owned || it.full || short ? ' disabled' : ''}>
+          <span class="shop-pic">${pic}</span>
+          <b class="shop-name">${it.name}</b>
+          <span class="shop-role">${it.role}</span>
+          <span class="shop-price">${price}</span>
+        </button>`;
+      }).join('');
+      cardsEl.querySelectorAll<HTMLButtonElement>('.shop-card').forEach((b) => b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        buy(b.dataset.id!);
+      }));
+    };
+    const buy = (id: string): void => {
+      if (!armed || done) return;
+      if (o.onBuy(id)) render();
+    };
+    const finish = (): void => {
+      if (!armed || done) return;
+      done = true;
+      go.disabled = true;
+      o.onDone();
+    };
+    render();
+    this.screenTimers.push(window.setTimeout(() => { armed = true; go.disabled = false; }, 500));
+    go.addEventListener('click', (ev) => { ev.stopPropagation(); finish(); });
+    this.titleKey = (ev: KeyboardEvent) => {
+      if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') { ev.preventDefault(); finish(); return; }
+      const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(ev.code);
+      if (n >= 0) {
+        const b = cardsEl.querySelectorAll<HTMLButtonElement>('.shop-card')[n];
+        if (b && !b.disabled) buy(b.dataset.id!);
+      }
+    };
+    window.addEventListener('keydown', this.titleKey);
+  }
+
   setObjective(
     sector: number, total: number, text: string, color: string, flash: boolean,
     icon: 'keycard' | 'door' | 'lift' | 'pad' | 'boss' = 'keycard',
     preview = false,
   ): void {
+    this.objMainEl.classList.remove('wave-mode');
+    this.root.querySelector('#objective')?.classList.remove('wave-mode');
     // past the campaign it's endless: DEPTH n, no "of N"
     const endless = !preview && sector > total;
     (this.root.querySelector('#obj-label') as HTMLElement).textContent = endless ? 'DEPTH' : 'SECTOR';
@@ -1486,6 +1787,9 @@ export class HUD {
     start?: WeaponId;
     /** Poki with ads: unlock a locked skin now with a rewarded video (true = watched and granted) */
     onAdUnlock?: (id: string) => Promise<boolean>;
+    /** the scrap upgrades screen (shown with the player's scrap) */
+    onUpgrades?: () => void;
+    scrap?: number;
   }): void {
     this.hideScreen();
     const el = document.createElement('div');
@@ -1499,6 +1803,7 @@ export class HUD {
           <button id="armory-back" class="tbtn tbtn-quiet arm-back">&#9664; Back</button>
           <div class="arm-title">ARMORY</div>
           <div class="arm-count" id="arm-count">SKINS ${opts.unlocked.size} / ${SKINS.length}</div>
+          ${opts.onUpgrades ? `<button id="armory-upgrades" class="tbtn tbtn-quiet arm-upg">Upgrades &middot; ${opts.scrap ?? 0} scrap</button>` : ''}
         </div>
         <div class="arm-tabs">${weapons.map((w) => `<button class="arm-tab" data-w="${w}">${WEAPON_LABEL[w]}<small></small></button>`).join('')}</div>
         <div class="arm-body">
@@ -1586,6 +1891,7 @@ export class HUD {
     };
     el.querySelectorAll<HTMLElement>('.arm-tab').forEach((t) => t.addEventListener('click', () => setTab(t.dataset.w as WeaponId)));
     el.querySelector('#armory-back')!.addEventListener('click', () => opts.onBack());
+    el.querySelector('#armory-upgrades')?.addEventListener('click', () => opts.onUpgrades?.());
     render();
     this.titleKey = (ev: KeyboardEvent) => {
       const i = weapons.indexOf(tab);
@@ -1598,6 +1904,60 @@ export class HUD {
         sel = ids[(j + (ev.code === 'ArrowDown' ? 1 : ids.length - 1)) % ids.length];
         render();
       } else if (ev.code === 'Enter' || ev.code === 'NumpadEnter') equip();
+    };
+    window.addEventListener('keydown', this.titleKey);
+  }
+
+  /**
+   * Permanent upgrades bought with scrap. A row per upgrade: its name, the
+   * tier owned (pips), what that tier does and what the next one adds, and a
+   * Buy button with the price (greyed when short, MAX at the top tier).
+   * Esc / Back returns.
+   */
+  showUpgrades(o: {
+    scrap: () => number;
+    items: () => Array<{ id: string; name: string; level: number; max: number; now: string; next: string | null; cost: number | null }>;
+    onBuy: (id: string) => boolean;
+    onBack: () => void;
+  }): void {
+    this.hideScreen();
+    const el = document.createElement('div');
+    el.id = 'upgrades-screen';
+    el.className = 'tscreen';
+    el.innerHTML = `
+      <div class="upg-wrap">
+        <div class="arm-head">
+          <button id="upgrades-back" class="tbtn tbtn-quiet arm-back">&#9664; Back</button>
+          <div class="arm-title">UPGRADES</div>
+          <div class="upg-scrap" id="upg-scrap"></div>
+        </div>
+        <div class="upg-sub">Scrap comes from every kill, clear and secret, and is never lost. Upgrades last for every run.</div>
+        <div class="upg-list" id="upg-list"></div>
+      </div>`;
+    document.body.appendChild(el);
+    this.screenEl = el;
+    this.root.style.visibility = 'hidden';
+    const listEl = el.querySelector('#upg-list') as HTMLElement;
+    const render = (flash?: string): void => {
+      (el.querySelector('#upg-scrap') as HTMLElement).textContent = `SCRAP ${o.scrap()}`;
+      const scrap = o.scrap();
+      listEl.innerHTML = o.items().map((it) => {
+        const pips = Array.from({ length: it.max }, (_, i) => `<i class="${i < it.level ? 'on' : ''}"></i>`).join('');
+        const now = it.level > 0 ? `<b>${it.now}</b>${it.next ? ` &middot; next: ${it.next}` : ''}` : `${it.next}`;
+        const btn = it.cost === null
+          ? '<button class="upg-buy max" disabled>MAX</button>'
+          : `<button class="upg-buy" data-id="${it.id}"${scrap < it.cost ? ' disabled' : ''}>Buy &middot; ${it.cost}</button>`;
+        return `<div class="upg-row${flash === it.id ? ' flash' : ''}" data-row="${it.id}"><div class="upg-txt"><span class="upg-name">${it.name}</span><span class="upg-now">${now}</span></div><div class="upg-pips">${pips}</div>${btn}</div>`;
+      }).join('');
+      listEl.querySelectorAll<HTMLButtonElement>('.upg-buy[data-id]').forEach((b) => b.addEventListener('click', () => {
+        const id = b.dataset.id!;
+        if (o.onBuy(id)) render(id);
+      }));
+    };
+    el.querySelector('#upgrades-back')!.addEventListener('click', () => o.onBack());
+    render();
+    this.titleKey = (ev: KeyboardEvent) => {
+      if (ev.code === 'Escape') o.onBack();
     };
     window.addEventListener('keydown', this.titleKey);
   }
@@ -1693,6 +2053,10 @@ export class HUD {
      */
     returning?: boolean;
     onSettings: () => void;
+    /** Survival is PLAY (the main mode since 2026-10-23); the campaign moves to a quiet row */
+    onSurvival?: () => void;
+    /** best Survival wave reached on this device (0 = never) */
+    survivalBest?: number;
   }): void {
     this.hideScreen();
     const el = document.createElement('div');
@@ -1707,7 +2071,9 @@ export class HUD {
     // the goal, as the three steps the in-game objective tracker walks through
     const step = (n: number, icon: string, color: string, text: string): string =>
       `<div class="tstep" style="--c:${color}"><span class="tstep-n">${n}</span><span class="tstep-icon">${icon}</span><span class="tstep-text">${text}</span></div>`;
+    const survival = !!opts.onSurvival;
     const foot = [
+      survival && opts.survivalBest ? `BEST WAVE ${opts.survivalBest}` : '',
       opts.best ? `BEST SCORE ${opts.best.toLocaleString()}` : '',
       opts.bestDepth ? `DEEPEST: DEPTH ${opts.bestDepth}` : '',
     ].filter(Boolean).join(' &middot; ');
@@ -1726,7 +2092,15 @@ export class HUD {
       ${armoryBtn}
       <div class="title-center">
         <canvas id="title-logo"></canvas>
-        ${showGoal ? `<div class="title-goal">Escape the facility</div>
+        ${showGoal && survival ? `<div class="title-goal">Survive the waves</div>
+        <div id="title-steps" class="tsteps">
+          ${step(1, ICONS.boss(28), '#ff3428', 'Clear each<br>wave')}
+          <span class="tstep-sep">&#9656;</span>
+          ${step(2, ICONS.armory(28), '#ffd028', 'Pick an<br>upgrade')}
+          <span class="tstep-sep">&#9656;</span>
+          ${step(3, ICONS.pad(28), '#4cc26a', 'Beat your<br>best')}
+        </div>` : ''}
+        ${showGoal && !survival ? `<div class="title-goal">Escape the facility</div>
         <div id="title-steps" class="tsteps">
           ${step(1, ICONS.keycard(28), '#ff3428', 'Find the<br>red keycard')}
           <span class="tstep-sep">&#9656;</span>
@@ -1738,13 +2112,20 @@ export class HUD {
           <span class="ns-tag">NEW SECTOR</span>
           <span class="ns-text"><b>THE GEOTHERMAL CORE</b><i>&middot;</i>SECTORS 6&ndash;7<i>&middot;</i>MIND THE HEAT</span>
         </div>` : ''}
-        <div class="title-menu${cont ? ' title-menu-pair' : ''}">
+        ${survival ? `<div class="title-menu">
+          <button id="play-btn" class="tbtn tbtn-primary tbtn-play">Play</button>
+          <div class="title-menu-row">
+            ${cont ? `<button id="continue-btn" class="tbtn tbtn-quiet">Campaign &middot; ${opts.continueLabel ?? `Sector ${cont}`}</button>
+            <button id="start-btn" class="tbtn tbtn-quiet">New campaign</button>` : '<button id="start-btn" class="tbtn tbtn-quiet">Campaign</button>'}
+          </div>
+          ${opts.onCoop ? '<div class="title-menu-row"><button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button></div>' : ''}
+        </div>` : `<div class="title-menu${cont ? ' title-menu-pair' : ''}">
           ${cont
             ? `<button id="continue-btn" class="tbtn tbtn-primary tbtn-play">Continue &middot; ${opts.continueLabel ?? `Sector ${cont}`}</button>
               <button id="start-btn" class="tbtn tbtn-quiet tbtn-newrun">New run</button>`
             : '<button id="start-btn" class="tbtn tbtn-primary tbtn-play">Play</button>'}
           ${opts.onCoop ? '<div class="title-menu-row"><button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button></div>' : ''}
-        </div>
+        </div>`}
         ${showControls ? `<div class="title-controls">${controls}</div>` : ''}
       </div>
       <div class="title-foot has-mid">
@@ -1761,13 +2142,15 @@ export class HUD {
     this.logoStop = startVoxelLogo(el.querySelector('#title-logo') as HTMLCanvasElement, 'VOXELSTRIKE');
 
     el.querySelector('#start-btn')!.addEventListener('click', () => opts.onStart());
+    el.querySelector('#play-btn')?.addEventListener('click', () => opts.onSurvival?.());
     el.querySelector('#continue-btn')?.addEventListener('click', () => opts.onContinue?.());
     el.querySelector('#title-settings-btn')!.addEventListener('click', () => opts.onSettings());
     el.querySelector('#coop-btn')?.addEventListener('click', () => opts.onCoop?.());
     el.querySelector('#title-armory-btn')?.addEventListener('click', () => opts.onArmory?.());
     this.titleKey = (ev: KeyboardEvent) => {
       if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') {
-        if (cont) opts.onContinue?.();
+        if (survival) opts.onSurvival?.();
+        else if (cont) opts.onContinue?.();
         else opts.onStart();
       }
     };
@@ -1880,13 +2263,19 @@ export class HUD {
     unit?: 'sector' | 'depth';
     keycard: boolean;
     revive: 'ad' | 'free' | null;
+    /** scrap from this attempt and the total to spend */
+    scrap?: { gained: number; total: number };
+    /** Survival: "Try again" / "Main menu" instead of the sector retry / New run */
+    retryText?: string;
+    newRunText?: string;
+    onUpgrades?: () => void;
     onRetry: () => void;
     onRestart: () => void;
     onRevive: () => void;
     onNewRun: () => void;
   }): void {
     const unit = o.unit ?? 'sector';
-    const retryLabel = o.keycard ? 'Retry from keycard' : `Retry ${unit} ${o.sector}`;
+    const retryLabel = o.retryText ?? (o.keycard ? 'Retry from keycard' : `Retry ${unit} ${o.sector}`);
     const revive = o.revive
       ? `<button id="revive-btn" class="tbtn tbtn-revive">${o.revive === 'ad' ? `${ICONS.ad(15)}<span>Revive &middot; Watch ad</span>` : '<span>Revive here</span>'}</button>`
       : '';
@@ -1897,6 +2286,7 @@ export class HUD {
     this.showButtonScreen(`
       <h1>YOU DIED</h1>
       <p>${o.stats}</p>
+      ${o.scrap ? `<div class="death-scrap">+${o.scrap.gained} SCRAP &middot; ${o.scrap.total} to spend</div>` : ''}
       <div class="screen-btns">
         <div class="tbtn-row death-main${o.revive ? ' pair' : ''}">
           ${revive}
@@ -1904,7 +2294,8 @@ export class HUD {
         </div>
         <div class="tbtn-row">
           ${o.keycard ? `<button id="restart-btn" class="tbtn tbtn-quiet">Restart ${unit} ${o.sector}</button>` : ''}
-          <button id="newrun-btn" class="tbtn tbtn-quiet">New run</button>
+          ${o.onUpgrades ? '<button id="upgrades-btn" class="tbtn tbtn-quiet">Upgrades</button>' : ''}
+          <button id="newrun-btn" class="tbtn tbtn-quiet">${o.newRunText ?? 'New run'}</button>
         </div>
       </div>
       <div class="keyhint">${hints.join(' &middot; ')}</div>
@@ -1913,6 +2304,7 @@ export class HUD {
       '#restart-btn': o.onRestart,
       '#revive-btn': o.onRevive,
       '#newrun-btn': o.onNewRun,
+      '#upgrades-btn': () => o.onUpgrades?.(),
     }, o.onRetry);
   }
 
@@ -2283,6 +2675,8 @@ export class HUD {
     saved: boolean;
     touch: boolean;
     perks: Array<{ id: OfferId; name: string; short: string; desc: string }> | null;
+    /** "+64 SCRAP · 312 to spend" under the tally */
+    scrap?: string;
     final?: { totals: string; record: string };
     /** final screen: "Keep descending" into endless depths */
     onDescend?: () => void;
@@ -2338,6 +2732,7 @@ export class HUD {
         <div class="sc-body">
           <div class="sc-tally">
             <div class="sc-rows">${rowsHtml}</div>
+            ${o.scrap ? `<div class="sc-scrap">${o.scrap}</div>` : ''}
             <div class="sc-total"><span>SCORE</span><b id="sc-score">${fmt(o.scoreFrom)}</b></div>
             <div class="sc-best${o.newBest ? ' new' : ''}">${o.newBest ? 'NEW BEST RANK!' : o.prevBest ? `SECTOR ${o.sector} BEST: ${o.prevBest}` : ''}</div>
           </div>

@@ -129,10 +129,10 @@ interface Edge {
  * draws use the position hash, never the layout RNG, so facility sectors
  * keep their exact layouts for a given seed.
  */
-export function generateLevel(seed: number, difficulty = 1, theme: LevelTheme = 'facility', withBoss = false): LevelData {
+export function generateLevel(seed: number, difficulty = 1, theme: LevelTheme = 'facility', withBoss = false, survival = false): LevelData {
   for (let attempt = 0; attempt < 10; attempt++) {
     const s = (seed + attempt * 7919) >>> 0;
-    const data = generateLevelOnce(s, difficulty, theme, withBoss);
+    const data = generateLevelOnce(s, difficulty, theme, withBoss, survival);
     if (withBoss && !data.boss) continue; // a boss sector needs a cradle spot
     if (validateLevel(data)) {
       if (attempt > 0) console.warn(`[levelgen] used fallback seed ${s} after ${attempt} invalid layouts`);
@@ -140,7 +140,7 @@ export function generateLevel(seed: number, difficulty = 1, theme: LevelTheme = 
     }
   }
   console.error('[levelgen] no valid layout found, returning last attempt');
-  return generateLevelOnce(seed, difficulty, theme, withBoss);
+  return generateLevelOnce(seed, difficulty, theme, withBoss, survival);
 }
 
 /** room signs in the Biofoundry (normal rooms take these in order) */
@@ -154,11 +154,14 @@ const BIO_TANKS_MAX = 12;
 const bioOccupied = (difficulty: number): number => (difficulty >= 8 ? 8 : difficulty >= 5 ? 6 : 4);
 /** endless depths keep adding bodies; this keeps phones inside the draw budget */
 const ENEMY_CAP = 90;
-/** share of plain rooms with no enemies in sectors 2 and 3 (full length, gentle fight count) */
-const QUIET_ROOMS_S2 = 0.4;
-const QUIET_ROOMS_S3 = 0.25;
 
-function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, withBoss: boolean): LevelData {
+/**
+ * `survival`: the sector is only a backdrop for a Survival stage (the arena
+ * gets walled off in game): a much bigger, taller arena dressed with cover and
+ * destructible props (`dressSurvivalArena`), and just a handful of other rooms.
+ * The campaign path draws exactly the same numbers as before.
+ */
+function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, withBoss: boolean, survival = false): LevelData {
   const rng = new RNG(seed);
   const isBio = theme === 'biofoundry';
   const isGeo = theme === 'geothermal';
@@ -175,12 +178,12 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   {
     let placed = false;
     for (let attempt = 0; attempt < 120 && !placed; attempt++) {
-      const w = rng.int(17, 21);
-      const d = rng.int(15, 19);
+      const w = survival ? rng.int(31, 35) : rng.int(17, 21);
+      const d = survival ? rng.int(29, 33) : rng.int(15, 19);
       const x = rng.int(6, WORLD_X - 7 - w);
       const z = rng.int(6, WORLD_Z - 7 - d);
       rooms.push({
-        id: 0, x, z, w, d, h: 6,
+        id: 0, x, z, w, d, h: survival ? 7 : 6,
         cx: x + Math.floor(w / 2), cz: z + Math.floor(d / 2),
         kind: 'arena', dist: 0,
       });
@@ -189,12 +192,10 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   }
 
   // sector 1 is a short opener (a first clear within a few minutes); the
-  // rest grow with depth: 11–13 rooms in sector 2, 12–14 from sector 3. The
-  // Player Fit Test lost ~74% of players in sector 2 when it ALSO had ~4×
-  // sector 1's enemies; cutting it to 8–9 rooms made it feel too short (the
-  // owner), so the length is back and the enemy count is kept down instead
-  // (quiet rooms, lone tickers — see the enemy pass).
-  const targetRooms = difficulty === 1 ? rng.int(6, 7) : rng.int(10, 12) + Math.min(2, difficulty - 1);
+  // rest grow with depth: 11–13 rooms in sector 2, 12–14 from sector 3.
+  // Sectors 1–5 generate exactly as in 0.3.4 (owner's call — a gentler
+  // sector 2 was tried and reverted); `features.mjs` compares them.
+  const targetRooms = survival ? 5 : difficulty === 1 ? rng.int(6, 7) : rng.int(10, 12) + Math.min(2, difficulty - 1);
   for (let attempt = 0; attempt < 300 && rooms.length < targetRooms; attempt++) {
     const w = rng.int(8, 15);
     const d = rng.int(8, 15);
@@ -783,6 +784,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   };
   for (const r of rooms) {
     if (r.kind === 'exit' || r.w < 11 || r.d < 11) continue;
+    if (survival && r.kind === 'arena') continue; // dressSurvivalArena lays its own cover
     if (isBio) {
       for (const [px, pz] of [
         [r.x + 3, r.z + 3], [r.x + r.w - 5, r.z + 3],
@@ -817,11 +819,15 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     }
   }
 
+  // -- Survival stage: cover + destructible props in the arena --------------
+  if (survival) dressSurvivalArena(world, rooms.find((r) => r.kind === 'arena')!, rng, isBio);
+
   // -- crates ---------------------------------------------------------------
   for (const r of rooms) {
     if (r.kind === 'spawn' || r.kind === 'exit') {
       if (r.kind === 'exit') continue;
     }
+    if (survival && r.kind === 'arena') continue;
     const n = rng.int(1, 3);
     for (let i = 0; i < n; i++) {
       const x = rng.chance(0.5) ? r.x + rng.int(1, 2) : r.x + r.w - 1 - rng.int(1, 2);
@@ -841,6 +847,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   // barrel inside it would leave the player standing on the barrel, not the lift)
   for (const r of rooms) {
     if (r.kind === 'spawn' || r.kind === 'exit') continue;
+    if (survival && r.kind === 'arena') continue;
     if (!rng.chance(0.7)) continue;
     const n = rng.int(1, 2);
     for (let i = 0; i < n; i++) {
@@ -897,25 +904,6 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
       if (t.occupied && t.x >= arenaRoom0!.x && t.x < arenaRoom0!.x + arenaRoom0!.w && t.z >= arenaRoom0!.z && t.z < arenaRoom0!.z + arenaRoom0!.d) t.occupied = false;
     }
     occupiedTanks = bio.tanks.filter((t) => t.occupied).length;
-  }
-
-  // -- the optional Power Link cage (facility from sector 2, the core) -------
-  // Something to find off the route in every sector after the opener (the
-  // Biofoundry has its tanks). Built before pickups/enemies: its cells are
-  // PowerBarrier while they are placed (nothing lands inside), the back row
-  // opens again before the bake.
-  const withLink = isGeo || (theme === 'facility' && difficulty >= 2);
-  const powerLink = withLink ? placePowerLink(world, rooms, dhash, boss?.roomId ?? -1) : null;
-  if (powerLink) {
-    const { ox, oz, ux, uz, nx, nz } = powerLink.cage;
-    const at = (a: number, t: number): [number, number] => [ox + ux * a + nx * t, oz + uz * a + nz * t];
-    // the supplies: armor in the middle, health and ammo either side
-    const ammo: PickupSpec['kind'][] = ['ammoRockets', 'ammoCells', 'ammoShells'];
-    const kinds: PickupSpec['kind'][] = ['healthBig', 'armorVest', ammo[Math.floor(dhash(ox, 9, oz) * ammo.length)]];
-    kinds.forEach((kind, i) => {
-      const [x, z] = at(1.5 + i, 0.5);
-      pickups.push({ kind, x, y: 1.4, z, sealed: true });
-    });
   }
 
   // -- pickups --------------------------------------------------------------
@@ -1001,18 +989,13 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     if (r.kind === 'spawn') continue;
     // a boss arena is the Broodkeeper's alone (its summons are the adds)
     if (boss && r.id === boss.roomId) continue;
-    // sectors 2–3 are full length again (the owner: shorter ones didn't feel
-    // like the game), but the difficulty step stays gentle: some plain rooms
-    // are quiet — supplies, no fight — so the run breathes between fights
-    if ((difficulty === 2 || difficulty === 3) && r.kind === 'normal' && r.dist >= 1 &&
-      dhash(r.id, 5, 913) < (difficulty === 2 ? QUIET_ROOMS_S2 : QUIET_ROOMS_S3)) continue;
     let count: number;
     if (r.dist <= 1) count = rng.int(1, 2);
     else if (r.dist === 2) count = 2;
     else count = rng.int(2, 3);
     if (r.kind === 'key' || r.kind === 'exit') count += 1;
-    // later sectors push harder (from sector 3: sector 2 was a wall)
-    if (difficulty >= 3 && r.dist >= 2) count += 1;
+    // later sectors push harder
+    if (difficulty >= 2 && r.dist >= 2) count += 1;
     if (difficulty >= 3 && r.kind !== 'normal') count += 1;
     // the deep Biofoundry (sector 5): the other curves are capped by now, so
     // the far rooms get one more body (sectors 1–4 are untouched)
@@ -1033,14 +1016,11 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
       addEnemy({ kind: ranged ? (native ? 'kilnDrone' : 'sentinel') : (native ? 'ventStalker' : 'husk'), x, z, roomId: r.id });
     }
     // ticker nests: packs of suicide crawlers, more common deeper in (none in
-    // the sector 1 opener). Sector 2 only meets lone tickers, in about a
-    // quarter of the rooms; sector 3 pairs at most; full packs from sector 4.
-    // Enemies per sector now climb ~12 → ~20 → ~38 → ~61 (it was 12 → 46).
-    // The core keeps tickers to about half the rooms, in pairs at most: its
-    // Vent Stalkers already rush you.
-    const tickerP = difficulty === 2 ? 0.25 : difficulty === 3 ? 0.35 : isGeo ? 0.45 : 0.3 + (difficulty - 1) * 0.15;
+    // the sector 1 opener). The core keeps tickers to about half the rooms, in
+    // pairs at most: its Vent Stalkers already rush you.
+    const tickerP = isGeo ? 0.45 : 0.3 + (difficulty - 1) * 0.15;
     if (difficulty >= 2 && r.dist >= 1 && rng.chance(tickerP)) {
-      const pack = difficulty === 2 ? 1 : rng.int(1, Math.min(difficulty === 3 || isGeo ? 2 : 3, 1 + difficulty));
+      const pack = rng.int(1, Math.min(isGeo ? 2 : 3, 1 + difficulty));
       for (let i = 0; i < pack; i++) {
         const [x, z] = freeSpot(r);
         addEnemy({ kind: 'ticker', x, z, roomId: r.id });
@@ -1058,17 +1038,6 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     }
   }
 
-  // sector 2 introduces the ticker: always at least one, alone, in a room two
-  // or more steps from spawn (the rolls above can miss every room)
-  if (difficulty === 2 && !enemies.some((e) => e.kind === 'ticker')) {
-    const far = rooms.filter((r) => r.kind !== 'spawn' && r.dist >= 2 && !(boss && r.id === boss.roomId));
-    const r = far.length ? far[rng.int(0, far.length - 1)] : null;
-    if (r) {
-      const [x, z] = freeSpot(r);
-      addEnemy({ kind: 'ticker', x, z, roomId: r.id });
-    }
-  }
-
   // -- powerup: at most one per sector, stashed in a far room ----------------
   if (rng.chance(0.65)) {
     const farRooms = rooms.filter((r) => r.kind === 'normal' && r.dist >= 2);
@@ -1083,13 +1052,25 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   // (after the deco pass, the cracked secret wall and every lamp, so only the
   // plain surfaces change; vents, pipe columns, trim and metal stay)
   if (isBio) reskinLab(world, dhash);
+  // -- the optional Power Link cage (facility from sector 2, the core) -------
+  // Something to find off the route in every sector after the opener (the
+  // Biofoundry has its tanks). Placed AFTER every pickup and enemy, on cells
+  // none of them use, so it never touches the layout RNG: a seed's rooms,
+  // pickups and enemies are exactly what they were without it.
+  const withLink = isGeo || (theme === 'facility' && difficulty >= 2);
+  const taken = new Set<number>();
+  for (const p of [...pickups, ...enemies]) taken.add(Math.floor(p.x) + Math.floor(p.z) * world.sx);
+  const powerLink = withLink ? placePowerLink(world, rooms, dhash, boss?.roomId ?? -1, taken) : null;
   if (powerLink) {
-    // the cage's back row was held while spawns were placed: open it for the supplies
     const { ox, oz, ux, uz, nx, nz } = powerLink.cage;
-    for (let a = 1; a <= 3; a++) {
-      const x = Math.floor(ox + ux * (a + 0.5) + nx * 0.5), z = Math.floor(oz + uz * (a + 0.5) + nz * 0.5);
-      for (let y = 1; y <= 3; y++) world.set(x, y, z, Block.Air);
-    }
+    const at = (a: number, t: number): [number, number] => [ox + ux * a + nx * t, oz + uz * a + nz * t];
+    // the supplies: armor in the middle, health and ammo either side
+    const ammo: PickupSpec['kind'][] = ['ammoRockets', 'ammoCells', 'ammoShells'];
+    const kinds: PickupSpec['kind'][] = ['healthBig', 'armorVest', ammo[Math.floor(dhash(ox, 9, oz) * ammo.length)]];
+    kinds.forEach((kind, i) => {
+      const [x, z] = at(1.5 + i, 0.5);
+      pickups.push({ kind, x, y: 1.4, z, sealed: true });
+    });
   }
   let geo: GeoLayout | undefined;
   if (isGeo) geo = { vents: dressGeothermal(world, rooms, dhash), signs: geoSigns(world, spawnRoom) };
@@ -1197,6 +1178,89 @@ function placeBoss(world: VoxelWorld, r: RoomDef, heart: BioLayout['heart']): Le
 }
 
 type Hash = (x: number, y: number, z: number) => number;
+
+/**
+ * A Survival arena's cover. The interior (inset 4 from the walls, which keeps
+ * spawn lanes and Biofoundry tank spots free) is cut into a 3×3 grid; the
+ * centre cell stays open for the player, the other eight each get one
+ * feature. Features are at most 5 cells long inside 7+ cell sectors, so a
+ * 2-wide walkway always runs around each one. Mix: full-height cover to hide
+ * behind (2-high walls, an L, a container block, a lit pillar), half walls to
+ * shoot over or jump, and destructible crate stacks + exploding barrels. Plus
+ * a few crates and barrels scattered near the walls.
+ */
+function dressSurvivalArena(world: VoxelWorld, r: RoomDef, rng: RNG, isBio: boolean): void {
+  const air = (x: number, y: number, z: number): boolean => world.get(x, y, z) === Block.Air;
+  const put = (x: number, y: number, z: number, b: Block): void => { if (air(x, y, z)) world.set(x, y, z, b); };
+  const column = (x: number, z: number, h: number, b: Block): void => { for (let y = 1; y <= h; y++) put(x, y, z, b); };
+  const x0 = r.x + 4, z0 = r.z + 4;
+  const gw = (r.w - 8) / 3, gd = (r.d - 8) / 3;
+  const kinds = ['wall', 'half', 'l', 'crates', 'barrels', 'block', 'pillar', 'crates'] as const;
+  // every arena gets each kind of cover at least once; the order is the seed's
+  const order = [...kinds].sort(() => rng.next() - 0.5);
+  let k = 0;
+  for (let gx = 0; gx < 3; gx++) for (let gz = 0; gz < 3; gz++) {
+    if (gx === 1 && gz === 1) continue; // the open middle: the player starts here
+    const cx = Math.floor(x0 + gw * (gx + 0.5));
+    const cz = Math.floor(z0 + gd * (gz + 0.5));
+    const alongX = rng.chance(0.5);
+    const kind = order[k++ % order.length];
+    const line = (len: number, h: number, b: Block): void => {
+      for (let i = 0; i < len; i++) {
+        const x = alongX ? cx - (len >> 1) + i : cx, z = alongX ? cz : cz - (len >> 1) + i;
+        column(x, z, h, b);
+      }
+    };
+    switch (kind) {
+      case 'wall': // full-height cover with a trim cap
+        line(5, 2, Block.Metal);
+        for (let i = 0; i < 5; i++) put(alongX ? cx - 2 + i : cx, 3, alongX ? cz : cz - 2 + i, Block.Trim);
+        break;
+      case 'half': // shoot over it, jump it
+        line(5, 1, Block.Trim);
+        put(cx, 1, cz + (alongX ? 1 : 0), Block.Crate);
+        break;
+      case 'l': {
+        const sx = rng.chance(0.5) ? 1 : -1, sz = rng.chance(0.5) ? 1 : -1;
+        for (let i = 0; i < 4; i++) column(cx + i * sx, cz, 2, Block.Metal);
+        for (let i = 1; i < 4; i++) column(cx, cz + i * sz, 2, Block.Metal);
+        put(cx + sx, 1, cz + sz, Block.Barrel);
+        break;
+      }
+      case 'crates': // destructible: two stacks, one tall
+        for (let dx = 0; dx < 2; dx++) for (let dz = 0; dz < 2; dz++) column(cx + dx, cz + dz, dx === dz ? 2 : 1, Block.Crate);
+        put(cx + 2, 1, cz, Block.Crate);
+        put(cx - 1, 1, cz + 1, Block.Barrel);
+        break;
+      case 'barrels': // a chain waiting to happen
+        put(cx, 1, cz, Block.Barrel);
+        put(cx + 1, 1, cz, Block.Barrel);
+        put(cx, 1, cz + 1, Block.Barrel);
+        put(cx - 1, 1, cz - 1, Block.Crate);
+        put(cx - 1, 2, cz - 1, Block.Crate);
+        break;
+      case 'block': // a container to duck behind
+        for (let dx = 0; dx < (alongX ? 3 : 2); dx++) for (let dz = 0; dz < (alongX ? 2 : 3); dz++) column(cx + dx, cz + dz, 3, Block.Metal);
+        break;
+      case 'pillar': // a lit pillar with crates at its foot
+        for (let dx = 0; dx < 2; dx++) for (let dz = 0; dz < 2; dz++) {
+          for (let y = 1; y <= r.h; y++) put(cx + dx, y, cz + dz, y === 3 ? Block.LampWarm : Block.Pillar);
+        }
+        put(cx + 2, 1, cz, Block.Crate);
+        put(cx - 1, 1, cz + 1, Block.Crate);
+        break;
+    }
+  }
+  // scattered props two cells in from the walls (never on the Biofoundry's
+  // west / east tank walls)
+  for (let i = 0; i < 10; i++) {
+    const side = rng.int(0, isBio ? 1 : 3);
+    const t = rng.next();
+    const x = side === 0 || side === 1 ? r.x + 3 + Math.floor(t * (r.w - 6)) : side === 2 ? r.x + 2 : r.x + r.w - 3;
+    const z = side === 0 ? r.z + 2 : side === 1 ? r.z + r.d - 3 : r.z + 3 + Math.floor(t * (r.d - 6));
+    put(x, 1, z, rng.chance(0.35) ? Block.Barrel : Block.Crate);
+  }
+}
 
 /**
  * Specimen tanks along room walls, which of them hold a Vatborn or are broken
@@ -1382,7 +1446,7 @@ export function wallPerimeter(room: { x0: number; z0: number; x1: number; z1: nu
  * clear floor, and a node in the same room's wall at least 6 cells of wall
  * away — the amber cable between them is the clue. Position-hashed only.
  */
-function placePowerLink(world: VoxelWorld, rooms: RoomDef[], dhash: Hash, bossRoom: number): PowerLinkLayout | null {
+function placePowerLink(world: VoxelWorld, rooms: RoomDef[], dhash: Hash, bossRoom: number, taken: Set<number>): PowerLinkLayout | null {
   const cands = rooms
     .filter((r) => r.kind === 'normal' && r.dist >= 1 && r.id !== bossRoom)
     .sort((a, b) => (b.dist >= 2 ? 1 : 0) - (a.dist >= 2 ? 1 : 0) || dhash(a.id, 5, 77) - dhash(b.id, 5, 77));
@@ -1408,8 +1472,12 @@ function placePowerLink(world: VoxelWorld, rooms: RoomDef[], dhash: Hash, bossRo
         // the footprint is open air, the wall behind has no doorway, the grille faces clear floor
         for (let a = -1; a <= 5 && ok; a++) for (let t = -1; t <= 2 && ok; t++) {
           const [x, z] = cell(a, t);
-          if (t === -1) { for (let y = 1; y <= 3; y++) if (air(x, y, z)) ok = false; }
-          else if (t <= 1 && a >= 0 && a <= 4) { for (let y = 1; y <= 4; y++) if (!air(x, y, z)) ok = false; }
+          // (never over the secret room's cracked wall: the cage would hide it)
+          if (t === -1) { for (let y = 1; y <= 3; y++) if (air(x, y, z) || world.get(x, y, z) === Block.Cracked) ok = false; }
+          else if (t <= 1 && a >= 0 && a <= 4) {
+            for (let y = 1; y <= 4; y++) if (!air(x, y, z)) ok = false;
+            if (taken.has(x + z * world.sx)) ok = false; // a pickup or enemy stands there
+          }
           else if (t === 2 && a >= 1 && a <= 3) { for (let y = 1; y <= 2; y++) if (!air(x, y, z)) ok = false; }
         }
         // and it reads from across the room: no hanging lamp, pipe column or
@@ -1437,12 +1505,15 @@ function placePowerLink(world: VoxelWorld, rooms: RoomDef[], dhash: Hash, bossRo
           }
         }
         if (!node) continue;
-        // build: steel plate floor, Metal sides + roof, the interior held by
-        // PowerBarrier until spawns are placed (the front row stays: the grille)
+        // build: steel plate floor, Metal sides + roof, the back row open for
+        // the supplies, the front row an invisible PowerBarrier grille
         for (let a = 0; a <= 4; a++) for (let t = 0; t <= 1; t++) {
           const [x, z] = cell(a, t);
           world.set(x, 0, z, Block.Metal);
-          for (let y = 1; y <= 3; y++) world.set(x, y, z, a === 0 || a === 4 ? Block.Metal : Block.PowerBarrier);
+          for (let y = 1; y <= 3; y++) {
+            if (a === 0 || a === 4) world.set(x, y, z, Block.Metal);
+            else if (t === 1) world.set(x, y, z, Block.PowerBarrier);
+          }
           world.set(x, 4, z, Block.Metal);
         }
         world.set(node.x, node.y, node.z, Block.LampWarm);

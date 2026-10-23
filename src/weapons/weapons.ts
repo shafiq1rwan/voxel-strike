@@ -480,7 +480,15 @@ const VM_Y = -0.34;
 export class WeaponSystem {
   readonly viewModel = new THREE.Group();
   private owned = new Set<WeaponId>(['pistol']);
+  /**
+   * Slots 1–5 in the order the guns were picked up (owner's call): slot 2 is
+   * whatever came second, not always the Scattergun. Keys 1–5, the HUD bar
+   * and the touch wheel all read this.
+   */
+  private slotOrder: WeaponId[] = ['pistol'];
   current: WeaponId = 'pistol';
+  /** Quick Hands upgrade tier (0–3): weapon switch and bash cooldown 15% faster per tier */
+  quickHands = 0;
   /** One non-stacking Overload sidegrade, retained only for the current run. */
   focusedShotgun = false;
 
@@ -554,13 +562,14 @@ export class WeaponSystem {
 
   /** owned weapons + the one in hand, for sector checkpoints */
   loadout(): { owned: WeaponId[]; current: WeaponId } {
-    return { owned: ORDER.filter((w) => this.owned.has(w)), current: this.current };
+    return { owned: [...this.slotOrder], current: this.current };
   }
 
   /** restore a checkpoint's loadout instantly (no lower/raise animation) */
   restoreLoadout(owned: string[], current: string): void {
     const valid = owned.filter((w): w is WeaponId => (ORDER as string[]).includes(w));
-    this.owned = new Set<WeaponId>(['pistol', ...valid]);
+    this.slotOrder = [...new Set<WeaponId>(['pistol', ...valid])];
+    this.owned = new Set<WeaponId>(this.slotOrder);
     this.current = this.owned.has(current as WeaponId) ? (current as WeaponId) : 'pistol';
     this.pending = null;
     this.raiseT = 1;
@@ -716,14 +725,21 @@ export class WeaponSystem {
     this.lightTick = 1; // tint the new model by the room light on the next frame
   }
 
+  /** the guns in slot order (slot 1 first) */
+  slots(): readonly WeaponId[] {
+    return this.slotOrder;
+  }
+
   give(id: WeaponId): void {
     this.owned.add(id);
+    if (!this.slotOrder.includes(id)) this.slotOrder.push(id);
     this.switchTo(id);
   }
 
   /** a thrown gun picked back up: owned again, empty, so no switch to it */
   reclaim(id: WeaponId, game: Game): void {
     this.owned.add(id);
+    if (!this.slotOrder.includes(id)) this.slotOrder.push(id);
     game.hud.updateWeapon(this);
   }
 
@@ -734,6 +750,7 @@ export class WeaponSystem {
   private throwCurrent(next: WeaponId, game: Game): void {
     const id = this.current;
     this.owned.delete(id);
+    this.slotOrder = this.slotOrder.filter((w) => w !== id);
     this.models.get(id)!.visible = false;
     this.raiseT = 0;
     this.pending = next;
@@ -762,10 +779,11 @@ export class WeaponSystem {
     const req = input.consumeSwitch();
     if (req !== null && !game.player.dead) {
       if (req >= 0) {
-        this.switchTo(ORDER[req]);
+        const id = this.slotOrder[req];
+        if (id) this.switchTo(id);
       } else {
         // wheel: -1 prev, -2 next among owned
-        const ownedList = ORDER.filter((w) => this.owned.has(w));
+        const ownedList = this.slotOrder;
         const idx = ownedList.indexOf(this.current);
         const step = req === -2 ? 1 : -1;
         const next = ownedList[(idx + step + ownedList.length) % ownedList.length];
@@ -774,8 +792,9 @@ export class WeaponSystem {
     }
 
     // raise/lower animation
+    const swap = 6 / (1 - 0.15 * this.quickHands);
     if (this.pending) {
-      this.raiseT -= dt * 6;
+      this.raiseT -= dt * swap;
       if (this.raiseT <= 0) {
         this.current = this.pending;
         this.pending = null;
@@ -784,7 +803,7 @@ export class WeaponSystem {
         game.audio.play('weaponRaise');
       }
     } else if (this.raiseT < 1) {
-      this.raiseT = Math.min(1, this.raiseT + dt * 6);
+      this.raiseT = Math.min(1, this.raiseT + dt * swap);
     }
 
     // quick melee: jab, then the strike lands after a short windup
@@ -792,7 +811,7 @@ export class WeaponSystem {
     this.meleeT += dt;
     if (input.consumeMelee() && !game.player.dead && this.pending === null && this.raiseT > 0.9 && this.meleeCd === 0) {
       this.meleeT = 0;
-      this.meleeCd = MELEE.cooldown;
+      this.meleeCd = MELEE.cooldown * (1 - 0.15 * this.quickHands);
       this.meleePending = true;
       this.cooldown = Math.max(this.cooldown, MELEE.windup + 0.12); // no shot mid-jab
       game.audio.play('meleeSwing');

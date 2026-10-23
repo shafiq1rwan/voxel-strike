@@ -245,15 +245,31 @@ export class Automap {
       for (const [cx, cz] of cells) ctx.fillRect(cx * S, cz * S, S, S);
     }
 
-    // the red keycard blinks until it's in your pocket
+    // the red keycard blinks until it's in your pocket (Scanner 1: even unexplored)
+    const scan = game.scannerLevel;
     const key = game.level.pickups.find((p) => p.kind === 'keyRed');
     if (key && !game.player.hasKey('red')) {
       const kx = Math.floor(key.x), kz = Math.floor(key.z);
-      if (seen(kx, kz)) {
+      if (seen(kx, kz) || scan >= 1) {
         const blink = 0.5 + 0.5 * Math.sin(performance.now() * 0.008);
         ctx.fillStyle = `rgba(255,52,40,${(0.4 + blink * 0.6).toFixed(2)})`;
         ctx.fillRect(kx * S - 1, kz * S - 1, S + 2, S + 2);
       }
+    }
+
+    // Scanner 2: the secret room's cracked wall, until it's broken open
+    if (scan >= 2) {
+      ctx.fillStyle = '#ffb52e';
+      for (const [cx, cy, cz] of game.level.secretWall ?? []) {
+        if (game.world.get(cx, cy, cz) === Block.Cracked) ctx.fillRect(cx * S, cz * S, S, S);
+      }
+    }
+    // Scanner 3: the Power Link node, while its cache is still sealed
+    const link = game.level.powerLink;
+    if (scan >= 3 && link && game.level.pickups.some((p) => p.sealed)) {
+      ctx.strokeStyle = '#ffb52e';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(link.node.x * S - 1, link.node.z * S - 1, S + 2, S + 2);
     }
 
     const overload = game.overload;

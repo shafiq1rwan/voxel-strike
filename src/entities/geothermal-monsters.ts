@@ -530,6 +530,9 @@ export class GeothermalMonster {
         }
       } else {
         let nx = dx / dist, nz = dz / dist, speed = e.tuning.speed;
+        // Survival: around the arena's cover by the flow field
+        const via = e.navAround(dt, target, game);
+        if (via) { nx = via[0]; nz = via[1]; }
         if (this.kind === 'kilnDrone' && los && dist < 8) { nx = -nx; nz = -nz; speed *= .6; }
         if (this.jink > 0) { const old = nx; nx = -nz * this.jinkSign; nz = old * this.jinkSign; }
         // walkers never step off a ledge: turn along it, or hold at the edge
@@ -564,7 +567,7 @@ export class GeothermalMonster {
         if (!this.hit) for (const player of game.playerTargets()) {
           if (player.dead || Math.abs(player.pos.y - e.pos.y) > player.half.y + e.half.y) continue;
           if (Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z) < e.half.x + player.half.x + .3 && game.hasLOS(e.pos.x, e.pos.y, e.pos.z, player.pos.x, player.pos.y, player.pos.z)) {
-            player.damage(14, game, { x: e.pos.x, z: e.pos.z }); this.hit = true; e.phase = 'recover'; e.phaseT = 0; break;
+            player.damage(14, game, { x: e.pos.x, z: e.pos.z, by: e.kind }); this.hit = true; e.phase = 'recover'; e.phaseT = 0; break;
           }
         }
       } else if (result.hitX || result.hitZ) {
@@ -634,7 +637,7 @@ export class GeothermalMonster {
       for (const player of game.playerTargets()) {
         const near = Math.hypot(player.pos.x - x, player.pos.z - z);
         if (!player.dead && near < 2 && player.pos.y - player.half.y < floor + .5 && Math.abs(player.pos.y - e.pos.y) < 2 &&
-          game.hasLOS(e.pos.x, e.pos.y, e.pos.z, player.pos.x, player.pos.y, player.pos.z)) player.damage(24, game, { x: e.pos.x, z: e.pos.z });
+          game.hasLOS(e.pos.x, e.pos.y, e.pos.z, player.pos.x, player.pos.y, player.pos.z)) player.damage(24, game, { x: e.pos.x, z: e.pos.z, by: e.kind });
         // the floor jolt carries further than the damage
         if (!player.dead && near < 6) player.shake = Math.min(.7, player.shake + .35 * (1 - near / 6));
       }

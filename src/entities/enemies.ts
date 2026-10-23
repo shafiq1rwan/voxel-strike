@@ -92,6 +92,8 @@ const HUSK_LUNGE_SPEED = 9.0;
 // Approximately the old chase's effective speed at 60 Hz, without per-frame
 // steering/friction changing it on faster or slower devices.
 const HUSK_RUN_SPEED = 3.2;
+/** Survival: an enemy climbs up out of its warning glow for this long before it acts */
+export const RISE_S = 0.6;
 const BRUTE_CHARGE_SPEED = 2.3 * 4.2;
 const VAT_RUSH_SPEED = 6.8;
 /** sentinel: keep this far away when it can */
@@ -180,6 +182,11 @@ export class Enemy {
   hp: number;
   /** full health, after any endless scaling (the boss bar and enrage use it) */
   maxHp = 0;
+  /** Survival: seconds left of the rise out of the floor (no AI meanwhile; it can be shot) */
+  rise = 0;
+  /** Survival: is cover between it and its target? (re-checked a few times a second) */
+  private navBlocked = false;
+  private navT = 0;
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
   readonly half = new THREE.Vector3();
@@ -1125,7 +1132,7 @@ export class Enemy {
     // explosion per ticker — arming ends by calling this same path.
     // Co-op clients skip the gameplay side effects — the host owns those.
     if (this.kind === 'ticker' && !game.isNetClient) {
-      game.queueExplosion(this.pos.x, this.pos.y, this.pos.z, 0.08, 55, 2.8);
+      game.queueExplosion(this.pos.x, this.pos.y, this.pos.z, 0.08, 55, 2.8, 'ticker');
     }
     // the Broodkeeper: a burst of light and slime, its acid gone, the key dropped
     if (this.kind === 'broodkeeper') {
@@ -1189,6 +1196,16 @@ export class Enemy {
 
     // dead: the voxel rig already burst into gibs in die()
     if (this.state === 'dead') return;
+    // Survival arrival: the body climbs up out of the floor glow, then hunts
+    if (this.rise > 0) {
+      this.rise = Math.max(0, this.rise - dt);
+      const k = this.rise / RISE_S;
+      this.mesh.position.copy(this.pos);
+      this.mesh.position.y -= k * k * (this.half.y * 2 + 0.3);
+      this.mesh.scale.setScalar(1);
+      this.mesh.rotation.z = 0;
+      return;
+    }
     if (this.dormant) {
       this.dormantUpdate(dt, game);
       return;
@@ -1560,6 +1577,19 @@ export class Enemy {
     }
   }
 
+  /** Survival only: the flow field's direction when cover stands between it and the target */
+  navAround(dt: number, pl: PlayerTarget, game: Game): [number, number] | null {
+    const s = game.survival;
+    if (!s) return null;
+    this.navT -= dt;
+    if (this.navT <= 0) {
+      this.navT = 0.25;
+      const fy = this.pos.y - this.half.y + 0.5;
+      this.navBlocked = !game.hasLOS(this.pos.x, fy, this.pos.z, pl.pos.x, pl.pos.y - pl.half.y + 0.5, pl.pos.z);
+    }
+    return this.navBlocked ? s.nav.dirAt(this.pos.x, this.pos.z) : null;
+  }
+
   private doChase(dt: number, dist: number, toPlayer: THREE.Vector3, game: Game): void {
     const pl = this.tgt ?? game.player;
     if (pl.dead) {
@@ -1567,8 +1597,15 @@ export class Enemy {
       this.awake = false;
       return;
     }
-    const nx = toPlayer.x / Math.max(0.001, dist);
-    const nz = toPlayer.z / Math.max(0.001, dist);
+    let nx = toPlayer.x / Math.max(0.001, dist);
+    let nz = toPlayer.z / Math.max(0.001, dist);
+    // Survival arenas have cover: when it blocks the straight line, follow the
+    // flow field around it (low walls block the feet, so look at knee height)
+    const via = this.navAround(dt, pl, game);
+    if (via) {
+      nx = via[0];
+      nz = via[1];
+    }
 
     if (this.kind === 'husk') {
       // hungry noises while it hunts
@@ -1747,7 +1784,7 @@ export class Enemy {
     if (dot < Math.cos((coneDeg * Math.PI) / 180)) return false;
     if (!this.losTo(t, game)) return false;
     this.hitConsumed = true;
-    t.damage(dmg, game, { x: this.pos.x, z: this.pos.z });
+    t.damage(dmg, game, { x: this.pos.x, z: this.pos.z, by: this.kind });
     if (kbH > 0 || kbV > 0) {
       const n = Math.max(0.3, d);
       t.vel.x += (dx / n) * kbH;

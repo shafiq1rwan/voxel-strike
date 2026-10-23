@@ -53,13 +53,13 @@ try {
     g.buildLevel();
     g.state = 'playing';
     g.input.locked = true;
-    // sector 2 steps up gently (it lost ~74% of players as a 12-room jump)
+    // sector 2 plays as in 0.3.4 (a gentler one was tried and reverted)
     const tickers = g.level.enemies.filter((e) => e.kind === 'ticker');
     const perRoom = {};
     for (const t of tickers) perRoom[t.roomId] = (perRoom[t.roomId] ?? 0) + 1;
     const occupied = new Set(g.level.enemies.map((e) => e.roomId));
     const quiet = g.level.rooms.filter((r) => r.kind === 'normal' && !occupied.has(r.id)).length;
-    const s2 = { rooms: g.level.rooms.length, quiet, tickers: tickers.length, maxPack: Math.max(0, ...Object.values(perRoom)) };
+    const s2 = { rooms: g.level.rooms.length, quiet, enemies: g.level.enemies.length, tickers: tickers.length, maxPack: Math.max(0, ...Object.values(perRoom)) };
     // the exit pad is the threshold of an exit door in the back wall
     const sign = g.level.exitSign, pad = g.level.exitPad;
     s2.gate = !!sign && !!pad && sign.y === pad.y &&
@@ -70,8 +70,8 @@ try {
   check(opener.rooms <= 7 && !opener.brute && !opener.ticker && opener.shotgunAtSpawn,
     `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no tickers, shotgun in the spawn room`);
   check(opener.s2.gate, `the exit pad sits against the back wall under the EXIT sign (${opener.s2.gateFace} wall)`);
-  check(opener.s2.rooms >= 11 && opener.s2.rooms <= 13 && opener.s2.tickers >= 1 && opener.s2.maxPack === 1 && opener.s2.quiet >= 1,
-    `sector 2 is full length but gentle: ${opener.s2.rooms} rooms (11–13), ${opener.s2.quiet} quiet room(s), ${opener.s2.tickers} lone ticker(s), no packs (largest ${opener.s2.maxPack})`);
+  check(opener.s2.rooms >= 11 && opener.s2.rooms <= 13 && opener.s2.quiet === 0 && opener.s2.enemies >= 30,
+    `sector 2 plays as in 0.3.4: ${opener.s2.rooms} rooms (11–13), every room past spawn holds enemies (${opener.s2.quiet} empty), ${opener.s2.enemies} enemies`);
   await new Promise((r) => setTimeout(r, 300));
 
   // --- 1a. ticker charges the player and self-destructs -----------------------
@@ -1336,6 +1336,11 @@ try {
           return a > 0 && a < 5 && t > 0 && t < 2;
         });
         if (enemyInside) bad.push(`${seed}/${depth}: an enemy spawns in the cage`);
+        // never built over the secret room's cracked wall (Block.Cracked = 12)
+        for (let a = -1; a <= 5; a++) {
+          const x = Math.floor(c.ox + c.ux * (a + 0.5) - c.nx * 0.5), z = Math.floor(c.oz + c.uz * (a + 0.5) - c.nz * 0.5);
+          for (let y = 1; y <= 3; y++) if (L.world.get(x, y, z) === 12) { bad.push(`${seed}/${depth}: the cage hides the cracked wall`); a = 6; break; }
+        }
       }
       // the sector 1 opener and the Biofoundry (it has its tanks) never get one;
       // only the core has the steam + signs
@@ -1615,6 +1620,161 @@ try {
     check(up.hud.length === 0, `held upright: the rotated HUD clears the notch and home bar${up.hud.length ? ' — ' + up.hud.join(' ') : ''}`);
   }
 
+  // --- 24. scrap + permanent upgrades (docs/RETENTION_PLAN.md, phase 1) -------
+  // Kills, clears, secrets and the Power Link earn scrap that is never lost;
+  // the death screen shows it with an Upgrades button; upgrades are bought,
+  // saved, and do what their rows say.
+  {
+    const up = await browser.newPage();
+    up.on('pageerror', (err) => errors.push(`[pageerror] ${err.message}`));
+    up.on('console', (msg) => { if (msg.type() === 'error') errors.push(`[console.error] ${msg.text()}`); });
+    await up.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    // earlier sections earned scrap in this same browser: start from an empty save
+    await up.evaluate(() => localStorage.removeItem('voxelstrike-upgrades'));
+    await up.reload({ waitUntil: 'networkidle0', timeout: 30000 });
+    await up.waitForSelector('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    await up.click('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    const kills = await up.evaluate(async () => {
+      const g = window.__voxelstrike;
+      g.hud.clearHint();
+      g.levelIndex = 2;
+      g.buildLevel();
+      g.state = 'playing';
+      g.input.locked = true;
+      const s0 = g.upgrades.scrap;
+      const scrapAt = () => g.pickups.items.filter((p) => p.spec.kind === 'scrap' && !p.taken);
+      const husk = g.enemies.list.find((e) => e.alive && e.kind === 'husk');
+      g.applyEnemyHit(husk, 9999, 1, 0, false);
+      const huskDrop = scrapAt().map((p) => p.spec.amount);
+      const brute = g.enemies.list.find((e) => e.alive && e.kind === 'brute');
+      g.applyEnemyHit(brute, 99999, 1, 0, false);
+      const drops = scrapAt().map((p) => p.spec.amount);
+      const banked = g.upgrades.scrap - s0; // nothing until it's picked up
+      // walk onto each one: it banks
+      for (const p of scrapAt()) {
+        g.player.pos.x = p.spec.x; g.player.pos.z = p.spec.z; g.player.pos.y = Math.floor(p.spec.y);
+        g.player.vel.set(0, 0, 0);
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      return { huskDrop, drops, banked, gained: g.upgrades.scrap - s0, hud: document.querySelector('#scrap-num')?.textContent, bank: g.upgrades.scrap,
+        saved: JSON.parse(localStorage.getItem('voxelstrike-upgrades') || '{}').scrap };
+    });
+    check(kills.huskDrop.join() === '1' && kills.drops.slice().sort().join() === '1,5' && kills.banked === 0,
+      `kills DROP scrap as pickups (husk ${kills.huskDrop.join()}, then ${kills.drops.join(' + ')}), nothing banked until picked up`);
+    check(kills.gained === 6 && kills.saved === 6 && kills.hud === String(kills.bank), `picking them up banks +${kills.gained}, saved (${kills.saved}), the HUD shows ${kills.hud}`);
+    // die: the death screen shows this attempt's scrap and an Upgrades button
+    await up.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.earnScrap(400);
+      g.player.buffs.shield = 0;
+      g.player.damage(9999, g, { x: g.player.pos.x + 1, z: g.player.pos.z, by: 'husk' });
+    });
+    await new Promise((r) => setTimeout(r, 2400));
+    const death = await up.evaluate(() => ({ line: document.querySelector('.death-scrap')?.textContent ?? '', btn: !!document.querySelector('#upgrades-btn') }));
+    check(/\+406 SCRAP/.test(death.line) && /406 to spend/.test(death.line) && death.btn, `the death screen shows the attempt's scrap and an Upgrades button ("${death.line}")`);
+    await up.evaluate(() => document.querySelector('#upgrades-btn').click());
+    await new Promise((r) => setTimeout(r, 300));
+    const buy = await up.evaluate(async () => {
+      const g = window.__voxelstrike;
+      const rows = document.querySelectorAll('#upgrades-screen .upg-row').length;
+      const before = g.upgrades.scrap;
+      for (const id of ['suit', 'plates', 'medic', 'hands', 'headstart']) document.querySelector(`.upg-buy[data-id="${id}"]`).click();
+      await new Promise((r) => setTimeout(r, 100));
+      const pips = document.querySelector('[data-row="suit"] .upg-pips i.on') !== null;
+      return { rows, spent: before - g.upgrades.scrap, maxHealth: g.player.maxHealth, hands: g.weapons.quickHands, pips,
+        saved: JSON.parse(localStorage.getItem('voxelstrike-upgrades')).levels };
+    });
+    check(buy.rows === 7 && buy.spent === 250 && buy.pips, `the Upgrades screen lists 7 upgrades; five buys cost 250 scrap (${buy.spent}) and fill their pips`);
+    check(buy.maxHealth === 110 && buy.hands === 1 && buy.saved.suit === 1 && buy.saved.headstart === 1,
+      `Reinforced Suit raises max health to 110 (${buy.maxHealth}), Quick Hands reaches the weapons, the levels are saved`);
+    await up.screenshot({ path: 'scripts/shots/features-upgrades.png' });
+    const tooPoor = await up.evaluate(() => {
+      const g = window.__voxelstrike;
+      while (g.upgrades.scrap >= 50) { if (!g.upgrades.buy('belt') && !g.upgrades.buy('scanner')) break; }
+      const left = g.upgrades.scrap;
+      const ok = g.upgrades.buy('scanner');
+      return { refused: !ok && g.upgrades.scrap === left };
+    });
+    check(tooPoor.refused, 'a buy without enough scrap is refused and costs nothing');
+    // back to the death screen, retry: Starter Plates arms you, the suit's cap holds
+    await up.evaluate(() => document.querySelector('#upgrades-back').click());
+    await new Promise((r) => setTimeout(r, 900));
+    const retry = await up.evaluate(async () => {
+      const g = window.__voxelstrike;
+      const onDeath = !!document.querySelector('#retry-btn');
+      document.querySelector('#retry-btn').click();
+      await new Promise((r) => setTimeout(r, 1200));
+      return { onDeath, state: g.state, armor: g.player.armor, maxHealth: g.player.maxHealth };
+    });
+    check(retry.onDeath && retry.state === 'playing' && retry.armor >= 10 && retry.maxHealth === 110,
+      `Back returns to the death screen; the retry starts with Starter Plates armor (${retry.armor})`);
+    const medic = await up.evaluate(async () => {
+      const g = window.__voxelstrike;
+      g.player.health = 50;
+      const p = g.player.pos;
+      g.spawnPickup('healthSmall', p.x, p.y - 0.4, p.z);
+      await new Promise((r) => setTimeout(r, 300));
+      return g.player.health;
+    });
+    check(medic === 62, `Field Medic: a medkit heals 12 instead of 10 (50 → ${medic})`);
+    const run = await up.evaluate(async () => {
+      const g = window.__voxelstrike;
+      g.newRunNow(false);
+      await new Promise((r) => setTimeout(r, 400));
+      return { smg: g.weapons.has('smg'), health: g.player.health, maxHealth: g.player.maxHealth, scrap: g.upgrades.scrap };
+    });
+    check(run.smg && run.health === 110, `Head Start: a new run carries the Ripper SMG and starts at full health (${run.health} / ${run.maxHealth}); scrap is kept`);
+    // a sector clear pays out and says so under the tally
+    const clear = await up.evaluate(async () => {
+      const g = window.__voxelstrike;
+      const s0 = g.upgrades.scrap;
+      g.win();
+      await new Promise((r) => setTimeout(r, 400));
+      return { gained: g.upgrades.scrap - s0, line: document.querySelector('.sc-scrap')?.textContent ?? '' };
+    });
+    check(clear.gained >= 20 && /SCRAP/.test(clear.line), `a sector clear earns scrap (+${clear.gained}) and the tally shows it ("${clear.line}")`);
+    // it all survives a reload
+    await up.reload({ waitUntil: 'networkidle0' });
+    await up.waitForSelector('#start-btn');
+    const kept = await up.evaluate(() => {
+      const g = window.__voxelstrike;
+      return { suit: g.upgrades.level('suit'), plates: g.upgrades.level('plates'), scrap: g.upgrades.scrap, maxHealth: g.player.maxHealth };
+    });
+    check(kept.suit === 1 && kept.plates === 1 && kept.maxHealth === 110, `upgrades survive a reload (suit ${kept.suit}, max health ${kept.maxHealth}, scrap ${kept.scrap})`);
+    // the Armory on the title opens them too
+    await up.evaluate(() => document.querySelector('#title-armory-btn').click());
+    await new Promise((r) => setTimeout(r, 400));
+    const fromArmory = await up.evaluate(async () => {
+      const b = document.querySelector('#armory-upgrades');
+      const label = b?.textContent ?? '';
+      b?.click();
+      await new Promise((r) => setTimeout(r, 300));
+      const open = !!document.querySelector('#upgrades-screen');
+      document.querySelector('#upgrades-back')?.click();
+      await new Promise((r) => setTimeout(r, 300));
+      return { label, open, back: !!document.querySelector('#armory-screen') };
+    });
+    check(fromArmory.open && fromArmory.back && /scrap/i.test(fromArmory.label), `the Armory's "${fromArmory.label}" button opens Upgrades, and Back returns to the Armory`);
+    // a phone: the screen fits and Back is reachable
+    // (switching to a touch viewport reloads the page: back to the title)
+    await up.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
+    await up.waitForSelector('#title-armory-btn');
+    await up.evaluate(() => document.querySelector('#title-armory-btn').click());
+    await up.waitForSelector('#armory-upgrades');
+    await up.evaluate(() => document.querySelector('#armory-upgrades').click());
+    await up.waitForSelector('#upgrades-back');
+    const phone = await up.evaluate(() => {
+      const scr = document.querySelector('#upgrades-screen');
+      const back = document.querySelector('#upgrades-back').getBoundingClientRect();
+      return { noH: document.documentElement.scrollWidth <= innerWidth && scr.scrollWidth <= scr.clientWidth + 1, back: back.top >= 0 && back.bottom <= innerHeight };
+    });
+    await up.screenshot({ path: 'scripts/shots/features-upgrades-phone.png' });
+    check(phone.noH && phone.back, 'phone: the Upgrades screen fits the width and Back is reachable');
+    await up.close();
+  }
+
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
   // Desktop defaults to 480 lines, touch to 320 (above), still cycled in
@@ -1639,7 +1799,7 @@ try {
     check(!fresh.coop, 'the main screen has no co-op button (same as Poki)');
     check(await pc.evaluate(() => window.__voxelstrike.overload === null), 'the Overload terminal is hidden in normal play (only ?overload builds it)');
     const first = await pc.evaluate(() => {
-      const play = document.querySelector('#start-btn');
+      const play = document.querySelector('#play-btn');
       const steps = [...document.querySelectorAll('#title-steps .tstep-text')].map((t) => t.textContent.replace(/\s+/g, ' ').trim());
       const buttons = [...document.querySelectorAll('#title-screen button')].map((b) => b.id);
       const r = play.getBoundingClientRect();
@@ -1648,10 +1808,10 @@ try {
         goal: document.querySelector('.title-goal')?.textContent, playOnScreen: r.bottom <= innerHeight,
       };
     });
-    check(first.play === 'Play' && first.playOnScreen && first.goal === 'Escape the facility' && first.steps.length === 3 && /keycard/i.test(first.steps[0]),
-      `first visit: the goal, three steps and one PLAY button ("${first.goal}": ${first.steps.join(' > ')})`);
-    check(first.buttons.join() === 'title-settings-btn,title-armory-btn,start-btn' && !first.banner,
-      `first visit: PLAY plus the two corner buttons (settings, armory), no NEW SECTOR banner (${first.buttons.join(', ')})`);
+    check(first.play === 'Play' && first.playOnScreen && first.goal === 'Survive the waves' && first.steps.length === 3 && /wave/i.test(first.steps[0]),
+      `first visit: the Survival goal, three steps and one PLAY button ("${first.goal}": ${first.steps.join(' > ')})`);
+    check(first.buttons.join() === 'title-settings-btn,title-armory-btn,play-btn,start-btn' && !first.banner,
+      `first visit: PLAY, the quiet Campaign button and the two corner buttons, no NEW SECTOR banner (${first.buttons.join(', ')})`);
     await pc.screenshot({ path: 'scripts/shots/features-title-first.png' });
     // a returning player who hasn't reached the Biofoundry yet gets the banner
     await pc.evaluate(() => localStorage.setItem('voxelstrike-tutorial-done', '1'));

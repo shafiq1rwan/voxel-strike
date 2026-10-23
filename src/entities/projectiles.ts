@@ -209,7 +209,8 @@ export class ProjectilePool {
               minZ: pl.pos.z - pl.half.z, maxZ: pl.pos.z + pl.half.z,
             });
             if (t !== null) {
-              pl.damage(ENEMY_SHOT_DAMAGE[p.kind === 'acid' ? 'acid' : p.kind === 'slag' ? 'slag' : 'bolt'], game, { x: p.x - p.dx * 2, z: p.z - p.dz * 2 });
+              pl.damage(ENEMY_SHOT_DAMAGE[p.kind === 'acid' ? 'acid' : p.kind === 'slag' ? 'slag' : 'bolt'], game,
+                { x: p.x - p.dx * 2, z: p.z - p.dz * 2, by: p.kind === 'acid' ? 'broodkeeper' : p.kind === 'slag' ? 'kilnDrone' : 'sentinel' });
               if (p.kind === 'acid') game.particles.impact(p.x, p.y, p.z, -p.dx, -p.dy, -p.dz, 0.6, 1, 0.25);
               else game.particles.impact(p.x, p.y, p.z, -p.dx, -p.dy, -p.dz, p.kind === 'slag' ? 1 : .4, p.kind === 'slag' ? .5 : .8, p.kind === 'slag' ? .05 : 1);
               game.audio.play('boltHit', { x: p.x, y: p.y, z: p.z });

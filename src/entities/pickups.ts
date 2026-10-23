@@ -31,6 +31,7 @@ const GLOW_COLORS: Record<PickupKind, number> = {
   powerQuad: 0xffd028,
   powerShield: 0x55e0ff,
   powerHaste: 0xff8030,
+  scrap: 0xe0b040,
 };
 
 /** stronger point-glow for the important pickups */
@@ -237,6 +238,21 @@ const BUILDERS: Record<PickupKind, () => THREE.Object3D> = {
     g.add(core, ringA, ringB, ringC);
     return g;
   },
+  // scrap: a brass nut on a steel offcut — small, it drops on every kill (3 draws)
+  scrap: () => {
+    const g = new THREE.Group();
+    const plate = box(0.26, 0.06, 0.18, 0x8a96ac);
+    plate.rotation.z = 0.35;
+    const nut = box(0.16, 0.16, 0.16, 0xe0b040);
+    nut.rotation.set(Math.PI / 4, 0, Math.PI / 4);
+    nut.position.set(0.04, 0.08, 0);
+    const bolt = box(0.05, 0.2, 0.05, 0xfff0b0);
+    bolt.position.set(-0.08, 0.06, 0.04);
+    bolt.rotation.x = 0.5;
+    g.add(plate, nut, bolt);
+    g.scale.setScalar(1.3); // reads at range next to an ammo box
+    return g;
+  },
   powerHaste: () => {
     const g = new THREE.Group();
     // jagged bolt: three offset shards
@@ -352,6 +368,7 @@ export class PickupManager {
 
   /** a thrown gun comes back only if it isn't in hand again already */
   private wants(p: Pickup, game: Game): boolean {
+    if (p.spec.kind === 'scrap') return true;
     if (p.spec.thrown) {
       const id = THROWN_GUN[p.spec.kind];
       return !!id && !game.weapons.has(id);
@@ -403,10 +420,11 @@ export class PickupManager {
       const dy = pl.pos.y - p.obj.position.y;
       const dz = pl.pos.z - p.obj.position.z;
       const d2 = dx * dx + dy * dy + dz * dz;
-      // magnetism: useful items drift toward the player
-      if (d2 < 6.25 && d2 > 0.5 && this.wants(p, game)) {
+      // magnetism: useful items drift toward the player; scrap flies in from further
+      const scrap = p.spec.kind === 'scrap';
+      if (d2 < (scrap ? 20 : 6.25) && d2 > 0.5 && this.wants(p, game)) {
         const d = Math.sqrt(d2);
-        const pull = (7.5 * dt) / d;
+        const pull = Math.min(1, ((scrap ? 12 : 7.5) * dt) / d);
         p.obj.position.x += dx * pull;
         p.obj.position.z += dz * pull;
         p.spec.x = p.obj.position.x;
@@ -418,6 +436,9 @@ export class PickupManager {
         if (game.isNetClient) {
           // the host owns pickups: ask for it, apply on the echo
           if (this.wouldCollect(p.spec.kind, game)) game.net?.claimPickup(this.items.indexOf(p));
+        } else if (scrap) {
+          this.take(p);
+          game.collectScrap(p.spec.amount ?? 1);
         } else if (p.spec.thrown ? this.reclaim(p, game) : this.tryCollect(p.spec.kind, game)) {
           this.take(p);
           game.net?.sendPickupTaken(this.items.indexOf(p), false, p.spec.kind);
@@ -450,6 +471,30 @@ export class PickupManager {
         else this.group.remove(p.obj, p.glow);
       }
     }
+  }
+
+  /**
+   * Scrap within `r` of (x, z) that hasn't been picked up yet (a new drop
+   * joins it instead of adding another pickup: fewer draws in a big fight).
+   */
+  nearScrap(x: number, z: number, r: number): PickupSpec | null {
+    for (const p of this.items) {
+      if (p.taken || p.spec.kind !== 'scrap') continue;
+      const dx = p.spec.x - x, dz = p.spec.z - z;
+      if (dx * dx + dz * dz < r * r) return p.spec;
+    }
+    return null;
+  }
+
+  /** every scrap pickup still lying about is taken; returns what it was worth (wave / sector clear) */
+  sweepScrap(): number {
+    let n = 0;
+    for (const p of this.items) {
+      if (p.taken || p.spec.kind !== 'scrap') continue;
+      n += p.spec.amount ?? 1;
+      this.take(p);
+    }
+    return n;
   }
 
   private take(p: Pickup): void {
@@ -488,13 +533,13 @@ export class PickupManager {
     };
     switch (kind) {
       case 'healthSmall':
-        if (!pl.heal(10)) return false;
-        sfx('pickup', 'Picked up a medkit. +10');
+      case 'healthBig': {
+        // Field Medic (a permanent upgrade) makes every pickup heal more
+        const n = Math.round((kind === 'healthSmall' ? 10 : 25) * game.healMult());
+        if (!pl.heal(n)) return false;
+        sfx('pickup', kind === 'healthSmall' ? `Picked up a medkit. +${n}` : `Picked up a supply cache. +${n}`);
         return true;
-      case 'healthBig':
-        if (!pl.heal(25)) return false;
-        sfx('pickup', 'Picked up a supply cache. +25');
-        return true;
+      }
       case 'armorShard':
         if (!pl.addArmor(5)) return false;
         sfx('pickup', 'Picked up an armor shard. +5');
@@ -564,6 +609,8 @@ export class PickupManager {
         pl.buffs.haste = 25;
         sfx('powerup', 'ADRENALINE — faster legs, faster trigger. 25 seconds.');
         return true;
+      case 'scrap':
+        return false; // collected in update() (it carries an amount)
     }
   }
 }

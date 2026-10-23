@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Game, PreviewArt } from '../game';
 import { wallPerimeter, type GeoLayout, type LevelData } from '../world/levelgen';
 import { Block } from '../world/blocks';
+import { SCRAP_POWER_LINK } from '../core/upgrades';
 
 /**
  * The optional Power Link puzzle (`LevelData.powerLink`: facility sectors from
@@ -230,6 +231,7 @@ export function decorateGeothermal(level: LevelData): PreviewArt {
         for (const pk of level.pickups) if (pk.sealed) pk.sealed = false;
         game.audio.play('pickupWeapon');
         game.hud.message('CACHE OPEN — collect your supplies.');
+        game.earnScrap(SCRAP_POWER_LINK);
       }
     }
   };

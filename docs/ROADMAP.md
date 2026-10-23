@@ -31,6 +31,11 @@ level 5 → 28, endless 6 → 13. Every step loses about half except sector 2
 
 ## Planned
 
+### 0. Retention plan (2026-10-22)
+Scrap + permanent upgrades, Survival mode, three new map themes (Codex),
+secret map weapons — in that order. Full design, data and the Codex theme
+brief: [RETENTION_PLAN.md](RETENTION_PLAN.md).
+
 ### 1. Store thumbnails
 Static 628×628+ tile, no text, one subject in motion, dark palette against
 Poki's aqua page. Brief and prompts: `reference/poki-thumbnail-prompts.md`.
@@ -55,14 +60,57 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
-- 2026-10-20 — Sectors 2–3 full length again (owner: the shorter ones
-  "don't feel like last time"; "we want to retain and let them explore"):
-  11–13 / 12–14 rooms like before the ramp, but the enemy count stays
-  gentle — 40% / 25% of plain rooms are quiet (no enemies), lone tickers in
-  sector 2. Sector 2 averages ~23 enemies (pre-ramp ~46, the short build
-  ~20). The optional POWER LINK supply cache is now in every facility
-  sector from 2 too, as something to find off the route. Watch the level 2
-  `fail` vs `complete` split in the next playtest.
+- 2026-10-23 — Survival, owner's second round: scrap DROPS from every kill
+  as a pickup that flies to you, with a scrap counter on the HUD (credits
+  merged into scrap — one currency); the wave break is split into the pick
+  of three, then a shop of gun cards with a picture of each gun and a big
+  Continue (skipped when nothing is affordable).
+
+- 2026-10-23 — Survival, owner's first playtest fixes: ammo drops more often
+  (more when you're low) and always land on the floor; arrivals glow red for
+  1.1 s and the enemy rises out of the floor, only where you can see it;
+  guns are bought between waves with credits (shop on the wave-clear
+  screen) instead of handed out; weapon slots fill in pickup order
+  everywhere; the arena is ~32 × 30 with cover (walls, half walls, a
+  container, pillars) and crates / barrels to blow up, and enemies follow a
+  flow field around the cover.
+
+- 2026-10-23 — SURVIVAL is the main mode (owner, after research on what keeps
+  web players 10+ minutes — docs/RETENTION_PLAN.md §4). PLAY drops you into a
+  sealed arena; waves spawn at its edges, kills drop supplies, a pick of
+  three after every wave, guns arrive at waves 2/4/6/8, every 5 waves the map
+  changes (Facility → Biofoundry → Geothermal Core), death shows the wave
+  reached vs your best with Try again / Upgrades. The campaign stays behind a
+  quiet *Campaign* button. Poki: `wave N start/complete/fail`. Next: a
+  Player Fit Test against 0.3.4 (≈5:00), then tune the wave pacing.
+
+- 2026-10-23 — Retention plan phase 1: scrap + permanent upgrades. Every
+  kill, sector clear, secret and Power Link cache earns scrap that is never
+  lost; the death screen shows this attempt's scrap with an *Upgrades*
+  button, so a death in sector 2 still moves the player forward. 7 upgrades
+  × 3 tiers (Reinforced Suit, Starter Plates, Field Medic, Ammo Belt, Quick
+  Hands, Head Start, Scanner) at 50 / 120 / 250; also reachable from the
+  Armory. Enemy rules unchanged (0.3.4). Measure: sector 2 deaths per clear
+  (~6 now) and clear rate (26%), plus the `upgrade` buy events.
+
+- 2026-10-22 — Poki diagnostics for the next upload (2026-10 Web Fit Test
+  data, 4 days: 14,333 loads, 10,875 runs; sector 1 cleared by 40%, but 37%
+  of runs left it with no death or clear; sector 2 cleared by 26% of those
+  who reached it at ~6 deaths per clear vs ~1 in sector 1 — yet a first-time
+  11-year-old cleared it easily, so the cause is open). Added: `level N
+  start` (fills Poki's Started / Completed / Failed / Left columns, which
+  read 0% before), `death N <killer>` with every fail, and `playtime N
+  reached` at minute marks. Gameplay unchanged (0.3.4 rules). Decide the
+  sector 1 / sector 2 changes from the next test's Left column, killers and
+  playtime marks.
+
+- 2026-10-20 — Sectors 2–5 play as in 0.3.4 again (owner: "revert to 0.3.4";
+  the gentler sector 2 — first 8–9 rooms, then full length with quiet rooms
+  and lone tickers — felt too short and too empty). Same rules, same enemy
+  counts (~46 in sector 2). The optional POWER LINK supply cache is now in
+  every facility sector from 2 too, placed after spawns so it never shifts a
+  layout. The sector 2 drop-off from the Player Fit Test is open again:
+  watch the level 2 `fail` vs `complete` split in the next playtest.
 
 - 2026-10-20 — Safe area on notched phones (owner asked): the page was
   already edge to edge (`viewport-fit=cover`) with nothing keeping the HUD
@@ -107,8 +155,8 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
   mechanical exit lift (masts, crossbrace, drive box, carriages, status
   lamps), yellow ledge railing, a green EXIT sign over the pad, warm lighting
   and crates. Replaced the chevron beams and an exit door tried first.
-- 2026-10-19 — Gentler sector 1 → 3 ramp (Player Fit Test: sector 2 lost
-  ~74%). Sector 2: 8–9 rooms (was 11–13), lone tickers in ~25% of rooms plus
+- 2026-10-19 — (REVERTED 2026-10-20, see above) Gentler sector 1 → 3 ramp
+  (Player Fit Test: sector 2 lost ~74%). Sector 2: 8–9 rooms (was 11–13), lone tickers in ~25% of rooms plus
   one guaranteed to introduce them, no extra far-room enemy. Sector 3:
   10–11 rooms (was 12–14), ticker pairs at most. Sector 4 on unchanged.
   Average enemies per sector over 30 seeds: 12 → 20 → 39 → 61 (was 12 → 46

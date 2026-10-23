@@ -89,25 +89,38 @@ which the Poki build ignores. If it comes back: its offer/reward screens use
 the `overload` state, so the per-frame SDK bridge stops gameplay while a
 choice is open, and they request no ad breaks or measure events.
 
-Deliberately small: the game sends **15 campaign events plus 2 endless ones**, enough to answer "how many
-started playing", "who passed each level" and "how many times players died". Everything else (loads, plays,
+Deliberately small: progress events per sector, plus two diagnostics (`death` and `playtime`, added
+after the 2026-10 Web Fit Test), enough to answer "how many started playing", "who passed each level",
+"how many times players died", "who quit mid-sector", "what kills them" and "when do sessions end". Everything else (loads, plays,
 ads, playtime) Poki already tracks on its own. None of the values may contain
 `/` or `^`.
 
 | category | what | action | Fired when |
 |---|---|---|---|
 | `level` | `1` | `fresh-start` | A new run begins: title *Play*, *New run* (title or death screen), or *Play a new layout*. Not sent on *Retry sector* or *Continue* |
+| `level` | `1` – `7` | `start` | An attempt at that sector begins: a new run, the next sector, *Continue*, *Retry sector*, a keycard retry. A revive continues the same attempt and sends nothing |
 | `level` | `1` – `7` | `complete` | That sector's exit pad is reached |
 | `level` | `1` – `7` | `fail` | The player dies in that sector (solo) |
+| `endless` | `8` – `20` | `start` | An attempt at that endless depth begins (same cap) |
 | `endless` | `8` – `20` | `complete` | An endless depth past sector 7 is cleared (depth 20 and deeper all report as `20`) |
 | `endless` | `8` – `20` | `fail` | The player dies at that endless depth (same cap) |
+| `death` | `1` – `20` (sector / depth, capped) | what landed the killing hit: `husk`, `sentinel`, `ticker`, `brute`, `vatborn`, `broodkeeper`, `cinderHulk`, `ventStalker`, `kilnDrone`, `barrel`, `rocket` (their own), `explosion`, `unknown` | Sent with every `fail` (solo). In the dashboard: death → 2 → ticker / brute / … — a difficulty spike shows up as one killer |
+| `wave` | `1` – `30` (capped) | `start` / `complete` / `fail` | SURVIVAL (the main mode): a wave begins, is cleared, or the run dies in it. Survival sends no `level` events; its deaths send `death` → `wN` → killer |
+| `upgrade` | `suit` `plates` `medic` `belt` `hands` `headstart` `scanner` | `tier1` – `tier3` | A scrap upgrade is bought (docs/RETENTION_PLAN.md). Shows which upgrades players want and how far they save up; tune the costs from it |
+| `playtime` | `1` `2` `3` `4` `5` `6` `7` `8` `10` `12` `15` `20` `30` | `reached` | That many minutes of real play this page load (state `playing` only: menus, ads, death and clear screens don't count). Once per mark per load. Shows when sessions end — e.g. whether sector 1 quitters leave in the first minute or after three |
 
 Since sectors 6–7 (the Geothermal Core) joined the campaign, builds before
 it reported depths 6–7 as `endless 6` / `endless 7`; newer ones report them
 as `level 6` / `level 7`. Compare playtests across that change with care.
 
+**`start` is what fills Poki's Started / Completed / Failed / Left columns**
+(Completed and Failed are shares of `start`; Left = started, then neither
+completed nor failed — the player quit mid-sector). Builds up to 0.3.4 sent
+no `start`, so those columns read 0% for every level; only the Gameplays
+counts are usable for them.
+
 In the Game Events tab they group as `level` → `1` … `7` →
-`fresh-start` / `complete` / `fail`, which reads as a funnel:
+`fresh-start` / `start` / `complete` / `fail`, which reads as a funnel:
 
 **level 1 fresh-start** (played) → **level 1 complete** → **level 2 complete** →
 **level 3 complete** (reached the Biofoundry) → **level 4 complete** →
@@ -122,14 +135,19 @@ only the standalone `?sector4` hand-built preview stays web-only.
   (or started another run). Poki's own load count includes people who left
   on the title screen.
 - **Passed level N** = `level N complete`.
+- **Quit mid-sector N** = the Left column on `level N` (a `start` with no
+  `complete` or `fail` after it). Left vs Failed tells "too hard" from "lost
+  interest".
 - **Total deaths** = every `level N fail` plus every `endless N fail`. Each
   death sends exactly one `fail`, and the split shows which sector kills
   players most.
 - Counts are events, not unique players: someone who clears sector 1 in two
   separate runs counts twice.
 
-Earlier versions of the code also sent `level start`, `campaign`,
-`keycard` and `secret` events; they were cut to keep the dashboard simple.
+Earlier versions of the code also sent `campaign`, `keycard` and
+`secret` events; they were cut to keep the dashboard simple. `level start`
+was cut with them and came back (2026-10-20): without it Poki's
+Started / Completed / Failed / Left columns stay at 0%.
 
 ### Adding an event
 
