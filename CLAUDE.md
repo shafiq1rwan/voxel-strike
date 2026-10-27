@@ -653,6 +653,16 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 
 ## Facility sector monsters (2026-10-27)
 
+**The per-sector pairs are OFF** (owner's call, 2026-10-27: "I prefer the
+previous monsters for sectors 1–3, v2 feels weird"): `FACILITY_ROSTERS =
+false` in rosters.ts, so sectors 1–3 and endless Facility depths keep the
+generator's 0.3.4 mix (sector 1 Husk + Arc Sentinel, no tickers or brute;
+2–3 Husk / Arc Sentinel / Ticker / Brute) and the keycard alarm its generic
+mix. Everything below stays in the code, spawnable and tested by
+`facility-monsters.mjs` / `facility-rigs.mjs`; flip the flag to bring the
+pairs back. The retunes of the Husk / Brute / Arc Sentinel (BEHAVIOURS.md,
+sheet 01 look, the 40 HP Sentinel) are separate and still apply.
+
 Each Facility sector has its own two monsters (reference/sector-monsters-v2,
 BEHAVIOURS.md §1–3): 1 Facility Entry = Husk + **Ticker**, 2 Security
 Floor = **Clamp Guard** + Arc Sentinel, 3 Reactor Access = Brute + **Wire
@@ -846,7 +856,11 @@ only its own pair.
   `Input` abstraction; pointer lock is skipped entirely and pause runs through
   `Game.requestPause()`/`resumeGame()` instead of lock-change events. Touch
   mode adds `body.touch-mode` (mobile HUD = top strip; CSS in hud.ts) and
-  tries fullscreen + orientation lock on start. When held in portrait, the
+  tries fullscreen + orientation lock (`goImmersive`, web builds only) on
+  EVERY way into play — `enterSector` (PLAY, Continue, retry, next sector)
+  and the touch Resume — since it only works inside a tap: asking only on
+  a new run left returning players (who tap Continue) and anyone who swiped
+  out mid-run without it. When held in portrait, the
   whole body gets `.force-landscape` (CSS rotate 90°); Renderer.resize reads
   BODY client dims (not window) and TouchControls.mapXY converts raw touch
   coords into the rotated game space — keep those three in sync. The

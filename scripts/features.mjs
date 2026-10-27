@@ -66,10 +66,9 @@ try {
       (sign.face === 'zmin' || sign.face === 'zmax' ? sign.x === pad.x && Math.abs(sign.z - pad.z) === 1 : sign.z === pad.z && Math.abs(sign.x - pad.x) === 1);
     s2.gateFace = sign?.face;
     s2.kinds = [...new Set(g.level.enemies.map((e) => e.kind))].sort().join();
-    // sector 2's own pair is Clamp Guard + Arc Sentinel (reference/sector-monsters-v2;
-    // facility-monsters.mjs tests them). The sections below test generic mechanics
-    // — the ticker chain, quad, combos, the brute's charge — so add those monsters
-    // here, spread over the normal rooms, with a brute in the arena
+    // sector 2 is the generic mix again (FACILITY_ROSTERS off); the sections below
+    // still want a known set — the ticker chain, quad, combos, the brute's charge —
+    // so add those monsters here, spread over the normal rooms, with a brute in the arena
     const normals = g.level.rooms.filter((r) => r.kind === 'normal');
     const arena = g.level.rooms.find((r) => r.kind === 'arena');
     const extra = [];
@@ -79,12 +78,12 @@ try {
     g.level.totalEnemies += extra.length;
     return { rooms, brute: kinds.has('brute'), ticker: kinds.has('ticker'), shotgunAtSpawn, s2 };
   });
-  // its pair is Husk + Ticker (the Ticker took the Sentry Bud's place, owner's call)
-  check(opener.rooms <= 7 && !opener.brute && opener.ticker && opener.shotgunAtSpawn,
-    `sector 1 is a short opener: ${opener.rooms} rooms, no brute, Tickers beside the Husks, shotgun in the spawn room`);
+  // the Facility's per-sector pairs are off (owner's call): sector 1 is the old opener
+  check(opener.rooms <= 7 && !opener.brute && !opener.ticker && opener.shotgunAtSpawn,
+    `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no ticker nests, shotgun in the spawn room`);
   check(opener.s2.gate, `the exit pad sits against the back wall under the EXIT sign (${opener.s2.gateFace} wall)`);
-  check(opener.s2.rooms >= 11 && opener.s2.rooms <= 13 && opener.s2.quiet === 0 && opener.s2.enemies >= 20 && opener.s2.kinds === 'clampGuard,sentinel',
-    `sector 2 plays as in 0.3.4 with its own pair: ${opener.s2.rooms} rooms (11–13), every room past spawn holds enemies (${opener.s2.quiet} empty), ${opener.s2.enemies} enemies (${opener.s2.kinds})`);
+  check(opener.s2.rooms >= 11 && opener.s2.rooms <= 13 && opener.s2.quiet === 0 && opener.s2.enemies >= 20 && !/clampGuard|wireLeech|sentryBud/.test(opener.s2.kinds),
+    `sector 2 plays as in 0.3.4 with the generic mix: ${opener.s2.rooms} rooms (11–13), every room past spawn holds enemies (${opener.s2.quiet} empty), ${opener.s2.enemies} enemies (${opener.s2.kinds})`);
   await new Promise((r) => setTimeout(r, 300));
 
   // --- 1a. ticker charges the player and self-destructs -----------------------

@@ -44,10 +44,13 @@ try {
   // 1. rosters, straight from the generator
   const rosters = await page.evaluate(async () => {
     const { generateLevel } = await import('/src/world/levelgen.ts');
-    const allowed = { 1: ['husk', 'ticker'], 2: ['clampGuard', 'sentinel'], 3: ['brute', 'wireLeech'] };
+    // the per-sector pairs are OFF (FACILITY_ROSTERS, owner's call 2026-10-27):
+    // sectors 1–3 and endless Facility depths get the generic 0.3.4 mix
+    const generic = ['husk', 'sentinel', 'ticker', 'brute'];
+    const allowed = { 1: ['husk', 'sentinel'], 2: generic, 3: generic };
     const out = {};
     for (const n of [1, 2, 3, 8]) {
-      const band = n === 8 ? 2 : n;
+      const band = n === 8 ? 2 : n; // depth 8: any generic kind
       let ok = true, empty = 0, seen = new Set(), resp = '';
       for (const seed of [12345, 42, 777, 90210, 31337, 2024]) {
         const l = generateLevel(seed, n, 'facility');
@@ -60,13 +63,12 @@ try {
     }
     return out;
   });
-  check(rosters[1].ok && rosters[1].kinds === 'husk,ticker', `sector 1 is Husk + Ticker only (${rosters[1].kinds})`);
-  check(rosters[2].ok && rosters[2].kinds === 'clampGuard,sentinel', `sector 2 is Clamp Guard + Arc Sentinel only (${rosters[2].kinds})`);
-  check(rosters[3].ok && rosters[3].kinds === 'brute,wireLeech', `sector 3 is Brute + Wire Leech only (${rosters[3].kinds})`);
-  check(rosters[8].ok, `endless Facility depth 8 uses one sector roster (${rosters[8].kinds})`);
+  check(rosters[1].ok && /husk/.test(rosters[1].kinds), `sector 1 is the old opener: Husks + Arc Sentinels, no Tickers or Brute (${rosters[1].kinds})`);
+  check(rosters[2].ok && rosters[2].kinds.includes('husk') && rosters[2].kinds.includes('sentinel'), `sector 2 is the generic 0.3.4 mix (${rosters[2].kinds})`);
+  check(rosters[3].ok && rosters[3].kinds.includes('brute'), `sector 3 is the generic 0.3.4 mix (${rosters[3].kinds})`);
+  check(rosters[8].ok, `endless Facility depth 8 is the generic mix too (${rosters[8].kinds})`);
   check([1, 2, 3].every((n) => rosters[n].empty === 0), 'every room past spawn still holds enemies in sectors 1–3');
-  check(rosters[1].resp.includes('ticker') && rosters[2].resp.includes('clampGuard') && rosters[3].resp.includes('wireLeech'),
-    `the keycard alarm comes from the sector's pair (${rosters[1].resp} | ${rosters[2].resp} | ${rosters[3].resp})`);
+  check([1, 2, 3].every((n) => rosters[n].resp === ''), 'the keycard alarm uses the generic mix (no per-sector list)');
 
   // a quiet arena with one test monster in it
   await page.click('#start-btn');

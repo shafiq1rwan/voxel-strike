@@ -16,6 +16,16 @@ import type { EnemyKind, EnemySpec } from '../types';
  */
 export type FacilityBand = 1 | 2 | 3;
 
+/**
+ * OFF (owner's call 2026-10-27: "I prefer the previous monsters for sectors
+ * 1–3, v2 feels weird"): Facility sectors and endless Facility depths keep
+ * the generator's own mix — Husk, Arc Sentinel, Ticker, Brute, as in 0.3.4 —
+ * and the keycard alarm falls back to that mix too. The v2 Facility monsters
+ * (Clamp Guard, Wire Leech, Sentry Bud) and this roster stay in the code,
+ * spawnable and tested; set true to bring the per-sector pairs back.
+ */
+export const FACILITY_ROSTERS = false;
+
 /** which roster a Facility sector / endless depth uses */
 export function facilityBand(n: number): FacilityBand {
   if (n <= 3) return Math.max(1, n) as FacilityBand;

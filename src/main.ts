@@ -14,6 +14,9 @@ if (POKI) {
   void poki.init().then(() => {
     new Game(app);
     poki.loadingFinished();
+    // which upload this page load is: Poki's event tables add every build
+    // together, so without it later events can't be told from older ones
+    poki.measure('build', __APP_VERSION__, 'load');
   });
 } else {
   // ?sector6 opens the geothermal preview, ?sector4 the Biofoundry, ?operative the main-character

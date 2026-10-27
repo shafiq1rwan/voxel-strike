@@ -3,7 +3,7 @@ import { generateSectorLayout, type SectorArchitecture } from './sector-layouts'
 import { dressEnvironment, isNewTheme, ENVIRONMENTS } from './environments';
 import { Block } from './blocks';
 import { RNG } from '../core/rng';
-import { applyFacilityRoster, facilityBand, FACILITY_RESPONSE, applyBioRoster, bioBand, BIO_RESPONSE, applyGeoRoster, geoBand, GEO_RESPONSE } from './rosters';
+import { applyFacilityRoster, facilityBand, FACILITY_RESPONSE, FACILITY_ROSTERS, applyBioRoster, bioBand, BIO_RESPONSE, applyGeoRoster, geoBand, GEO_RESPONSE } from './rosters';
 import { ExitSignSpec, LedgeRailSpec,
   DoorSpec, ElevatorSpec, EnemySpec, PickupSpec, Rect, RoomDef,
 } from '../types';
@@ -1038,7 +1038,8 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   // Every sector (and endless depth) re-casts the generic placements above as
   // its own pair at about the same pressure: Facility 1–3, Biofoundry 4–5,
   // Geothermal Core 6–7. No RNG: the rest of the layout stream is untouched.
-  const band = theme === 'facility' ? facilityBand(difficulty) : null;
+  // (Facility: off — the generic mix, see FACILITY_ROSTERS)
+  const band = theme === 'facility' && FACILITY_ROSTERS ? facilityBand(difficulty) : null;
   const bBand = theme === 'biofoundry' ? bioBand(difficulty, withBoss) : null;
   const gBand = isGeo ? geoBand(difficulty) : null;
   if (band || bBand || gBand) {

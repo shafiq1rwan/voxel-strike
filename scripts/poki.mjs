@@ -127,6 +127,9 @@ try {
   c = await calls(page);
   check(c.includes('commercialBreak'), 'commercialBreak before the run');
   check(c.indexOf('commercialBreak') < c.indexOf('gameplayStart'), 'ad comes before gameplayStart');
+  const builds = c.filter((x) => x.startsWith('measure build'));
+  check(builds.length === 1 && /^measure build \d+\.\d+\.\d+ load$/.test(builds[0]) && c.indexOf(builds[0]) > c.indexOf('gameLoadingFinished'),
+    `every load sends its version once, after gameLoadingFinished (${builds.join(', ')})`);
   check(prog(c).join() === 'measure level 1 fresh-start,measure level 1 start',
     'starting a run sends level 1 fresh-start + level 1 start (Poki\'s Started column needs start)');
 

@@ -113,6 +113,11 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-27 — Facility sectors 1–3 back to the previous monsters (owner:
+  the v2 pairs "feel weird"): `FACILITY_ROSTERS` off, the generic 0.3.4 mix
+  (sector 1 Husk + Arc Sentinel; 2–3 Husk / Sentinel / Ticker / Brute) and
+  its keycard alarm. Clamp Guard, Wire Leech and Sentry Bud stay in the code.
+
 - 2026-10-27 — Sector 1 = Husk + Ticker (owner: the Sentry Bud felt boring
   next to the crawler that rushes and blows up). The Bud's code stays.
 - 2026-10-27 — Geothermal Core sector monsters: sector 6 = Vent Stalker +

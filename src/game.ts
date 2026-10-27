@@ -1181,7 +1181,28 @@ export class Game {
     }
   }
 
+  /**
+   * Touch, web builds: fullscreen + a landscape lock where the platform allows
+   * it (not on Poki — its page owns fullscreen around the game iframe). Only
+   * works inside a tap, so it's asked for on every way into play — PLAY,
+   * Continue, retry, the next sector, Resume — not just a new run: returning
+   * players tap Continue, and anyone who swiped out of fullscreen mid-run gets
+   * it back on their next tap. Outside a tap the browser just refuses.
+   */
+  private goImmersive(): void {
+    if (!this.isTouch || POKI || document.fullscreenElement) return;
+    const lock = (): void => {
+      const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+      orientation.lock?.('landscape').catch(() => {});
+    };
+    const req = document.documentElement.requestFullscreen?.();
+    // the landscape lock needs fullscreen first on most phones
+    if (req) req.then(lock, () => {});
+    else lock();
+  }
+
   private enterSector(message: string, adShown: boolean): void {
+    this.goImmersive();
     this.measureStart();
     this.hud.setScrap(this.scrapEnabled ? this.upgrades.scrap : null);
     this.attemptScrap = 0;
@@ -1489,16 +1510,6 @@ export class Game {
   /** start the sector-1 level that's already built behind the title screen */
   private startGame(adShown = false): void {
     this.audio.init();
-    if (this.isTouch && !POKI) {
-      // go immersive: fullscreen + landscape lock where the platform allows it
-      // (not on Poki — its page owns fullscreen around the game iframe).
-      // Before the preview branch: the Biofoundry start must go fullscreen too.
-      void document.documentElement.requestFullscreen?.().catch(() => {});
-      const orientation = screen.orientation as ScreenOrientation & {
-        lock?: (o: string) => Promise<void>;
-      };
-      orientation.lock?.('landscape').catch(() => {});
-    }
     if (this.preview) {
       this.player.health = 100;
       this.player.armor = 75;
@@ -1799,6 +1810,7 @@ export class Game {
       if (this.state !== 'paused') return;
       this.input.releaseAll();
       if (this.isTouch) {
+        this.goImmersive(); // left fullscreen (swipe / back) while paused: the Resume tap restores it
         this.state = 'playing';
         this.hud.hideScreen();
       } else if (adShown) {
