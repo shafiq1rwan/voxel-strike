@@ -164,7 +164,13 @@ try {
     e.wake(g);
     let spikes = 0, hits = [], hp = 100, painMid = false, coreDmg = 0;
     const t0 = performance.now();
-    while (performance.now() - t0 < 4000) {
+    // until a spike has landed and the core was bared (a slow headless frame
+    // rate stretched one attack past a fixed 4 s window: spikes still in flight)
+    // it stays where it spawned: walking in, it pushed the held spot into a wall
+    // and the out-of-world guard put the player in the fan's gap
+    const ex = e.pos.x, ez = e.pos.z;
+    while (performance.now() - t0 < 10000 && !(hits.length && coreDmg && performance.now() - t0 > 4000)) {
+      e.pos.x = ex; e.pos.z = ez;
       window.__hold(e, 0, 6);
       spikes = Math.max(spikes, g.projectiles.liveList().filter((p) => p[0] === 5).length);
       if (g.player.health < hp) hits.push(hp - g.player.health);

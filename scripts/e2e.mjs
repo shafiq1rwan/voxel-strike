@@ -443,7 +443,9 @@ try {
         g.baseSeed = seed;
         g.levelIndex = sector;
         g.buildLevel();
-        sum[sector].enemies += g.level.totalEnemies;
+        // sectors now field their own monsters (fewer, tougher in 5): compare the
+        // health they field, tank occupants included, the boss left out
+        sum[sector].enemies += g.enemies.list.filter((e) => e.kind !== 'broodkeeper').reduce((s, e) => s + e.maxHp, 0);
         sum[sector].occupied += g.level.bio?.tanks.filter((t) => t.occupied).length ?? 0;
         if (sector === 5 && g.level.theme !== 'biofoundry') theme5 = false;
       }
@@ -454,7 +456,7 @@ try {
   check(harder.sum[5].occupied > harder.sum[4].occupied,
     `sector 5 fills more tanks (${harder.sum[5].occupied} vs ${harder.sum[4].occupied} over 4 seeds)`);
   check(harder.sum[5].enemies > harder.sum[4].enemies,
-    `sector 5 fields more enemies (${harder.sum[5].enemies} vs ${harder.sum[4].enemies} over 4 seeds)`);
+    `sector 5 fields more enemy health (${harder.sum[5].enemies} vs ${harder.sum[4].enemies} hp over 4 seeds)`);
 } finally {
   await browser.close();
 }

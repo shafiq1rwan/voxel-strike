@@ -50,8 +50,9 @@ cheapest high-impact first; reorder once the full tester list is in.
 4. "Hard to kill" = the Sentinel (also the top killer): 40 HP (was 60),
    a slower sidestep and a lazy drift in its firing band, a slightly
    bigger target. Touch look ~30% slower ("too fast" on mobile).
-4b. Survival hidden from players (testers: remove the button); web
-   builds keep it behind ?survival.
+4b. Survival hidden from players (testers: remove the button), then
+   REMOVED from the code (owner, 2026-10-27): upkeep with every new
+   monster and map for a mode no player sees.
 5. Halve the player's own rocket and barrel damage (~65 self-inflicted
    deaths in the events).
 6. Upgrades where players see them: a button on the sector-clear screen
@@ -112,6 +113,9 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-27 — Survival removed (owner): the mode, its screens, the arena
+  dressing, the flow field and survival.mjs. Scrap, upgrades and perks stay
+  in the campaign. In git history up to 68832ba.
 - 2026-10-23 — 0.3.6: PLAY is the campaign again (Survival as PLAY scored
   ~2:00 against the campaign's ~5:00 with the same audience); Survival is a
   quiet button under it. The campaign keeps everything built for Survival

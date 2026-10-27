@@ -289,9 +289,7 @@ export class BioMonster {
       else {
         // find a 5–10 u lane: close in, back off, or sidle while it reloads
         let nx = dx / dist, nz = dz / dist, speed = e.tuning.speed;
-        const via = e.navAround(dt, target, game);
-        if (via) { nx = via[0]; nz = via[1]; }
-        else if (los && dist < SPIT_MIN) { nx = -nx; nz = -nz; speed *= 0.8; }
+        if (los && dist < SPIT_MIN) { nx = -nx; nz = -nz; speed *= 0.8; }
         else if (los && dist <= SPIT_MAX) {
           this.strafeT -= dt;
           if (this.strafeT <= 0) { this.strafe = -this.strafe; this.strafeT = 1.4 + Math.random(); }
@@ -304,9 +302,7 @@ export class BioMonster {
       const ahead = Math.abs(angleTo(this.face, wantYaw));
       if (los && dist < CARA_RANGE && ahead < 0.6 && this.cooldown === 0) this.begin(game, target, wantYaw);
       else {
-        let goal = wantYaw;
-        const via = e.navAround(dt, target, game);
-        if (via) goal = Math.atan2(-via[0], -via[1]);
+        const goal = wantYaw;
         this.turnToward(goal, dt);
         const go = (dist > 4 || !los) && Math.abs(angleTo(this.face, goal)) < 1.1 ? e.tuning.speed : 0;
         this.drive(-Math.sin(this.face), -Math.cos(this.face), go, dt);

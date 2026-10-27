@@ -1857,7 +1857,7 @@ try {
     check(first.play === 'Play' && first.playOnScreen && first.goal === 'Escape the facility' && first.steps.length === 3 && /keycard/i.test(first.steps[0]),
       `first visit: the campaign goal, three steps and one PLAY button ("${first.goal}": ${first.steps.join(' > ')})`);
     check(first.buttons.join() === 'title-settings-btn,title-armory-btn,start-btn' && !first.banner,
-      `first visit: PLAY (the campaign) and the two corner buttons — Survival hidden — no NEW SECTOR banner (${first.buttons.join(', ')})`);
+      `first visit: PLAY (the campaign) and the two corner buttons — no NEW SECTOR banner (${first.buttons.join(', ')})`);
     await pc.screenshot({ path: 'scripts/shots/features-title-first.png' });
     // a returning player who hasn't reached the Biofoundry yet gets the banner
     await pc.evaluate(() => localStorage.setItem('voxelstrike-tutorial-done', '1'));
@@ -1913,7 +1913,7 @@ try {
   for (const [depth, theme] of [[8, 'freight'], [11, 'excavation'], [12, 'medical']]) {
     await page.evaluate((n) => {
       const g = window.__voxelstrike;
-      g.hud.hideScreen(); g.survival = null; g.levelIndex = n; g.buildLevel();
+      g.hud.hideScreen(); g.levelIndex = n; g.buildLevel();
       g.state = 'playing'; g.player.dead = false; g.player.health = 99999; g.input.locked = true;
       for (const e of g.enemies.list) e.puppet = true;
       const node = g.level.powerLink?.node;

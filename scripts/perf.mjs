@@ -200,41 +200,6 @@ try {
     check(info.before === info.after, `${theme}: shaders stable after warm-up (${info.before} -> ${info.after})`);
   }
 
-  // 7. Survival at full pressure: the big dressed arena, the wave cap of
-  // enemies alive at once, warnings and drops — same budget, no late compiles
-  await page.evaluate(() => {
-    const g = window.__voxelstrike;
-    g.startSurvival(false);
-    g.player.health = 99999;
-    g.input.locked = true;
-    g.survival.wave = 15; // the next wave runs at the full alive cap
-  });
-  await sleep(600);
-  await page.evaluate(() => {
-    const r = window.__voxelstrike.rendererSys.renderer;
-    window.__programsS = r.info.programs.length;
-    window.__programNamesS = r.info.programs.map((p) => p.name + ' ' + p.cacheKey.slice(0, 60));
-  });
-  await page.evaluate(async () => {
-    const g = window.__voxelstrike;
-    const t0 = performance.now();
-    while (performance.now() - t0 < 15000 && g.enemies.list.filter((e) => e.alive).length < 12) {
-      g.player.health = 99999;
-      await new Promise((r) => setTimeout(r, 200));
-    }
-  });
-  await sleep(1000);
-  const surv = await drawsOver(30);
-  const survInfo = await page.evaluate(() => ({
-    alive: window.__voxelstrike.enemies.list.filter((e) => e.alive).length,
-    before: window.__programsS,
-    after: window.__voxelstrike.rendererSys.renderer.info.programs.length,
-    added: window.__voxelstrike.rendererSys.renderer.info.programs.map((p) => p.name + ' ' + p.cacheKey.slice(0, 60)).filter((n) => !window.__programNamesS.includes(n)),
-  }));
-  check(survInfo.alive >= 10, `Survival reached its alive cap (${survInfo.alive} enemies)`);
-  check(surv.scene < SCENE_MAX_DRAWS, `Survival arena, ${survInfo.alive} awake: ${surv.scene.toFixed(0)} world draws per frame (< ${SCENE_MAX_DRAWS})`);
-  check(survInfo.after === survInfo.before, `Survival: shader programs stable during the waves (${survInfo.before} -> ${survInfo.after}${survInfo.added.length ? ': ' + survInfo.added.join(' | ') : ''})`);
-
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {
   await browser.close();

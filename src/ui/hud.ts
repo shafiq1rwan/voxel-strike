@@ -398,49 +398,6 @@ body.touch-mode #boss-head { font-size: 10px; }
 #scrap-gain.show { animation: scrapgain 1s ease-out; }
 @keyframes scrapgain { 0% { opacity: 0; transform: translateY(-4px); } 15% { opacity: 1; } 100% { opacity: 0; transform: translateY(12px); } }
 body.touch-mode #scrap { font-size: 15px; }
-/* the shop between waves: one card per gun (a picture, a name, one line, the price) + CONTINUE */
-#shop-screen .panel { width: min(760px, 94vw); box-sizing: border-box; padding: 22px 26px 20px; }
-#shop-screen h1 { font-size: 34px; letter-spacing: 6px; margin: 0 0 4px; color: #ffd028; text-shadow: 3px 3px 0 #000, 0 0 24px rgba(255,208,40,.4); }
-.shop-bank { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 14px; font-size: 13px; letter-spacing: .24em; color: #e0b040; }
-.shop-bank b { font-size: 22px; letter-spacing: .04em; color: #ffe08a; }
-.shop-cards { display: flex; gap: 10px; justify-content: center; }
-.shop-card {
-  flex: 0 1 150px; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 5px;
-  padding: 8px 6px 0; overflow: hidden; cursor: pointer; text-align: center;
-  font-family: 'Courier New', Courier, monospace; color: #cfd6e4;
-  background: linear-gradient(180deg, rgba(30,36,50,.95), rgba(12,15,22,.95));
-  border: 2px solid #4b5568; border-radius: 3px; box-shadow: 0 4px 0 #05060a;
-  transition: border-color .12s, transform .12s, opacity .2s;
-}
-.shop-pic { align-self: stretch; height: 72px; display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at center, rgba(112,216,255,.14), transparent 70%); }
-.shop-pic img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
-.shop-name { font-size: 12px; letter-spacing: .12em; color: #f0f2f6; white-space: nowrap; }
-.shop-role { flex: 1; font-size: 11px; line-height: 1.15; color: #8a94a8; min-height: 2.3em; } /* pushes the price bar to the bottom: cards line up */
-.shop-price {
-  align-self: stretch; margin: 2px -6px 0; padding: 7px 0; display: flex; align-items: center; justify-content: center; gap: 5px;
-  font-size: 15px; font-weight: bold; color: #ffd028; background: rgba(255,208,40,.08); border-top: 1px solid rgba(255,208,40,.35);
-}
-.shop-card:not([disabled]):hover { border-color: #ffd028; transform: translateY(-3px); }
-.shop-card:not([disabled]):hover .shop-price { background: #ffd028; color: #0a0c12; }
-.shop-card[disabled] { cursor: default; }
-.shop-card.short { opacity: .5; }
-.shop-card.short .shop-price { color: #8a94a8; }
-.shop-card.bought { border-color: #4cc26a; }
-.shop-card.bought .shop-price { color: #4cc26a; background: rgba(76,194,106,.12); border-top-color: rgba(76,194,106,.4); }
-#shop-go { margin-top: 18px; }
-#shop-go:disabled { opacity: .35; }
-.shop-keys { margin-top: 8px; font-size: 11px; letter-spacing: .14em; color: #566076; }
-@media (max-height: 560px) {
-  #shop-screen .panel { padding: 12px 16px 12px; }
-  #shop-screen h1 { font-size: 22px; letter-spacing: 4px; }
-  .shop-bank { margin-bottom: 8px; }
-  .shop-bank b { font-size: 18px; }
-  .shop-pic { height: 44px; }
-  .shop-card { gap: 3px; }
-  #shop-go { margin-top: 10px; padding: 10px 40px; font-size: 15px; }
-}
-@media (max-width: 520px) { .shop-cards { flex-wrap: wrap; } .shop-card { flex-basis: 30%; } }
 .slot.active { color: #ffd028; border-color: #ffd028; }
 .slot.active::after {
   content: ''; position: absolute; left: -1px; right: -1px; bottom: -7px; height: 3px;
@@ -577,17 +534,6 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 .upg-row.flash { border-color: #ffd028; box-shadow: inset 0 0 0 1px #ffd028; }
 #armory-screen .arm-upg { font-size: 12px; padding: 8px 14px; color: #ffd028; border-color: #ffd028; }
 #armory-screen .arm-upg:hover { background: #ffd028; color: #0a0c12; }
-#hud #obj-main.wave-mode #obj-steps { display: none; }
-/* Survival has nothing to point at: no compass under the wave counter */
-#hud #objective.wave-mode #obj-nav { display: none; }
-/* desktop: the three picks in one row (phones keep the stacked rows) */
-@media (min-height: 561px) { #wave-clear .panel { max-width: min(760px, 94vw); } #wave-clear .sc-perks { flex-wrap: nowrap; } }
-#wave-clear h1 { font-size: 34px; letter-spacing: 6px; margin: 0 0 4px; }
-#wave-clear .wc-next { font-size: 14px; letter-spacing: .24em; color: #55e0ff; margin: 0 0 10px; }
-@media (max-height: 560px) {
-  #wave-clear h1 { font-size: 24px; letter-spacing: 4px; }
-  #wave-clear .wc-next { font-size: 11px; margin-bottom: 6px; }
-}
 .death-scrap { margin: -4px 0 4px; font-size: 13px; letter-spacing: .14em; color: #ffd028; }
 .sc-scrap { margin-top: 8px; font-size: 12px; letter-spacing: .14em; color: #ffd028; text-align: center; }
 .sc-upg-row { margin-top: 12px; display: flex; justify-content: center; }
@@ -1054,7 +1000,7 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
 .title-menu.title-menu-pair { flex-direction: row; flex-wrap: wrap; justify-content: center; }
 .title-menu-pair .tbtn-play { padding-left: 46px; padding-right: 46px; }
 .title-menu-pair .tbtn-newrun { align-self: stretch; padding-left: 20px; padding-right: 20px; }
-/* the quiet Survival / Co-op rows sit on their own line under a Continue + New run pair */
+/* the quiet Co-op row sits on its own line under a Continue + New run pair */
 .title-menu-pair .title-menu-row { flex-basis: 100%; justify-content: center; }
 .tbtn-quiet { font-size: 12px; padding: 9px 18px; color: #8a94a8; }
 .tbtn-quiet:hover { color: #cfd6e4; border-color: #6a7488; }
@@ -1415,12 +1361,6 @@ export class HUD {
     window.addEventListener('keydown', this.titleKey);
   }
 
-  /** objective tracker: step icon + text in its color; `flash` pops it on a change */
-  /** run `fn` after `ms` unless the screen changes first (hideScreen clears it) */
-  screenTimer(fn: () => void, ms: number): void {
-    this.screenTimers.push(window.setTimeout(fn, ms));
-  }
-
   private scrapGain = 0;
   private scrapGainTimer = 0;
 
@@ -1447,166 +1387,12 @@ export class HUD {
     g.classList.add('show');
   }
 
-  /** Survival: WAVE n and what's left, in the objective box (no step pips) */
-  setWave(wave: number, text: string, flash: boolean): void {
-    (this.root.querySelector('#obj-label') as HTMLElement).textContent = 'WAVE';
-    (this.root.querySelector('#obj-sector') as HTMLElement).textContent = String(wave);
-    (this.root.querySelector('#obj-of') as HTMLElement).style.display = 'none';
-    this.objTextEl.textContent = text;
-    if (this.objIconCache !== 'boss') {
-      this.objIconCache = 'boss';
-      this.objIconEl.innerHTML = ICONS.boss(20);
-    }
-    this.objMainEl.style.setProperty('--obj-c', '#ff3428');
-    this.objMainEl.classList.add('wave-mode');
-    this.root.querySelector('#objective')?.classList.add('wave-mode');
-    if (flash) {
-      this.objMainEl.classList.remove('flash');
-      void this.objMainEl.offsetWidth;
-      this.objMainEl.classList.add('flash');
-    }
-  }
-
-  /**
-   * Survival: a wave is down. "WAVE N CLEARED", the next map when it changes,
-   * and a pick of three (the sector-clear perk cards) — nothing else (owner:
-   * one decision per screen; the shop comes after, on its own). The cards
-   * arm after 0.5 s so a held trigger can't pick one. Keys 1–3 pick.
-   */
-  showWaveClear(o: {
-    wave: number;
-    next: string | null;
-    perks: Array<{ id: OfferId; name: string; short: string; desc: string }>;
-    touch: boolean;
-    onPick: (id: OfferId) => void;
-  }): void {
-    this.hideScreen();
-    const el = document.createElement('div');
-    el.id = 'wave-clear';
-    el.className = 'screen sc-screen';
-    el.style.cursor = 'default';
-    el.innerHTML = `<div class="panel">
-      <h1 class="win">WAVE ${o.wave} CLEARED</h1>
-      ${o.next ? `<div class="wc-next">EVAC &#9656; ${o.next}</div>` : ''}
-      <div class="sc-pick-title">CHOOSE ONE</div>
-      <div class="sc-perks">${o.perks.map((p, i) => `
-        <button class="sc-perk" data-id="${p.id}" style="--pc:${perkColor(p.id)}" title="${p.desc}" disabled>
-          <span class="sc-perk-ico">${perkIcon(p.id, 30)}</span>
-          <span class="sc-perk-text"><b>${p.name}</b><span class="sc-perk-short">${p.short}</span></span>
-          <span class="sc-perk-pick">${o.touch ? 'PICK' : `PICK <kbd>${i + 1}</kbd>`}</span>
-        </button>`).join('')}
-      </div>
-    </div>`;
-    document.body.appendChild(el);
-    this.screenEl = el;
-    const cards = [...el.querySelectorAll<HTMLButtonElement>('.sc-perk')];
-    let armed = false;
-    let picked = false;
-    const pick = (i: number): void => {
-      if (!armed || picked || !cards[i]) return;
-      picked = true;
-      cards[i].classList.add('chosen');
-      el.querySelector('.sc-perks')?.classList.add('picked');
-      cards.forEach((c) => (c.disabled = true));
-      o.onPick(cards[i].dataset.id as OfferId);
-    };
-    this.screenTimers.push(window.setTimeout(() => {
-      armed = true;
-      cards.forEach((c) => { c.disabled = false; c.classList.add('armed'); });
-    }, 500));
-    cards.forEach((c, i) => c.addEventListener('click', (ev) => { ev.stopPropagation(); pick(i); }));
-    this.titleKey = (ev: KeyboardEvent) => {
-      const n = ['Digit1', 'Digit2', 'Digit3'].indexOf(ev.code);
-      const m = ['Numpad1', 'Numpad2', 'Numpad3'].indexOf(ev.code);
-      if (n >= 0 || m >= 0) pick(Math.max(n, m));
-    };
-    window.addEventListener('keydown', this.titleKey);
-  }
-
-  /**
-   * Survival's shop, after the wave's pick: the scrap bank, one card per gun
-   * not owned yet (its picture, name, one line, price) + an ammo refill, and
-   * a big CONTINUE. A card buys on click (keys 1–5); a gun bought here stays
-   * on screen as OWNED. Continue arms after 0.5 s (Enter / Space too).
-   */
-  showShop(o: {
-    scrap: () => number;
-    items: () => Array<{ id: string; name: string; role: string; price: number; owned: boolean; full?: boolean; img: string }>;
-    touch: boolean;
-    onBuy: (id: string) => boolean;
-    onDone: () => void;
-  }): void {
-    this.hideScreen();
-    const el = document.createElement('div');
-    el.id = 'shop-screen';
-    el.className = 'screen sc-screen';
-    el.style.cursor = 'default';
-    el.innerHTML = `<div class="panel">
-      <h1>SHOP</h1>
-      <div class="shop-bank">${ICONS.scrap(20)}<b id="shop-scrap"></b>SCRAP</div>
-      <div class="shop-cards" id="shop-cards"></div>
-      <button id="shop-go" class="tbtn tbtn-primary" disabled>Continue</button>
-      ${o.touch ? '' : '<div class="shop-keys">CLICK A CARD TO BUY &middot; ENTER TO CONTINUE</div>'}
-    </div>`;
-    document.body.appendChild(el);
-    this.screenEl = el;
-    // the guns on offer are fixed when it opens: one bought here stays, as OWNED
-    const shown = o.items().filter((it) => !it.owned).map((it) => it.id);
-    const cardsEl = el.querySelector('#shop-cards') as HTMLElement;
-    const go = el.querySelector('#shop-go') as HTMLButtonElement;
-    let armed = false;
-    let done = false;
-    const render = (): void => {
-      const bank = o.scrap();
-      (el.querySelector('#shop-scrap') as HTMLElement).textContent = String(bank);
-      const items = o.items().filter((it) => shown.includes(it.id));
-      cardsEl.innerHTML = items.map((it) => {
-        const short = !it.owned && !it.full && bank < it.price;
-        const price = it.owned ? 'OWNED &#10003;' : it.full ? 'FULL' : `${ICONS.scrap(14)}${it.price}`;
-        const pic = it.img ? `<img src="${it.img}" alt="">` : it.id === 'ammo' ? `${ICONS.bullets(26)}${ICONS.shells(26)}` : '';
-        return `<button class="shop-card${it.owned ? ' bought' : ''}${short ? ' short' : ''}" data-id="${it.id}"${it.owned || it.full || short ? ' disabled' : ''}>
-          <span class="shop-pic">${pic}</span>
-          <b class="shop-name">${it.name}</b>
-          <span class="shop-role">${it.role}</span>
-          <span class="shop-price">${price}</span>
-        </button>`;
-      }).join('');
-      cardsEl.querySelectorAll<HTMLButtonElement>('.shop-card').forEach((b) => b.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        buy(b.dataset.id!);
-      }));
-    };
-    const buy = (id: string): void => {
-      if (!armed || done) return;
-      if (o.onBuy(id)) render();
-    };
-    const finish = (): void => {
-      if (!armed || done) return;
-      done = true;
-      go.disabled = true;
-      o.onDone();
-    };
-    render();
-    this.screenTimers.push(window.setTimeout(() => { armed = true; go.disabled = false; }, 500));
-    go.addEventListener('click', (ev) => { ev.stopPropagation(); finish(); });
-    this.titleKey = (ev: KeyboardEvent) => {
-      if (ev.code === 'Enter' || ev.code === 'NumpadEnter' || ev.code === 'Space') { ev.preventDefault(); finish(); return; }
-      const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(ev.code);
-      if (n >= 0) {
-        const b = cardsEl.querySelectorAll<HTMLButtonElement>('.shop-card')[n];
-        if (b && !b.disabled) buy(b.dataset.id!);
-      }
-    };
-    window.addEventListener('keydown', this.titleKey);
-  }
-
+  /** objective tracker: step icon + text in its color; `flash` pops it on a change */
   setObjective(
     sector: number, total: number, text: string, color: string, flash: boolean,
     icon: 'keycard' | 'door' | 'lift' | 'pad' | 'boss' = 'keycard',
     preview = false,
   ): void {
-    this.objMainEl.classList.remove('wave-mode');
-    this.root.querySelector('#objective')?.classList.remove('wave-mode');
     // past the campaign it's endless: DEPTH n, no "of N"
     const endless = !preview && sector > total;
     (this.root.querySelector('#obj-label') as HTMLElement).textContent = endless ? 'DEPTH' : 'SECTOR';
@@ -2076,15 +1862,6 @@ export class HUD {
      */
     returning?: boolean;
     onSettings: () => void;
-    /**
-     * Survival, as a quiet secondary button under PLAY (the campaign). It was
-     * PLAY for one Player Fit Test (2026-10-23) and average playtime fell
-     * from ~5:00 to ~2:00 with the same audience, so the campaign is the
-     * first impression again.
-     */
-    onSurvival?: () => void;
-    /** best Survival wave reached on this device (0 = never) */
-    survivalBest?: number;
   }): void {
     this.hideScreen();
     const el = document.createElement('div');
@@ -2099,9 +1876,7 @@ export class HUD {
     // the goal, as the three steps the in-game objective tracker walks through
     const step = (n: number, icon: string, color: string, text: string): string =>
       `<div class="tstep" style="--c:${color}"><span class="tstep-n">${n}</span><span class="tstep-icon">${icon}</span><span class="tstep-text">${text}</span></div>`;
-    const survival = !!opts.onSurvival;
     const foot = [
-      survival && opts.survivalBest ? `BEST WAVE ${opts.survivalBest}` : '',
       opts.best ? `BEST SCORE ${opts.best.toLocaleString()}` : '',
       opts.bestDepth ? `DEEPEST: DEPTH ${opts.bestDepth}` : '',
     ].filter(Boolean).join(' &middot; ');
@@ -2137,7 +1912,6 @@ export class HUD {
             ? `<button id="continue-btn" class="tbtn tbtn-primary tbtn-play">Continue &middot; ${opts.continueLabel ?? `Sector ${cont}`}</button>
               <button id="start-btn" class="tbtn tbtn-quiet tbtn-newrun">New run</button>`
             : '<button id="start-btn" class="tbtn tbtn-primary tbtn-play">Play</button>'}
-          ${survival ? '<div class="title-menu-row"><button id="survival-btn" class="tbtn tbtn-quiet">Survival</button></div>' : ''}
           ${opts.onCoop ? '<div class="title-menu-row"><button id="coop-btn" class="tbtn tbtn-quiet">Co-op</button></div>' : ''}
         </div>
         ${showControls ? `<div class="title-controls">${controls}</div>` : ''}
@@ -2156,7 +1930,6 @@ export class HUD {
     this.logoStop = startVoxelLogo(el.querySelector('#title-logo') as HTMLCanvasElement, 'VOXELSTRIKE');
 
     el.querySelector('#start-btn')!.addEventListener('click', () => opts.onStart());
-    el.querySelector('#survival-btn')?.addEventListener('click', () => opts.onSurvival?.());
     el.querySelector('#continue-btn')?.addEventListener('click', () => opts.onContinue?.());
     el.querySelector('#title-settings-btn')!.addEventListener('click', () => opts.onSettings());
     el.querySelector('#coop-btn')?.addEventListener('click', () => opts.onCoop?.());
@@ -2278,9 +2051,6 @@ export class HUD {
     revive: 'ad' | 'free' | null;
     /** scrap from this attempt and the total to spend */
     scrap?: { gained: number; total: number };
-    /** Survival: "Try again" / "Main menu" instead of the sector retry / New run */
-    retryText?: string;
-    newRunText?: string;
     onUpgrades?: () => void;
     onRetry: () => void;
     onRestart: () => void;
@@ -2288,7 +2058,7 @@ export class HUD {
     onNewRun: () => void;
   }): void {
     const unit = o.unit ?? 'sector';
-    const retryLabel = o.retryText ?? (o.keycard ? 'Retry from keycard' : `Retry ${unit} ${o.sector}`);
+    const retryLabel = (o.keycard ? 'Retry from keycard' : `Retry ${unit} ${o.sector}`);
     const revive = o.revive
       ? `<button id="revive-btn" class="tbtn tbtn-revive">${o.revive === 'ad' ? `${ICONS.ad(15)}<span>Revive &middot; Watch ad</span>` : '<span>Revive here</span>'}</button>`
       : '';
@@ -2308,7 +2078,7 @@ export class HUD {
         <div class="tbtn-row">
           ${o.keycard ? `<button id="restart-btn" class="tbtn tbtn-quiet">Restart ${unit} ${o.sector}</button>` : ''}
           ${o.onUpgrades ? '<button id="upgrades-btn" class="tbtn tbtn-quiet">Upgrades</button>' : ''}
-          <button id="newrun-btn" class="tbtn tbtn-quiet">${o.newRunText ?? 'New run'}</button>
+          <button id="newrun-btn" class="tbtn tbtn-quiet">New run</button>
         </div>
       </div>
       <div class="keyhint">${hints.join(' &middot; ')}</div>

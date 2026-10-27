@@ -513,7 +513,7 @@ Continue and retries retain the correct prototype and ammo.
 | 4 | Spore Popper | Sticky pods burst after 0.85 seconds in a small radius |
 | 5 | Brood Breaker | Powerful arc chains through nearby enemies |
 
-These are run pickups; permanent Armory unlocks and Survival drops are not
+These are run pickups; permanent Armory unlocks are not
 part of this implementation. Sectors 6?7 retain their existing supplies.
 
 Run `node scripts/secret-weapons.mjs <url>` against a web dev server to check
@@ -522,9 +522,8 @@ placement, damage, ammo, wall blocking, slot 6, checkpoints and model budgets.
 
 ## Freight Depot, Deep Excavation and Medical Wing
 
-Three additional generated environments are playable in **Survival** (maps
-4-6, starting at waves 16, 21 and 26) and after **Keep descending** in the
-campaign. Endless depths 8-9 are Freight Depot, depth 11 is Deep Excavation,
+Three additional generated environments are playable after **Keep
+descending** in the campaign. Endless depths 8-9 are Freight Depot, depth 11 is Deep Excavation,
 and depths 12-13 are Medical Wing; every fifth depth keeps the Biofoundry boss.
 The six environments then continue rotating in two-depth blocks.
 
@@ -541,5 +540,5 @@ For a standalone web playtest with all standard weapons and isolated saves:
 Poki builds ignore these shortcuts but include the new rotation themes.
 
 `node scripts/new-maps.mjs <url>` checks generation across 24 layouts, routes,
-caches, secrets, retry, save isolation, Survival integration and mobile.
+caches, secrets, retry, save isolation, endless rotation and mobile.
 Use `--poki` against a Poki server to check shortcut isolation.

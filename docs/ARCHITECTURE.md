@@ -34,10 +34,9 @@ off the core. The per-file rules and known gotchas live in
 | Physics | `core/physics.ts` | Axis-by-axis AABB vs voxels + dynamic boxes (doors, lift), ray/box tests |
 | Audio | `core/audio.ts`, `core/music.ts` | Every sound synthesized with WebAudio; optional crossfading music loops |
 | Settings | `core/settings.ts` | Persisted options (sensitivity, volumes, FOV, resolution, shake, aim assist) |
-| Survival | `modes/survival.ts` | The secondary mode (the quiet *Survival* button under PLAY; it was PLAY for one Fit Test and playtime fell): `prepareSurvivalLevel` (a generated sector's arena room sealed as the stage), `SurvivalRun` (waves, edge spawns, drops, map every 5 waves), the roster/size/HP curves, the scrap rates and the gun SHOP prices. Game owns `survival` and the wave-clear pick → shop (`showShop`, gun pictures from `gunSnapshot` in ui/armory-preview.ts on the Armory's one shared WebGL context) / death / HUD glue |
 | Biofoundry monsters | `entities/bio-monsters.ts`, `entities/monster-kit.ts` | Sector 4 Vatborn + Spitter (acid glob + floor patch, world-space `fx` beside the rig), sector 5 Carapace (positional plate armour, spike fan, bared core) + the Broodkeeper, whose adds are now Carapaces. `RigKit` is the shared box-rig builder |
 | Facility monsters | `entities/facility-monsters.ts`, `world/rosters.ts` | Sector 1 Husk + Sentry Bud, 2 Clamp Guard + Arc Sentinel, 3 Brute + Wire Leech (reference/sector-monsters-v2). `RigKit.bake` merges static boxes at each animation pivot (5/12/7 draws). Leech ray hits use the original solid-box frames under the animated pivots, including its elevated copper coil; the resulting core flag travels through weapon damage and co-op authority. Roster re-cast and tether behavior remain here |
-| Upgrades | `core/upgrades.ts` | Scrap + permanent upgrades (docs/RETENTION_PLAN.md): the 7 upgrades × 3 tiers as data, scrap per kill / clear / secret / Power Link, and `UpgradeBook` (scrap, levels; localStorage). Kills drop scrap as a `'scrap'` pickup (`dropScrap` → `collectScrap`); Game feeds the bank through `earnScrap` (which also pops the HUD counter), Survival's shop spends it (`UpgradeBook.spend`), and applies the effects (`applyPerkStats`, `applyRunStart`, `enterSector`, `healMult`, `scannerLevel`) |
+| Upgrades | `core/upgrades.ts` | Scrap + permanent upgrades (docs/RETENTION_PLAN.md): the 7 upgrades × 3 tiers as data, scrap per kill / clear / secret / Power Link, and `UpgradeBook` (scrap, levels; localStorage). Kills drop scrap as a `'scrap'` pickup (`dropScrap` → `collectScrap`); Game feeds the bank through `earnScrap` (which also pops the HUD counter) and applies the effects (`applyPerkStats`, `applyRunStart`, `enterSector`, `healMult`, `scannerLevel`) |
 | Skins | `core/skins.ts` | The 22 weapon skins as data (paint roles + flat marks + unlock goal) and `SkinBook` (lifetime stats, unlocks, equipped; localStorage). `buildWeaponModel(id, skin)` paints them; `WeaponSystem.setSkin` swaps a view model in place |
 | RNG | `core/rng.ts` | Seeded mulberry32 — the same seed always builds the same dungeon |
 | World | `world/blocks.ts`, `world.ts`, `mesher.ts`, `levelgen.ts` | Block types + procedural texture atlas, the voxel grid + light bake, greedy chunk mesher + shader, the dungeon generator + validator |
@@ -264,7 +263,6 @@ codes (lazy-loaded), or BroadcastChannel for same-browser tabs
 | `voxelstrike-best-<seedHex>` | Best score for that layout seed |
 | `voxelstrike-tutorial-done` | First-run control hints shown |
 | `voxelstrike-best-depth` | Deepest endless depth reached (title footer) |
-| `voxelstrike-survival-best` | Best Survival wave reached (title footer *BEST WAVE n*, death screen) |
 | `voxelstrike-upgrades` | Scrap + permanent upgrades: `{ v, scrap, earned, levels }`. Never reset by a new run |
 | `voxelstrike-skins` | Weapon skins: lifetime goal stats (kills, headshots, bash kills, secrets, cleared, reached, bosses, S ranks), unlocked ids, equipped skin per gun |
 | `voxelstrike-biofoundry-seen` | The Biofoundry was reached once (hides the title's NEW SECTOR banner, which returning players see) |
@@ -292,7 +290,7 @@ build is also a PWA (`public/manifest.webmanifest` + network-first
 | Add a block | `world/blocks.ts` — the enums and tables must stay in sync, and ids are append-only |
 | Level layout rules | `world/levelgen.ts` (keep the BFS validation passing) |
 | Enemy behaviour | `entities/enemies.ts`; the Facility's Sentry Bud / Clamp Guard / Wire Leech in `entities/facility-monsters.ts`, the core's in `entities/geothermal-monsters.ts` |
-| Which monsters a sector gets | `world/rosters.ts` (`applyFacilityRoster`, `facilityBand`, `FACILITY_RESPONSE`, `survivalFacilityBand`) — applied at the end of levelgen's enemy pass, no RNG |
+| Which monsters a sector gets | `world/rosters.ts` (`applyFacilityRoster`, `facilityBand`, `FACILITY_RESPONSE`) — applied at the end of levelgen's enemy pass, no RNG |
 | Preview-only live scenery (sector 4) | `PreviewArt` hooks returned by `decorate()` in `src/preview/biofoundry.ts`: `update(dt)`, `tankHit(x,y,z)` (a TankGlass voxel was shot), `noise(x,z,r)` (gunfire via `Game.noise`). The tank-breach state machine lives there |
 | Generated-core live scenery (sectors 6–7) | `PreviewArt` from `decorateGeothermal` in `src/preview/geothermal-gen.ts`: `update(dt)` (steam, gate, cage hint), `voxelHit(x,y,z)` (the Power Link node; consumes the hit) |
 | Add an enemy kind | `EnemyKind` in `types.ts`; `TUNING`, `ALERT_SOUND`, a `buildX()` rig and `doChase`/`doAttack` branches in `enemies.ts` (reuse the husk skeleton + `humanoid()` to get the gait/attack animation for free); the headshot check in `weapons.ts`; kill points in `game.ts`. Keep preview-only kinds out of `levelgen.ts` |
@@ -327,8 +325,7 @@ geometry, materials and sign textures. Decorations use bounded static boxes;
 medical trolleys over destructible crate pairs disappear when supports break.
 All materials are present before the standard level warm-up.
 
-Survival rotates Facility, Biofoundry, Geothermal, Freight, Excavation and
-Medical every five waves. Endless campaign depths rotate Freight,
+Endless campaign depths rotate Freight,
 Excavation, Medical, Facility, Biofoundry and Geothermal every two depths
 starting at depth 8; every fifth depth still overrides to the Biofoundry boss.
 The original seven campaign sectors stay unchanged. Web `?map=<id>` routes

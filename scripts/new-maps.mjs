@@ -85,21 +85,14 @@ try {
   await page.waitForFunction(()=>window.__voxelstrike.state==='playing');
   check(await page.evaluate(()=>window.__voxelstrike.pickups.items.filter(p=>p.spec.sealed).length)===3,`${theme}: retry resets puzzle`);
  }
- // Confirm real rotations, and a Survival stage for each new environment.
+ // Confirm the endless rotation reaches each new environment.
  await page.goto(base,{waitUntil:'networkidle0'});await page.click('#start-btn');
  const rotation=await page.evaluate(async()=>{
   const g=window.__voxelstrike;g.state='paused';
-  const {themeOfMap}=await import('/src/modes/survival.ts');
   const depths=[8,9,11,12,13,15].map(n=>[n,g.themeFor(n)]);
-  const themes=[3,4,5].map(themeOfMap);
-  return {depths,themes};
+  return {depths};
  });
- check(JSON.stringify(rotation.themes)===JSON.stringify(['freight','excavation','medical']),'Survival maps 4-6 include all new themes');
  check(rotation.depths.some(([n,t])=>n===8&&t==='freight')&&rotation.depths.some(([n,t])=>n===11&&t==='excavation')&&rotation.depths.some(([n,t])=>n===12&&t==='medical')&&rotation.depths.some(([n,t])=>n===15&&t==='biofoundry'),'endless rotation includes new themes and keeps boss depths Biofoundry');
- for(const [map,theme] of [[4,'freight'],[5,'excavation'],[6,'medical']]) {
-  const stage=await page.evaluate(({map,theme})=>{const g=window.__voxelstrike;g.startSurvival(false);g.levelIndex=map;g.buildLevel();g.state='playing';g.player.health=99999;const r=g.level.rooms.find(r=>r.kind==='arena');return {theme:g.level.theme,spawn:g.world.get(Math.floor(g.player.pos.x),1,Math.floor(g.player.pos.z)),secret:g.level.totalSecrets,cache:g.level.powerLink,room:!!r};},{map,theme});
-  check(stage.theme===theme&&stage.spawn===0&&stage.secret===0&&!stage.cache&&stage.room,`${theme}: playable sealed Survival stage`);
- }
  await page.setViewport({width:844,height:390,isMobile:true,hasTouch:true});
  for(const theme of ['freight','excavation','medical']){
   await page.goto(`${base}?map=${theme}&seed=12345`,{waitUntil:'networkidle0'});await page.click('#preview-start');await page.waitForFunction(()=>window.__voxelstrike.state==='playing');

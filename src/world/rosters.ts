@@ -85,12 +85,6 @@ export function applyFacilityRoster(enemies: EnemySpec[], band: FacilityBand): E
   return out;
 }
 
-/** Survival's Facility map walks the three rosters across its five waves */
-export function survivalFacilityBand(wave: number): FacilityBand {
-  const local = (Math.max(1, wave) - 1) % 5;
-  return local < 2 ? 1 : local < 4 ? 2 : 3;
-}
-
 /**
  * The Biofoundry (reference/sector-monsters-v2 §4–5): sector 4 = Vatborn +
  * Spitter (tank occupants stay where they are), sector 5 = Carapace (+ the
@@ -112,7 +106,8 @@ export const BIO_RESPONSE: Record<BioBand, { kinds: EnemyKind[]; count: number }
  * Re-cast a Biofoundry sector's generic placements, room by room, in order
  * (no RNG). Sector 4: a Vatborn (95 hp) per two husks' worth of close-range
  * slots, Spitters for ~60% of the sentinels. Sector 5: one Carapace (120 hp,
- * armoured front) per three husks' worth of everything. Every occupied room
+ * armoured front) per 2.2 husks' worth of everything (sector 5 must field
+ * more enemy health than sector 4). Every occupied room
  * keeps at least one.
  */
 export function applyBioRoster(enemies: EnemySpec[], band: BioBand): EnemySpec[] {
@@ -140,13 +135,9 @@ export function applyBioRoster(enemies: EnemySpec[], band: BioBand): EnemySpec[]
       continue;
     }
     const total = generic.reduce((s, e) => s + units(e.kind), 0);
-    const cara = total > 0 ? Math.max(1, Math.round(total / 3)) : 0;
+    const cara = total > 0 ? Math.max(1, Math.round(total / 2.2)) : 0;
     for (let i = 0; i < cara && i < heavyFirst.length; i++) out.push(at(heavyFirst[i], 'carapace'));
   }
   return out;
 }
 
-/** Survival's Biofoundry map: Vatborn + Spitter waves, then Carapace pressure */
-export function survivalBioBand(wave: number): BioBand {
-  return (Math.max(1, wave) - 1) % 5 < 3 ? 4 : 5;
-}

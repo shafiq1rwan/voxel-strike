@@ -24,8 +24,8 @@ GPU memory on iOS).
 - `docs/TESTING.md` — every suite, running/writing them, gotchas. Update when
   a suite is added or its coverage changes (and the command list below).
 - `POKI.md` — the Poki build, SDK lifecycle, `measure()` events.
-- `docs/RETENTION_PLAN.md` — the retention design (scrap + upgrades, Survival
-  mode, secret map weapons) and the brief for new map themes (Codex).
+- `docs/RETENTION_PLAN.md` — the retention design (scrap + upgrades, the
+  removed Survival mode, secret map weapons) and the brief for new map themes (Codex).
 - `docs/ROADMAP.md` — planned work in priority order with the reasoning
   (driven by the Poki Web Fit Test numbers). Add decided features there;
   move them to its Done list when shipped.
@@ -56,7 +56,6 @@ node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
 node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + sector 2 as in 0.3.4 (11–13 rooms, no empty rooms), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch: no BASH, a second FIRE above the move stick (either holds the trigger), weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), scrap + upgrades (kills DROP scrap pickups that bank when walked over + HUD counter, clears earn scrap, death screen shows it + Upgrades, buys cost and save, Suit/Plates/Medic/Hands/Head Start work, survives a reload, Armory entry, phone fit), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
-node scripts/survival.mjs   # SURVIVAL (hidden: ?survival shows its quiet button under PLAY): title PLAY = campaign + quiet Survival, sealed arena, waves spawn ≥5 u away, kills drop supplies + scrap pickups (swept home at the clear), wave-clear pick of 3 then the SHOP (gun pictures, Scattergun 20 scrap → slot 2, CONTINUE), scrap flies in + HUD counter, wave 5 → Biofoundry map, death = reached/best wave + Try again / Upgrades / Main menu, best saved, phone pick + shop fit
 node scripts/facility-monsters.mjs # Facility sector rosters (1 Husk+Sentry Bud, 2 Clamp Guard+Arc Sentinel, 3 Brute+Wire Leech, no Tickers, rooms populated, keycard alarm) + Sentry Bud bolt/lids/cadence/dodge, Clamp Guard pinch/side-step/turn rate/recovery, Wire Leech tether link/slow/stings/coil break/range/rebuild, rig budgets
 node scripts/facility-rigs.mjs # Facility rig draws (5/12/7), source boxes, floor contact, 4,374 rays against rendered Leech triangles (including detached rigs), real coil shots/door blocking, six visible awake rigs in a complete scene and stable shaders
 node scripts/bio-monsters.mjs # Biofoundry rosters (4 Vatborn+Spitter, 5 Carapace), Spitter mark/glob 10/acid patch 3 per 0.5s/expiry/dodge/patch cap, Carapace front ×0.25 back ×1 core ×2 / 3-spike fan 8 each / no mid-attack flinch, Vatborn 95 hp, Broodkeeper adds = Carapaces ≤2 alive ≤4 per attempt, rig budgets
@@ -83,64 +82,13 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 
 ## Architecture
 
-- SURVIVAL is HIDDEN from players (owner, 2026-10-27, after outside
-  playtesters): the quiet *Survival* button under PLAY (`#survival-btn`,
-  `showTitle({ onSurvival })`; docs/RETENTION_PLAN.md §4) only shows on web
-  builds with `?survival` (development; `survival.mjs` uses it), never Poki.
-  It was PLAY for one Player Fit Test (0.3.5, 2026-10-23) and average
-  playtime fell from ~5:00 to ~2:00 with the same audience (132 players), so
-  the campaign is PLAY (`#start-btn`) again (owner's call, 0.3.6) — don't
-  make Survival the first impression again without a new test that says so.
-  `src/modes/survival.ts`: `prepareSurvivalLevel` turns a generated sector
-  into a stage (seals the arena room's ring with its own wall block, drops
-  the level's enemies/pickups/secret/Power Link, spawn in the arena's
-  middle); `SurvivalRun` (`Game.survival`, null = campaign) runs intro →
-  fight → offer → break: `waveRoster` (size 4 + 2w capped 32, pool widens
-  with the wave, the map's own enemies, heavies on each map's last wave),
-  `waveCap` alive + rising at once. Arrivals (owner's feedback): a red
-  warning glow (`TELEGRAPH_S` 1.1 s, pooled ring + beam in `SurvivalRun.fx`,
-  added to the scene BEFORE the build so the warm-up compiles it) on open,
-  reachable floor ≥ 8 u away (5 u fallback) and IN THE PLAYER'S LINE OF
-  SIGHT (never behind cover), then the enemy rises out of the floor
-  (`Enemy.rise`, `RISE_S` 0.6 — no AI meanwhile, can be shot); HP
-  ×`waveHpMult`. Enemies have no pathfinding, so Survival has a
-  `FlowField` (BFS over the arena floor, 8-dir, no corner cutting, rebuilt
-  on the player's cell change / every 0.5 s): `Enemy.navAround` (walkers +
-  geothermal kinds) follows it whenever knee-height LOS to the target is
-  blocked. Kills: `dropFor` (ammo 43%, 73% when the gun in hand is under
-  30%; health 8%, armor 6%, powerup 3%) dropped ON THE FLOOR under the body
-  (`floorTopAt` — flyers used to drop mid-air), plus SCRAP — the ONE
-  currency (owner's feedback: credits were merged into it): every kill drops
-  `SCRAP_FOR_KILL` × `SURVIVAL_KILL_SCRAP` (2) as a scrap pickup, a clear
-  pays `scrapForWave` (8 + 2w, + `SCRAP_MAP_BONUS` 15 on a map's last).
-  Wave break = TWO screens, one decision each (owner: the combined one was
-  too much): `showWaveClear` (title, EVAC line, the pick of 3 — nothing
-  else), then `showShop` — opened only by `shopWorthOpening` (an unowned
-  gun affordable, or ammo affordable and a gun under half): the scrap bank,
-  one card per gun not owned when it opened (a picture from
-  `gunSnapshot`, name, `GUN_ROLE` line, price; bought → OWNED), an AMMO
-  card (FULL when nothing is missing) and CONTINUE (Enter; keys 1–5 buy).
-  `SHOP` in scrap: Scattergun 20, Ripper 45, Thumper 75, Arc 110, ammo 15
-  (`buySurvival` → `UpgradeBook.spend`) — guns are bought, not scheduled.
-  Banked scrap from earlier runs spends here too, the same bank the
-  upgrades use. The stage comes
-  from `generateLevel(…, survival=true)`: a 31–35 × 29–33, 7-high arena with
-  `dressSurvivalArena` cover (3×3 grid, open middle: 2-high walls, half
-  walls, an L, a container, a lit pillar, crate stacks, barrel clusters, plus
-  scattered crates/barrels) and only 5 rooms; the campaign draws the same
-  numbers as before. Game: `buildLevel`
-  uses `themeOfMap(levelIndex-1)` (Facility → Biofoundry → Geothermal, map
-  = every `WAVES_PER_MAP` 5 waves) and never a boss; `survivalWaveStarted` /
-  `survivalWaveCleared` (scrap, +250·w score, `state='intermission'`,
-  `HUD.showWaveClear` pick of 3 from `rollPerkOffer`, `applyOffer`; the
-  map's last wave goes through `afterBreak` into the next map, gear kept);
-  `updateSurvivalHud` → `HUD.setWave` (WAVE n · N LEFT, no compass);
-  death → `showSurvivalDeath` (reached / best wave, Try again, Upgrades,
-  Main menu; one revive per map); best in `voxelstrike-survival-best`
-  (title footer BEST WAVE). Poki: `wave N start/complete/fail` (capped 30),
-  `death wN <killer>`; no level events. Every campaign entry
-  (`startGame`, `newRunNow`, `continueRun`, `goToTitle`) sets
-  `survival = null`. Not yet: the Broodkeeper as a boss wave, co-op.
+- SURVIVAL was REMOVED (owner, 2026-10-27): the wave mode cost upkeep with
+  every new monster and map, and players never saw it (it was PLAY for one
+  Fit Test, 0.3.5, and playtime fell from ~5:00 to ~2:00; then hidden). Its
+  code (`src/modes/survival.ts`, the wave-clear / shop / wave-HUD screens,
+  `dressSurvivalArena`, the flow field, `Enemy.rise` / `navAround`,
+  `survival.mjs`) is in git history up to commit 68832ba if it's ever
+  wanted back. The title is the campaign only.
 - `src/game.ts` — orchestrator: state machine (title/playing/paused/dead/
   intermission/won), 7-sector campaign flow with in-place level teardown.
   ALL sectors are generated fresh each run with the same keycard → red door
@@ -228,7 +176,7 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   as a `'scrap'` pickup (`dropScrap`, `PickupSpec.amount`, a step off the
   body; a drop within 1.4u of loose scrap joins it, one pickup; it flies in
   from ~4.5u and banks via `collectScrap`; `sweepScrap` banks what's left
-  at a wave / sector clear; uncollected scrap is lost on death) —, sector clears (`scrapForClear`: 15 + 5/sector
+  at a sector clear; uncollected scrap is lost on death) —, sector clears (`scrapForClear`: 15 + 5/sector
   capped at 10 + rank bonus), the secret room and an opened Power Link;
   `attemptScrap` (reset on every attempt) is what the death screen and the
   clear tally show. 7 upgrades × 3 tiers (50 / 120 / 250): Reinforced Suit
@@ -610,9 +558,7 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   Kept bare on purpose (playtime fell to under 2 minutes): wordmark,
   ESCAPE THE FACILITY, three step tiles (keycard → door → lift, the HUD's
   objective icons/colours), one PLAY (`#start-btn` = the campaign; with a
-  save Continue and New run share ONE row) — Survival's quiet button under
-  it only with `?survival` (hidden from players: it was PLAY for one Fit
-  Test and playtime fell to ~2:00), one controls line (first visit on desktop
+  save Continue and New run share ONE row), one controls line (first visit on desktop
   only), the NEXT SKIN goal line, a Settings gear
   (`#title-settings-btn`) top-right and an Armory button
   (`#title-armory-btn`) top-left (owner's call) — don't add menu items
@@ -741,8 +687,7 @@ husks' worth; 3: a Brute per three husks' worth, Wire Leeches for the rest
 and ~60% of the sentinels. Every occupied room keeps ≥ 1, Tickers leave the
 Facility, no RNG used. `facilityBand(n)` picks the roster for endless
 Facility depths; `FACILITY_RESPONSE` → `LevelData.responseKinds/Count`
-(the keycard alarm); Survival's Facility map walks Entry → Security →
-Reactor over its five waves (`survivalFacilityBand`). `facility-monsters.mjs`
+(the keycard alarm). `facility-monsters.mjs`
 tests all of it; features.mjs adds generic husks / tickers / a brute to
 sector 2 for its mechanic sections.
 
@@ -774,11 +719,11 @@ Facility module uses it too):
   mid-attack.
 Rosters (`applyBioRoster`, `bioBand`): sector 4 — a Vatborn per two
 husks' worth of close-range slots, Spitters for ~60% of the sentinels;
-sector 5 — a Carapace per three husks' worth of everything (~21 per sector:
-fewer bodies, armoured fronts — review if it plays too hard). Endless
+sector 5 — a Carapace per 2.2 husks' worth of everything (~28 per sector:
+fewer bodies, armoured fronts — review if it plays too hard; e2e checks
+sector 5 fields more enemy health than 4). Endless
 Biofoundry depths alternate, boss depths are sector 5; `BIO_RESPONSE` is the
-keycard alarm; Survival's Biofoundry map runs Vatborn + Spitter waves, then
-Carapaces (its heavies are Carapaces). `bio-monsters.mjs` tests it.
+keycard alarm. `bio-monsters.mjs` tests it.
 
 ## Build 1 from outside playtesters (2026-10-27)
 
@@ -886,7 +831,7 @@ Carapaces (its heavies are Carapaces). `bio-monsters.mjs` tests it.
 
 ## Secret prototype implementation
 
-Sectors 1?5 each have a distinct secret-room prototype, configured in `src/weapons/secrets.ts`. All use `WeaponId.special` in physical slot 6, `AmmoType.special`, and `WeaponSystem.secret` for the selected model/behavior. Regular guns stay in pickup order. Empty prototypes are retained rather than thrown. Checkpoints store `secretWeapon`; old saves default to the first model. `node scripts/secret-weapons.mjs <url>` verifies this feature. This five-sector scope follows the owner?s request and supersedes the earlier three-environment proposal for this implementation. Permanent unlocks and Survival drops remain pending.
+Sectors 1?5 each have a distinct secret-room prototype, configured in `src/weapons/secrets.ts`. All use `WeaponId.special` in physical slot 6, `AmmoType.special`, and `WeaponSystem.secret` for the selected model/behavior. Regular guns stay in pickup order. Empty prototypes are retained rather than thrown. Checkpoints store `secretWeapon`; old saves default to the first model. `node scripts/secret-weapons.mjs <url>` verifies this feature. This five-sector scope follows the owner?s request and supersedes the earlier three-environment proposal for this implementation. Permanent unlocks remain pending.
 
 
 ## Additional maps (2026-10-23)
@@ -929,7 +874,7 @@ its `dressEnvironment` is no longer reached (new themes return early from
 `generateLevel`). Existing block and tile ids are unchanged; appended block
 ids 40–56 and tiles 41–58 (59 of the 8×8 atlas's 64).
 
-Survival maps 4-6 use the new themes. Endless depths start with Freight at
+Endless depths start with Freight at
 8-9, Excavation at 10-11 and Medical at 12-13; every fifth depth still uses the
 Biofoundry boss, so depth 10 is Biofoundry. The first seven sectors stay as
 before. Web-only isolated previews: `?map=freight`, `?map=excavation`,

@@ -38,7 +38,7 @@ session adds 0.4 s to it; keeping a third of the sector 2 death-quitters adds
 |---|---|---|---|---|
 | 0 | Measurement: `start`, `death`, `playtime` events | tells us why | done, uncommitted | Claude |
 | 1 | **Scrap + permanent upgrades** (section 3) — **built 2026-10-23** | yes, directly | medium | Claude |
-| 2 | **Survival mode** (section 4) — built 2026-10-23; was the main mode for one Fit Test (~2:00 vs ~5:00), now the secondary mode | not as the first impression | large | Claude |
+| 2 | **Survival mode** (section 4) — built 2026-10-23; was the main mode for one Fit Test (~2:00 vs ~5:00), then hidden, then REMOVED 2026-10-27 (owner: upkeep) | not as the first impression | large | Claude |
 | 3 | **Three new map themes** (section 6) | variety | large | Codex |
 | 4 | **Secret map weapons**, 3 first (section 5) | indirectly | medium–large | Claude + Codex art |
 | 5 | AI companion drone (an upgrade) | no | medium | later |
@@ -111,6 +111,10 @@ Guardrails:
 - Success means sector 2 deaths per clear fall from ~6 toward ~3, the sector 2 clear rate rises from 26% toward 40%, and average playtime rises.
 
 ## 4. Survival mode (phase 2)
+
+**REMOVED (owner, 2026-10-27).** It cost upkeep with every new monster and
+map for a mode players never saw. The section below is kept as the record;
+the code is in git history up to commit 68832ba.
 
 **Result (Player Fit Test, 0.3.5, 2026-10-23): with Survival as PLAY,
 average playtime fell from ~5:00 to ~2:00 — 132 players, the same audience

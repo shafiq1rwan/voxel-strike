@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RigKit } from './entities/monster-kit';
 import { Renderer } from './core/renderer';
 import { Input } from './core/input';
 import { AudioMan } from './core/audio';
@@ -30,13 +31,11 @@ import { EnemySpec, KeyColor, PickupKind, PickupSpec } from './types';
 import { POKI, poki } from './platform/poki';
 import { isPerkId, isReward, offerDef, rollPerkOffer, PERK_IDS, PERKS, type OfferId, type PerkId } from './core/perks';
 import { UpgradeBook, UPGRADES, UPGRADE_MAX, SCRAP_FOR_KILL, SCRAP_SECRET, scrapForClear, type UpgradeId } from './core/upgrades';
-import { SurvivalRun, prepareSurvivalLevel, themeOfMap, mapOf, WAVES_PER_MAP, SURVIVAL_BEST_KEY, THEME_NAME, SURVIVAL_KILL_SCRAP, scrapForWave, SCRAP_MAP_BONUS, SHOP, GUN_AMMO, GUN_ROLE, type ShopId } from './modes/survival';
-import { gunSnapshot } from './ui/armory-preview';
 import { BASE_AMMO_MAX, BASE_MAX_HEALTH } from './entities/player';
 import { biofoundryTerminal, decorateBiofoundry } from './preview/biofoundry';
 import { decorateGeothermal } from './preview/geothermal-gen';
 import { decorateEnvironment } from './preview/environments';
-import { isNewTheme } from './world/environments';
+import { ENVIRONMENTS, isNewTheme } from './world/environments';
 import { ThrownGuns } from './weapons/thrown';
 
 type GameState = 'title' | 'playing' | 'paused' | 'overload' | 'dead' | 'intermission' | 'won';
@@ -198,10 +197,6 @@ export class Game {
   readonly upgrades = new UpgradeBook();
   /** scrap earned since this attempt at the sector began (death / clear screens) */
   private attemptScrap = 0;
-  /** the Survival run in progress (null = campaign). docs/RETENTION_PLAN.md §4 */
-  survival: SurvivalRun | null = null;
-  /** last wave / text pushed to the HUD in Survival */
-  private survHud = '';
   /** skins earned while a menu was up: stamped once play resumes */
   private pendingUnlocks: SkinDef[] = [];
   private unlockTimer = 0;
@@ -286,6 +281,19 @@ export class Game {
     scene.add(this.tracers.group);
     scene.add(this.thrown.group);
     scene.add(this.projectiles.group);
+    // shader primer: one hidden box in each of the sector monsters' material
+    // types (monster-kit.ts: grained + vertex-coloured, and the full-bright
+    // glow), so a monster that first appears mid-sector (the keycard alarm,
+    // a boss add) never compiles its program mid-fight; the warm-up compiles
+    // hidden objects, and this group never leaves the scene.
+    {
+      const kit = new RigKit(), primer = new THREE.Group();
+      primer.name = 'shader-primer';
+      kit.part(primer, 'lit', 0, -50, 0, 0.01, 0.01, 0.01, 0xffffff);
+      kit.part(primer, 'glow', 0, -50, 0, 0.01, 0.01, 0.01, 0xffffff, true);
+      primer.visible = false;
+      scene.add(primer);
+    }
     // the gun renders in its own depth-cleared pass (see Renderer.overlay)
     this.rendererSys.overlay.add(this.weapons.viewModel);
     for (const w of WEAPON_ORDER) this.weapons.setSkin(w, this.skins.skinFor(w));
@@ -578,11 +586,9 @@ export class Game {
     const seed = this.levelSeed();
     console.log(`[voxelstrike] generating sector ${this.levelIndex}, seed=${seed}`);
     const authored = this.authoredLevel();
-    // Survival: map N is that theme's generated sector, its arena walled off as the stage
-    const theme = this.survival ? themeOfMap(this.levelIndex - 1) : this.themeFor(this.levelIndex);
+    const theme = this.themeFor(this.levelIndex);
     this.level = authored ? authored.generate(seed)
-      : generateLevel(seed, this.survival ? 3 : this.levelIndex, theme, this.survival ? false : this.bossFor(this.levelIndex), !!this.survival);
-    if (this.survival && !authored) prepareSurvivalLevel(this.level);
+      : generateLevel(seed, this.levelIndex, theme, this.bossFor(this.levelIndex));
     this.world = this.level.world;
     this.solidBoxFrame = -1;
     const scene = this.rendererSys.scene;
@@ -1015,7 +1021,6 @@ export class Game {
 
   /** back to the title on a fresh layout, without reloading the page */
   private goToTitle(): void {
-    this.endSurvival();
     this.detachNet();
     this.clearTransientFX();
     if (this.automap.visible) this.automap.setVisible(false);
@@ -1040,7 +1045,7 @@ export class Game {
    * entry and keycard retry is an attempt; a revive continues the same one.
    */
   private measureStart(): void {
-    if (this.preview || this.net || this.survival) return;
+    if (this.preview || this.net) return;
     if (this.endless) poki.measure('endless', Math.min(20, this.levelIndex), 'start');
     else poki.measure('level', this.levelIndex, 'start');
   }
@@ -1071,7 +1076,7 @@ export class Game {
    */
   private dropScrap(e: Enemy): void {
     if (!this.scrapEnabled) return;
-    const n = (SCRAP_FOR_KILL[e.kind] ?? 1) * (this.survival ? SURVIVAL_KILL_SCRAP : 1);
+    const n = SCRAP_FOR_KILL[e.kind] ?? 1;
     const a = Math.random() * Math.PI * 2;
     let x = e.pos.x + Math.cos(a) * 0.55, z = e.pos.z + Math.sin(a) * 0.55;
     const floor = this.floorTopAt(e.pos.x, e.pos.y, e.pos.z);
@@ -1084,7 +1089,7 @@ export class Game {
     this.spawnPickup('scrap', x, this.floorTopAt(x, e.pos.y, z) + 0.35, z, { amount: n });
   }
 
-  /** wave / sector clear: scrap still lying about flies home */
+  /** sector clear: scrap still lying about flies home */
   private sweepScrap(): void {
     const n = this.pickups.sweepScrap();
     if (n > 0) this.collectScrap(n);
@@ -1100,228 +1105,11 @@ export class Game {
     return [1, 1.15, 1.3, 1.5][this.upgrades.level('medic')] ?? 1;
   }
 
-  /** best Survival wave reached on this device */
-  get survivalBest(): number {
-    return Number(storageGet(SURVIVAL_BEST_KEY) ?? 0) || 0;
-  }
-
-  private saveSurvivalBest(): void {
-    const w = this.survival?.wave ?? 0;
-    if (w > this.survivalBest) storageSet(SURVIVAL_BEST_KEY, String(w));
-  }
-
-  /** PLAY: a fresh Survival run on map 1 (the campaign save is left alone) */
-  private startSurvival(adShown: boolean): void {
-    this.audio.init();
-    if (this.isTouch && !POKI) {
-      void document.documentElement.requestFullscreen?.().catch(() => {});
-      const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
-      orientation.lock?.('landscape').catch(() => {});
-    }
-    this.detachNet();
-    this.endSurvival();
-    this.survival = new SurvivalRun();
-    this.rendererSys.scene.add(this.survival.fx);
-    this.survHud = '';
-    this.resetRun();
-    this.levelIndex = 1;
-    this.buildLevel();
-    this.applyRunStart();
-    this.attemptScrap = 0;
-    this.enterSector(`SURVIVAL — ${THEME_NAME[this.level.theme ?? 'facility']}. Hold the arena.`, adShown);
-    if (storageGet(TUTORIAL_KEY) === null) {
-      this.hud.hint(this.isTouch
-        ? 'LEFT THUMB move &middot; RIGHT THUMB aim &middot; <b>FIRE</b> shoot'
-        : '<b>WASD</b> move &middot; <b>MOUSE</b> aim &middot; <b>CLICK</b> shoot', 6);
-    }
-  }
-
-  /** the director started wave w: its event, its gun if one is due, the banner */
-  survivalWaveStarted(w: number): void {
-    poki.measure('wave', Math.min(30, w), 'start');
-    this.hud.streak(`WAVE ${w}`);
-  }
-
-  /** every enemy of wave w is down: pay out, then the pick (and a new map every WAVES_PER_MAP) */
-  survivalWaveCleared(w: number): void {
-    poki.measure('wave', Math.min(30, w), 'complete');
-    const mapDone = w % WAVES_PER_MAP === 0;
-    this.sweepScrap();
-    this.earnScrap(scrapForWave(w) + (mapDone ? SCRAP_MAP_BONUS : 0));
-    this.score += 250 * w;
-    this.hud.updateScore(this.score, 1);
-    this.saveSurvivalBest();
-    storageSet(TUTORIAL_KEY, '1');
-    this.audio.play('rankStamp');
-    this.state = 'intermission';
-    this.input.releaseLock();
-    this.input.releaseAll();
-    const offer = rollPerkOffer(this.perks, this.baseSeed, w);
-    this.hud.showWaveClear({
-      wave: w,
-      next: mapDone ? THEME_NAME[themeOfMap(mapOf(w + 1))] : null,
-      perks: offer.map((id) => offerDef(id)),
-      touch: this.isTouch,
-      onPick: (id) => this.pickSurvivalOffer(id, mapDone),
-    });
-  }
-
-  /** the wave's pick is made: the shop if there's something to buy, else straight on */
-  private pickSurvivalOffer(id: OfferId, mapDone: boolean): void {
-    if (this.state !== 'intermission' || !this.survival) return;
-    this.applyOffer(id);
-    if (!this.shopWorthOpening()) {
-      this.leaveWaveBreak(mapDone);
-      return;
-    }
-    // a beat on the chosen card, then the shop
-    this.hud.screenTimer(() => {
-      if (this.state !== 'intermission' || !this.survival) return;
-      this.hud.showShop({
-        scrap: () => this.upgrades.scrap,
-        items: () => SHOP.map((it) => this.shopItem(it.id, it.price)),
-        touch: this.isTouch,
-        onBuy: (sid) => this.buySurvival(sid as ShopId),
-        onDone: () => this.leaveWaveBreak(mapDone),
-      });
-    }, 350);
-  }
-
-  /** a shop card: the gun's picture (its equipped skin), name, one line, price */
-  private shopItem(id: ShopId, price: number): { id: string; name: string; role: string; price: number; owned: boolean; full?: boolean; img: string } {
-    if (id === 'ammo') {
-      return { id, name: 'AMMO', role: 'Refill every gun by half', price, owned: false, full: !this.ammoRefillUseful(), img: '' };
-    }
-    return {
-      id, name: this.weapons.definition(id).name, role: GUN_ROLE[id], price,
-      owned: this.weapons.has(id), img: gunSnapshot(id, this.skins.skinFor(id)),
-    };
-  }
-
-  /** any carried gun's ammo below its cap? */
-  private ammoRefillUseful(): boolean {
-    const pl = this.player;
-    return this.weapons.slots().some((g) => { const t = GUN_AMMO[g][0]; return pl.ammo[t] < pl.ammoMax[t]; });
-  }
-
-  /**
-   * The shop is only worth a screen when a new gun is affordable, or ammo is
-   * affordable and running low — otherwise the break goes straight on.
-   */
-  private shopWorthOpening(): boolean {
-    const bank = this.upgrades.scrap;
-    for (const it of SHOP) {
-      if (it.price > bank) continue;
-      if (it.id !== 'ammo' && !this.weapons.has(it.id)) return true;
-    }
-    const ammo = SHOP.find((i) => i.id === 'ammo')!;
-    if (ammo.price > bank) return false;
-    const pl = this.player;
-    return this.weapons.slots().some((g) => { const t = GUN_AMMO[g][0]; return g !== 'pistol' && pl.ammo[t] < pl.ammoMax[t] * 0.5; });
-  }
-
-  /** out of the wave break: the next map (every WAVES_PER_MAP waves) or back into this one */
-  private leaveWaveBreak(mapDone: boolean): void {
-    if (this.state !== 'intermission' || !this.survival) return;
-    if (mapDone) {
-      // a new map: built fresh, ads allowed (it's a natural break)
-      this.afterBreak((ad) => {
-        const run = this.survival;
-        if (!run) return;
-        this.levelIndex = mapOf(run.wave + 1) + 1;
-        this.buildLevel();
-        run.arm(3);
-        this.survHud = '';
-        this.enterSector(`${THEME_NAME[this.level.theme ?? 'facility']} — wave ${run.wave + 1} incoming.`, ad);
-      });
-      return;
-    }
-    this.hud.hideScreen();
-    this.survival.arm(3);
-    this.state = 'playing';
-    if (!this.isTouch) this.input.requestLock();
-  }
-
-  /** the shop: a gun (any order, any slot) or an ammo refill, paid in scrap */
-  private buySurvival(id: ShopId): boolean {
-    const item = SHOP.find((i) => i.id === id);
-    if (!item || this.upgrades.scrap < item.price || this.state !== 'intermission') return false;
-    if (id === 'ammo' ? !this.ammoRefillUseful() : this.weapons.has(id)) return false;
-    if (!this.upgrades.spend(item.price)) return false;
-    const pl = this.player;
-    if (id === 'ammo') {
-      // +half the cap of every ammo type a carried gun uses
-      const types = new Set(this.weapons.slots().map((g) => GUN_AMMO[g][0]));
-      for (const t of types) pl.ammo[t] = Math.min(pl.ammoMax[t], pl.ammo[t] + Math.round(pl.ammoMax[t] * 0.5));
-    } else {
-      this.weapons.give(id);
-      const [t, n] = GUN_AMMO[id];
-      pl.ammo[t] = Math.min(pl.ammoMax[t], pl.ammo[t] + n * 2);
-    }
-    this.hud.setScrap(this.upgrades.scrap);
-    this.hud.updateStats(pl);
-    this.hud.updateWeapon(this.weapons);
-    this.audio.play('pickupWeapon');
-    return true;
-  }
-
-  /** a Survival run is over (back to the campaign or the title): its scene bits go */
-  private endSurvival(): void {
-    if (this.survival) {
-      this.survival.dispose();
-      this.survival = null;
-    }
-  }
-
   /** top of the floor under (x, y, z): pickups dropped by flyers land on it */
   private floorTopAt(x: number, y: number, z: number): number {
     const bx = Math.floor(x), bz = Math.floor(z);
     for (let by = Math.floor(y); by >= 0; by--) if (this.world.isSolid(bx, by, bz)) return by + 1;
     return 1;
-  }
-
-  /** HUD in Survival: WAVE n · how many are left, no compass, run kills */
-  private updateSurvivalHud(): void {
-    const s = this.survival!;
-    const left = s.remaining();
-    const fighting = s.phase === 'fight';
-    const wave = Math.max(1, fighting || s.phase === 'over' ? s.wave : s.wave + 1);
-    const text = fighting || s.phase === 'over' ? `${left} LEFT` : 'GET READY';
-    const key = `${wave}|${text}`;
-    if (key !== this.survHud) {
-      const flash = this.survHud.split('|')[0] !== String(wave);
-      this.survHud = key;
-      this.hud.setWave(wave, text, flash);
-    }
-    this.hud.updateCompass(null, 0);
-    this.hud.setKills(s.kills, s.kills + left);
-  }
-
-  /** a Survival death: how far you got, your best, scrap, try again */
-  private showSurvivalDeath(): void {
-    const s = this.survival!;
-    const revive: 'ad' | 'free' | null = this.revivesUsed >= this.revivesAllowed ? null : POKI ? (poki.adsAvailable() ? 'ad' : null) : 'free';
-    const best = Math.max(this.survivalBest, s.wave);
-    this.hud.showDeath({
-      stats: `Reached wave ${s.wave} &nbsp;·&nbsp; Best: wave ${best} &nbsp;·&nbsp; Kills: ${s.kills} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}`,
-      sector: s.wave,
-      keycard: false,
-      revive,
-      scrap: { gained: this.attemptScrap, total: this.upgrades.scrap },
-      onUpgrades: () => {
-        if (this.state === 'dead') this.openUpgrades(() => this.showDeathScreen());
-      },
-      retryText: 'Try again',
-      newRunText: 'Main menu',
-      onRetry: () => {
-        if (this.state === 'dead') this.afterBreak((ad) => this.startSurvival(ad));
-      },
-      onRestart: () => {},
-      onRevive: () => this.requestRevive(),
-      onNewRun: () => {
-        if (this.state === 'dead') this.goToTitle();
-      },
-    });
   }
 
   /** a new run: full health (Reinforced Suit raises the cap), then Head Start's gear */
@@ -1396,7 +1184,7 @@ export class Game {
   private enterSector(message: string, adShown: boolean): void {
     this.measureStart();
     this.hud.setScrap(this.scrapEnabled ? this.upgrades.scrap : null);
-    if (!this.survival) this.attemptScrap = 0;
+    this.attemptScrap = 0;
     // Starter Plates: never enter a sector with less than this armor
     const plates = 10 * this.upgrades.level('plates');
     if (plates > this.player.armor) {
@@ -1523,10 +1311,6 @@ export class Game {
    * the sector; or start a new run.
    */
   private showDeathScreen(): void {
-    if (this.survival) {
-      this.showSurvivalDeath();
-      return;
-    }
     const revive: 'ad' | 'free' | null = this.revivesUsed >= this.revivesAllowed ? null : POKI ? (poki.adsAvailable() ? 'ad' : null) : 'free';
     this.hud.showDeath({
       stats: `Died in ${this.sectorName()} &nbsp;·&nbsp; Kills here: ${this.kills} / ${this.level.totalEnemies} &nbsp;·&nbsp; Score: ${this.score.toLocaleString()}` +
@@ -1584,7 +1368,6 @@ export class Game {
   /** get up where you fell: 60 health, a short spawn shield, nearby enemies shoved back */
   private reviveHere(adShown: boolean): void {
     this.revivesUsed++;
-    if (this.survival && this.survival.phase === 'over') this.survival.phase = 'fight';
     const p = this.player.pos;
     const left = this.revivesAllowed - this.revivesUsed;
     this.bringBack(p.x, p.y, p.z, this.player.yaw, 60,
@@ -1657,7 +1440,6 @@ export class Game {
 
   /** abandon the run: new layout, sector 1, no save */
   private newRunNow(adShown: boolean): void {
-    this.endSurvival();
     if (this.preview) {
       this.resetRun();
       this.buildLevel();
@@ -1676,7 +1458,6 @@ export class Game {
 
   /** title "Continue": resume the saved run at the sector it was saved on */
   private continueRun(adShown: boolean): void {
-    this.endSurvival();
     const save = this.loadSave();
     if (!save) {
       this.startGame(adShown);
@@ -1707,7 +1488,6 @@ export class Game {
 
   /** start the sector-1 level that's already built behind the title screen */
   private startGame(adShown = false): void {
-    this.endSurvival();
     this.audio.init();
     if (this.isTouch && !POKI) {
       // go immersive: fullscreen + landscape lock where the platform allows it
@@ -1915,7 +1695,7 @@ export class Game {
       const where = this.level.boss ? 'something big is waiting in the incubation chamber.'
         : this.level.theme === 'biofoundry' ? 'the Biofoundry goes deeper.'
         : this.level.theme === 'geothermal' ? 'back into the heat. The core never cools.'
-        : this.level.theme && isNewTheme(this.level.theme) ? `${THEME_NAME[this.level.theme]}. Find the red keycard and the lift.`
+        : this.level.theme && isNewTheme(this.level.theme) ? `${ENVIRONMENTS[this.level.theme].name}. Find the red keycard and the lift.`
         : 'old facility levels, colder and meaner.';
       this.enterSector(`DEPTH ${this.levelIndex} — ${where}`, adShown);
       return;
@@ -1970,12 +1750,6 @@ export class Game {
       newSector: storageGet(TUTORIAL_KEY) !== null && storageGet(GEOTHERMAL_SEEN_KEY) === null,
       // ...and returning players skip the goal + steps they already know
       returning: storageGet(TUTORIAL_KEY) !== null,
-      // Survival is hidden from players (owner, 2026-10-23): web builds show the
-      // quiet button under PLAY only with ?survival (development, survival.mjs);
-      // never on Poki. It was PLAY for one Fit Test: ~2:00 vs the campaign's ~5:00.
-      onSurvival: !POKI && !this.net && new URLSearchParams(location.search).has('survival')
-        ? () => this.afterBreak((ad) => this.startSurvival(ad)) : undefined,
-      survivalBest: this.survivalBest,
     });
   }
 
@@ -2051,7 +1825,7 @@ export class Game {
       () => this.resumeGame(),
       () => this.goToTitle(),
       () => this.openSettings('pause'),
-      this.net ? 'Leave co-op' : this.levelIndex >= 2 && !this.survival ? 'Save &amp; quit to menu' : 'Main menu',
+      this.net ? 'Leave co-op' : this.levelIndex >= 2 ? 'Save &amp; quit to menu' : 'Main menu',
       this.isTouch,
       () => this.openArmory('pause'),
     );
@@ -2331,12 +2105,6 @@ export class Game {
     }
     this.kills++;
     this.dropScrap(e);
-    if (this.survival) {
-      this.survival.kills++;
-      const drop = this.survival.dropFor(this);
-      // on the floor under it (flyers die in mid-air)
-      if (drop) this.spawnPickup(drop, e.pos.x, this.floorTopAt(e.pos.x, e.pos.y, e.pos.z) + 0.4, e.pos.z);
-    }
     this.hud.killMarker(e.lastHitHead);
     this.skinStat('kills');
     if (e.lastHitHead) this.skinStat('headshots');
@@ -2472,10 +2240,6 @@ export class Game {
 
   /** HUD objective tracker: step label (flashes on change) + arrow/distance */
   private updateObjective(): void {
-    if (this.survival) {
-      this.updateSurvivalHud();
-      return;
-    }
     const stage = this.objectiveStage();
     if (stage !== this.objStage) {
       const changed = this.objStage !== null;
@@ -2532,18 +2296,10 @@ export class Game {
   onPlayerDeath(): void {
     if (!this.net) {
       // Poki events are deliberately few: level 1 fresh-start, level N start / complete / fail (POKI.md)
-      if (this.survival) {
-        const w = Math.min(30, Math.max(1, this.survival.wave));
-        poki.measure('wave', w, 'fail');
-        poki.measure('death', `w${w}`, this.player.lastHitBy || 'unknown');
-        this.survival.phase = 'over';
-        this.saveSurvivalBest();
-      } else {
-        if (this.endless) poki.measure('endless', Math.min(20, this.levelIndex), 'fail');
-        else poki.measure('level', this.levelIndex, 'fail');
-        // what killed them, per sector (death → 2 → ticker): a spike shows up as one killer
-        poki.measure('death', Math.min(20, this.levelIndex), this.player.lastHitBy || 'unknown');
-      }
+      if (this.endless) poki.measure('endless', Math.min(20, this.levelIndex), 'fail');
+      else poki.measure('level', this.levelIndex, 'fail');
+      // what killed them, per sector (death → 2 → ticker): a spike shows up as one killer
+      poki.measure('death', Math.min(20, this.levelIndex), this.player.lastHitBy || 'unknown');
     }
     this.state = 'dead';
     this.deathTimer = 0;
@@ -2676,7 +2432,7 @@ export class Game {
   }
 
   /** a perk card was picked on the sector-clear screen: keep it (or take the reward), then descend */
-  /** a picked perk or one-off reward takes effect (sector clear and Survival waves) */
+  /** a picked perk or one-off reward takes effect */
   private applyOffer(id: OfferId): void {
     const pl = this.player;
     if (isReward(id)) {
@@ -2985,7 +2741,6 @@ export class Game {
     this.guardPlayerInWorld(dt);
     this.weapons.update(dt, this.input, this);
     this.enemies.update(dt, this);
-    if (this.survival && this.state === 'playing') this.survival.update(dt, this);
     if (!this.net && this.overload) {
       if (this.state === 'playing') this.overload.update(dt, this);
       else this.hud.setOverloadAction('');

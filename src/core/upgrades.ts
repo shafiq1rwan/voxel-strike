@@ -88,7 +88,7 @@ export class UpgradeBook {
     this.save();
   }
 
-  /** spend scrap on something else (Survival's gun shop): false when short */
+  /** spend scrap on something other than an upgrade: false when short */
   spend(n: number): boolean {
     if (n <= 0 || this.scrap < n) return false;
     this.scrap -= n;

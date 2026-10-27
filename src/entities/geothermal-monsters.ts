@@ -530,9 +530,6 @@ export class GeothermalMonster {
         }
       } else {
         let nx = dx / dist, nz = dz / dist, speed = e.tuning.speed;
-        // Survival: around the arena's cover by the flow field
-        const via = e.navAround(dt, target, game);
-        if (via) { nx = via[0]; nz = via[1]; }
         if (this.kind === 'kilnDrone' && los && dist < 8) { nx = -nx; nz = -nz; speed *= .6; }
         if (this.jink > 0) { const old = nx; nx = -nz * this.jinkSign; nz = old * this.jinkSign; }
         // walkers never step off a ledge: turn along it, or hold at the edge

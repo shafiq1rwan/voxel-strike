@@ -423,9 +423,7 @@ export class FacilityMonster {
         this.begin(game, target, wantYaw);
       } else {
         // a slow turret on legs: it turns at 65°/s and walks the way it faces
-        let goal = wantYaw;
-        const via = e.navAround(dt, target, game);
-        if (via) goal = Math.atan2(-via[0], -via[1]);
+        const goal = wantYaw;
         this.turnToward(goal, dt);
         const go = dist > 1.6 && Math.abs(angleTo(this.face, goal)) < 1.2 ? e.tuning.speed : 0;
         this.drive(-Math.sin(this.face), -Math.cos(this.face), go, dt);
@@ -439,9 +437,7 @@ export class FacilityMonster {
         this.cooldown = LEECH_COOLDOWN;
       } else {
         let nx = dx / dist, nz = dz / dist, speed = e.tuning.speed;
-        const via = e.navAround(dt, target, game);
-        if (via) { nx = via[0]; nz = via[1]; }
-        else if (los && dist < 4) { nx = -nx; nz = -nz; speed *= 0.8; }
+        if (los && dist < 4) { nx = -nx; nz = -nz; speed *= 0.8; }
         else if (los && dist < 6.5) {
           this.strafeT -= dt;
           if (this.strafeT <= 0) { this.strafe = -this.strafe; this.strafeT = 1.5 + Math.random(); }
