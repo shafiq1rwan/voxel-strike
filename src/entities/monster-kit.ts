@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { rayBox } from '../core/physics';
 
 /**
  * Shared box-rig helpers for the sector monsters (facility-monsters.ts,
@@ -20,6 +21,47 @@ export const sched = (prep: number, lock: number, commit: number, recover: numbe
   const s = { prep, lock, commit, recover };
   return { attack: s, charge: s };
 };
+
+/**
+ * Exact ray hits against a rig's original boxes, following their live pivots
+ * after `bake()` merged the render meshes (Wire Leech coil, Carapace core and
+ * plates). Record BEFORE baking; each box carries a tag from `tag(part)`.
+ */
+export class HitBoxes<T extends string> {
+  /** the recorded boxes (tests aim real shots at them by name) */
+  readonly parts: { name: string; tag: T; parent: THREE.Object3D; matrix: THREE.Matrix4; box: THREE.Box3 }[] = [];
+
+  constructor(private mesh: THREE.Object3D, private body: THREE.Object3D, tag: (part: THREE.Mesh) => T) {
+    body.traverse((part) => {
+      if (!(part instanceof THREE.Mesh)) return;
+      part.updateMatrix(); part.geometry.computeBoundingBox();
+      this.parts.push({ name: part.name, tag: tag(part), parent: part.parent!, matrix: part.matrix.clone(), box: part.geometry.boundingBox!.clone() });
+    });
+  }
+
+  /** nearest box along the ray within maxT (world units), or null */
+  raycast(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxT: number): { t: number; tag: T } | null {
+    // the occlusion cull may detach the body from the mesh: include the enemy transform explicitly
+    this.mesh.updateWorldMatrix(true, false);
+    this.body.updateWorldMatrix(false, true);
+    let best: { t: number; tag: T } | null = null;
+    for (const part of this.parts) {
+      _partWorld.copy(part.parent.matrixWorld).multiply(part.matrix);
+      if (this.body.parent !== this.mesh) _partWorld.premultiply(this.mesh.matrixWorld);
+      _inverse.copy(_partWorld).invert();
+      _origin.set(ox, oy, oz).applyMatrix4(_inverse);
+      // transform a displacement, not a normalized direction: t stays in world units
+      _direction.set(ox + dx, oy + dy, oz + dz).applyMatrix4(_inverse).sub(_origin);
+      const b = part.box;
+      const t = rayBox(_origin.x, _origin.y, _origin.z, _direction.x, _direction.y, _direction.z, best?.t ?? maxT,
+        { minX: b.min.x, minY: b.min.y, minZ: b.min.z, maxX: b.max.x, maxY: b.max.y, maxZ: b.max.z });
+      if (t !== null && (!best || t < best.t)) best = { t, tag: part.tag };
+    }
+    return best;
+  }
+}
+const _partWorld = new THREE.Matrix4(), _inverse = new THREE.Matrix4();
+const _origin = new THREE.Vector3(), _direction = new THREE.Vector3();
 
 export class RigKit {
   boxCount = 0;

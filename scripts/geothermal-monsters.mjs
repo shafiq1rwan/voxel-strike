@@ -23,23 +23,24 @@ try {
     const until=(e,fn,max=300)=>{for(let i=0;i<max;i++){tick(e);if(fn())return true;}return false;};
     let e=setup('cinderHulk');
     checks.hulkWarning=until(e,()=>e.state==='attack'&&e.phase==='prep'&&e.phaseT>.72)&&e.mesh.getObjectByName('slam-warning-ring').visible&&e.geothermal.arms.every(a=>a.rotation.x>1.5)&&e.coreOpen;
-    checks.hulkSlam=until(e,()=>e.phase==='recover')&&g.player.health===76;
-    tick(e,30);checks.slamOnce=g.player.health===76;
+    // the slam starts a ground ring: it reaches the player (2.6 u out) a few frames later
+    checks.hulkSlam=until(e,()=>e.phase==='recover')&&g.player.health===100&&e.geothermal.ringLive&&(tick(e,40),g.player.health===78);
+    tick(e,30);checks.slamOnce=g.player.health===78;
     // the slam has a visible downswing: the wind-up ends in a strike phase
     // with the fists still high and the player untouched; damage lands at impact
     e=setup('cinderHulk');
     checks.hulkDownswing=until(e,()=>e.phase==='strike')&&g.player.health===100&&e.geothermal.arms.every(a=>a.rotation.x>1.5)&&
-      (tick(e,6),e.phase==='strike'&&e.geothermal.arms.every(a=>a.rotation.x<2.4))&&until(e,()=>e.phase==='recover')&&g.player.health===76;
+      (tick(e,6),e.phase==='strike'&&e.geothermal.arms.every(a=>a.rotation.x<2.4))&&until(e,()=>e.phase==='recover')&&(tick(e,40),g.player.health===78);
     e=setup('cinderHulk');until(e,()=>e.state==='attack'&&e.phaseT>.72);
-    g.player.pos.x=37;until(e,()=>e.phase==='recover');checks.hulkDodge=g.player.health===100;
+    g.player.pos.x=39.5;until(e,()=>e.phase==='recover');tick(e,40);checks.hulkDodge=g.player.health===100;
     e=setup('cinderHulk');until(e,()=>e.state==='attack'&&e.phaseT>.72);
-    g.player.pos.y=3;until(e,()=>e.phase==='recover');checks.hulkJump=g.player.health===100;
+    g.player.pos.y=3;until(e,()=>e.phase==='recover');tick(e,40);checks.hulkJump=g.player.health===100;
     e=setup('ventStalker',32,27.5);
     checks.stalkerCrouch=until(e,()=>e.state==='charge'&&e.phase==='prep'&&e.phaseT>.42)&&e.body.position.y<-.07;
     checks.stalkerLeap=until(e,()=>e.phase==='move')&&e.vel.y>0;
-    checks.stalkerHit=until(e,()=>e.phase==='recover')&&g.player.health===86;
-    tick(e,25);checks.leapOnce=g.player.health===86;
-    e=setup('ventStalker',32,27.5);until(e,()=>e.state==='charge'&&e.phase==='prep'&&e.phaseT>.45);
+    checks.stalkerHit=until(e,()=>e.phase==='recover')&&g.player.health===82;
+    tick(e,25);checks.leapOnce=g.player.health===82;
+    e=setup('ventStalker',32,27.5);until(e,()=>e.state==='charge'&&e.phase==='prep'&&e.phaseT>.6);
     g.player.pos.x=37.5;until(e,()=>e.phase==='recover');checks.stalkerDodge=g.player.health===100;
     e=setup('kilnDrone',32,25);
     checks.droneShot=until(e,()=>g.projectiles.liveList().some(p=>p[0]===3))&&e.coreOpen&&e.geothermal.plates.every(p=>Math.abs(p.rotation.y)>.7);
@@ -50,6 +51,26 @@ try {
     g.projectiles.spawn('slag',34,2,23,0,0,-1,9.5,false);
     for(let i=0;i<60;i++)g.projectiles.update(1/60,g);
     checks.doorBlocksSlag=g.player.health===100&&g.projectiles.liveList().every(p=>p[0]!==3);
+    const weaver=(pz=27)=>{
+      g.buildLevel();g.state='paused';g.player.health=100;g.player.armor=0;g.player.dead=false;g.player.buffs.shield=0;
+      g.player.pos.set(34,1.88,pz);g.player.vel.set(0,0,0);g.projectiles.reset();
+      const n=g.enemies.list.length;g.enemies.spawnFromSpecs([{kind:'ashWeaver',x:34.5,z:32.5,roomId:g.level.rooms[0].id}],g.level.rooms,g);
+      const w=g.enemies.list[n];g.enemies.list.forEach(other=>{other.puppet=other!==w;});
+      w.pos.set(34,1+w.half.y,32);w.vel.set(0,0,0);w.awake=true;w.state='chase';w.attachBody(true);return w;
+    };
+    e=weaver();
+    checks.weaverLine=until(e,()=>e.state==='attack'&&e.phase==='prep'&&e.phaseT>.6)&&e.weaver.marked===3&&g.player.health===100;
+    checks.weaverHeat=until(e,()=>e.phase==='recover')&&e.weaver.burning===3&&(tick(e,100),g.player.health===82&&e.weaver.burning===0);
+    e=weaver();until(e,()=>e.state==='attack'&&e.phaseT>1.25);
+    g.player.pos.x=35.8;until(e,()=>e.phase==='recover');tick(e,100);checks.weaverDodge=g.player.health===100;
+    e=weaver(27);until(e,()=>e.state==='attack'&&e.phaseT>1.25);
+    g.player.pos.y=3.2;until(e,()=>e.phase==='recover');tick(e,30);checks.weaverJump=g.player.health===100;
+    e.state='chase';e.weaver.pose(0);
+    // the line stops at the closed door south of z 23: no heat on its far side
+    e=weaver();e.pos.set(34,1+e.half.y,26.5);e.weaver.face=0;e.weaver.planLine(g);
+    const shut=g.doors.filter(d=>!d.isOpen).map(d=>d.box()).find(b=>b.minX<34&&b.maxX>34&&b.maxZ<26.5);
+    checks.weaverWallStop=!!shut&&e.weaver.marked>0&&e.weaver.marked<3&&e.weaver.marks.every(m=>!m.visible||m.position.z-.65>shut.maxZ);
+    checks.weaverDraws=(()=>{let n=0;e.body.traverse(o=>{if(o.isMesh&&o.visible)n++;});return n<=12;})();
     e=setup('cinderHulk');e.state='attack';e.phase='recover';e.phaseT=0;e.geothermal.pose(0);
     const before=e.hp,origin=e.pos.clone();origin.z+=4;origin.y+=.3;
     const dir=e.pos.clone().set(0,0,-1);

@@ -3,7 +3,7 @@ import { generateSectorLayout, type SectorArchitecture } from './sector-layouts'
 import { dressEnvironment, isNewTheme, ENVIRONMENTS } from './environments';
 import { Block } from './blocks';
 import { RNG } from '../core/rng';
-import { applyFacilityRoster, facilityBand, FACILITY_RESPONSE, applyBioRoster, bioBand, BIO_RESPONSE } from './rosters';
+import { applyFacilityRoster, facilityBand, FACILITY_RESPONSE, applyBioRoster, bioBand, BIO_RESPONSE, applyGeoRoster, geoBand, GEO_RESPONSE } from './rosters';
 import { ExitSignSpec, LedgeRailSpec,
   DoorSpec, ElevatorSpec, EnemySpec, PickupSpec, Rect, RoomDef,
 } from '../types';
@@ -1035,17 +1035,18 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   }
 
   // -- the sector's own monsters (reference/sector-monsters-v2) -------------
-  // Facility sectors 1–3 (and endless Facility depths) re-cast the generic
-  // placements above as the sector's pair at about the same pressure. No RNG:
-  // the rest of the layout stream is untouched.
+  // Every sector (and endless depth) re-casts the generic placements above as
+  // its own pair at about the same pressure: Facility 1–3, Biofoundry 4–5,
+  // Geothermal Core 6–7. No RNG: the rest of the layout stream is untouched.
   const band = theme === 'facility' ? facilityBand(difficulty) : null;
   const bBand = theme === 'biofoundry' ? bioBand(difficulty, withBoss) : null;
-  if (band || bBand) {
-    const cast = band ? applyFacilityRoster(enemies, band) : applyBioRoster(enemies, bBand!);
+  const gBand = isGeo ? geoBand(difficulty) : null;
+  if (band || bBand || gBand) {
+    const cast = band ? applyFacilityRoster(enemies, band) : bBand ? applyBioRoster(enemies, bBand) : applyGeoRoster(enemies, gBand!);
     enemies.length = 0;
     enemies.push(...cast);
   }
-  const response = band ? FACILITY_RESPONSE[band] : bBand ? BIO_RESPONSE[bBand] : null;
+  const response = band ? FACILITY_RESPONSE[band] : bBand ? BIO_RESPONSE[bBand] : gBand ? GEO_RESPONSE[gBand] : null;
 
   // -- powerup: at most one per sector, stashed in a far room ----------------
   if (rng.chance(0.65)) {

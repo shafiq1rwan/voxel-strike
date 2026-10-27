@@ -3,7 +3,7 @@ import type { Enemy } from './enemies';
 import type { EnemyKind } from '../types';
 import type { Game, PlayerTarget } from '../game';
 import { moveBody, rayBox } from '../core/physics';
-import { RigKit, sched, span, angleTo, lerp } from './monster-kit';
+import { HitBoxes, RigKit, sched, span, angleTo, lerp } from './monster-kit';
 
 /**
  * The Biofoundry's new monsters, after reference/sector-monsters-v2 (sheets 02
@@ -88,6 +88,10 @@ export class BioMonster {
   private plates: THREE.Group[] = [];
   private arms: THREE.Group[] = [];
   private reservoirs: THREE.Mesh[] = [];
+  /** Spitter: each reservoir on its own pivot, so the bake keeps it swelling on its own */
+  private sacs: THREE.Group[] = [];
+  /** Carapace: its original boxes (core / plates / body) for exact hits after the bake */
+  private hits: HitBoxes<'core' | 'plate' | 'body'> | null = null;
   private core: THREE.Mesh | null = null;
   private brow: THREE.Mesh | null = null;
   // Spitter effects
@@ -102,6 +106,13 @@ export class BioMonster {
     e.mesh.userData.monsterName = kind === 'spitter' ? 'SPITTER' : 'CARAPACE';
     if (kind === 'spitter') this.buildSpitter();
     else this.buildCarapace();
+    if (kind === 'carapace') {
+      this.hits = new HitBoxes(e.mesh, body, (part) => (part === this.core ? 'core' : part.name === 'bone-plate' ? 'plate' : 'body'));
+    }
+    // one draw per pivot (lit) + its glows; the fx stay separate (they live outside the body)
+    let boxes = 0; body.traverse((o) => { if (o instanceof THREE.Mesh) boxes++; });
+    this.kit.bake(body);
+    body.userData.boxCount = boxes;
     this.fx.name = `${kind}-fx`;
   }
 
@@ -123,7 +134,8 @@ export class BioMonster {
     k.part(head, 'mouth-frame', 0, -0.05, -0.455, 0.42, 0.3, 0.04, DARK);
     k.part(head, 'mouth', 0, -0.05, -0.475, 0.28, 0.2, 0.03, MOUTH);
     for (const side of [-1, 1]) {
-      this.reservoirs.push(k.part(head, 'lime-reservoir', side * 0.41, -0.02, -0.25, 0.16, 0.32, 0.3, LIME, true));
+      const sac = k.joint(head, 'sac', side * 0.41, -0.02, -0.25); this.sacs.push(sac);
+      this.reservoirs.push(k.part(sac, 'lime-reservoir', 0, 0, 0, 0.16, 0.32, 0.3, LIME, true));
       k.part(head, 'reservoir-cap', side * 0.41, 0.18, -0.25, 0.18, 0.06, 0.32, DARK);
     }
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
@@ -211,7 +223,8 @@ export class BioMonster {
     }
     if (this.head) this.head.rotation.x = lift;
     if (this.torso) this.torso.rotation.x = -rear;
-    this.reservoirs.forEach((r) => { r.scale.set(swell, swell, 1); this.kit.glowK(r, glow); });
+    this.sacs.forEach((s) => s.scale.set(swell, swell, 1));
+    this.reservoirs.forEach((r) => this.kit.glowK(r, glow));
     this.kit.glowK(this.brow, phase === 'prep' ? 1.3 : 1);
     this.legs.forEach((leg, i) => {
       const g = (i === 0 || i === 3) ? 0 : Math.PI;
@@ -503,17 +516,30 @@ export class BioMonster {
   // ---------------------------------------------------------------------------
 
   /**
-   * The Carapace's armour is positional: shots into its closed front plates do
-   * a quarter, its sides and back take full damage, its bared core double.
-   * `dx, dz` is the direction the hit travelled.
+   * The Carapace's armour is positional (BEHAVIOURS.md §5: by hit location
+   * and plate state): a hitscan shot that lands on a closed plate does a
+   * quarter, on the rest of the body full, on the bared core double. Hits with
+   * no location (splash, melee, thrown guns) go by `dx, dz`, the direction the
+   * hit travelled: into the closed front a quarter.
    */
-  scaleDamage(dmg: number, dx: number, dz: number, coreHit: boolean): { dmg: number; armored: boolean } {
+  scaleDamage(dmg: number, dx: number, dz: number, coreHit: boolean, part: 'core' | 'plate' | 'body' | null): { dmg: number; armored: boolean } {
     if (this.kind !== 'carapace') return { dmg, armored: false };
-    if (this.e.coreOpen) return { dmg: coreHit ? dmg * 2 : dmg, armored: false };
+    if (this.e.coreOpen && coreHit) return { dmg: dmg * 2, armored: false };
+    // a located shot (hitscan): the plate it struck is armour, anything else isn't
+    // (closed, the core only shows through the 2 cm seam between the plates: that's plate too)
+    if (part) return part !== 'body' && !this.e.coreOpen ? { dmg: dmg * 0.25, armored: true } : { dmg, armored: false };
+    if (this.e.coreOpen) return { dmg, armored: false };
+    // splash / melee / thrown: by direction, into the closed front
     const n = Math.hypot(dx, dz);
     const fx = -Math.sin(this.face), fz = -Math.cos(this.face);
     const intoFront = n > 0.001 && (dx * fx + dz * fz) / n < -0.35;
     return intoFront ? { dmg: dmg * 0.25, armored: true } : { dmg, armored: false };
+  }
+
+  /** Carapace: the exact box a ray meets first (its core, a plate, or the rest), or null */
+  raycast(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxT: number): { t: number; part: 'core' | 'plate' | 'body' } | null {
+    const hit = this.hits?.raycast(ox, oy, oz, dx, dy, dz, maxT);
+    return hit ? { t: hit.t, part: hit.tag } : null;
   }
 
   /** a Spitter flinches once per charge at most; a Carapace never mid-attack */

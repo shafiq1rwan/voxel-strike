@@ -8,6 +8,7 @@ import type { Game, PlayerTarget } from '../game';
 import { GeothermalMonster, isGeothermalKind, GEO_SCHEDULE } from './geothermal-monsters';
 import { FacilityMonster, isFacilityKind, FACILITY_SCHEDULE } from './facility-monsters';
 import { BioMonster, isBioKind, BIO_SCHEDULE } from './bio-monsters';
+import { AshWeaver, WEAVER_SCHEDULE } from './ash-weaver';
 
 export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'charge' | 'pain' | 'dead';
 
@@ -40,6 +41,7 @@ const SCHED: Record<EnemySpec['kind'], { attack: Sched; charge: Sched }> = {
   wireLeech: FACILITY_SCHEDULE.wireLeech,
   spitter: BIO_SCHEDULE.spitter,
   carapace: BIO_SCHEDULE.carapace,
+  ashWeaver: WEAVER_SCHEDULE.ashWeaver,
   // reference/sector-monsters-v2/BEHAVIOURS.md: the claw is pulled back
   // 0.65 s (facing locks for the last 0.2), one 0.15 s rake, 0.9 s exposed
   husk: {
@@ -124,9 +126,9 @@ interface EnemyTuning {
 }
 
 const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
-  cinderHulk: { hp: 190, speed: 1.8, halfX: 0.74, halfY: 1.35, painChance: 0.08, bloodColor: [1, 0.43, 0.08] },
-  ventStalker: { hp: 50, speed: 3.6, halfX: 0.58, halfY: 0.43, painChance: 0.25, bloodColor: [1, 0.3, 0.05] },
-  kilnDrone: { hp: 85, speed: 2.1, halfX: 0.3, halfY: 0.46, painChance: 0.15, bloodColor: [1, 0.6, 0.08] },
+  cinderHulk: { hp: 180, speed: 1.8, halfX: 0.74, halfY: 1.35, painChance: 0.08, bloodColor: [1, 0.43, 0.08] },
+  ventStalker: { hp: 55, speed: 3.6, halfX: 0.58, halfY: 0.43, painChance: 0.25, bloodColor: [1, 0.3, 0.05] },
+  kilnDrone: { hp: 75, speed: 2.1, halfX: 0.3, halfY: 0.46, painChance: 0.15, bloodColor: [1, 0.6, 0.08] },
   // the Facility's sector monsters (facility-monsters.ts): a bolted turret
   // that never flinches, a slow armored clamp biped, a tether parasite
   sentryBud: { hp: 28, speed: 0, halfX: 0.48, halfY: 0.5, painChance: 0, bloodColor: [0.3, 0.85, 1] },
@@ -148,6 +150,7 @@ const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
   // the Biofoundry's sector monsters (bio-monsters.ts)
   spitter: { hp: 70, speed: 2.2, halfX: 0.55, halfY: 0.5, painChance: 0.3, bloodColor: [0.6, 1, 0.2] },
   carapace: { hp: 120, speed: 1.5, halfX: 0.62, halfY: 0.9, painChance: 0.05, bloodColor: [0.9, 0.3, 0.2] },
+  ashWeaver: { hp: 70, speed: 1.5, halfX: 0.72, halfY: 0.5, painChance: 0.2, bloodColor: [1, 0.45, 0.1] },
   // boss: never moves, never flinches (its armor and core do the work)
   broodkeeper: { hp: 2200, speed: 0, halfX: 1.5, halfY: 1.4, painChance: 0, bloodColor: [0.8, 0.25, 0.2] },
 };
@@ -157,7 +160,7 @@ const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'ti
   broodkeeper: 'bruteRoar',
   cinderHulk: 'bruteRoar', ventStalker: 'huskAlert', kilnDrone: 'sentinelAlert',
   sentryBud: 'sentinelAlert', clampGuard: 'bruteRoar', wireLeech: 'tickerAlert',
-  spitter: 'huskAlert', carapace: 'bruteRoar',
+  spitter: 'huskAlert', carapace: 'bruteRoar', ashWeaver: 'bruteRoar',
 };
 
 /** husk-skeleton walkers: the jointed rig + walker gait/attack animation drive them */
@@ -282,6 +285,8 @@ export class Enemy {
   lastHitHead = false;
   /** boss: set by hitscan right before damage() when the shot landed in the core zone */
   lastHitCore = false;
+  /** Carapace: the box a hitscan shot landed on (null = no location: splash, melee, thrown) */
+  lastHitPart: 'core' | 'plate' | 'body' | null = null;
   /** boss: the chest plates are open — the core takes double, the rest full damage */
   coreOpen = false;
   /** boss state (null for every other kind) */
@@ -328,8 +333,10 @@ export class Enemy {
   facility: FacilityMonster | null = null;
   /** the Biofoundry's Spitter / Carapace (bio-monsters.ts) */
   bio: BioMonster | null = null;
-  /** world-space effects the manager puts in the scene beside the rig (a Spitter's glob, mark and patch) */
-  get worldFx(): THREE.Object3D | null { return this.bio?.fx ?? null; }
+  /** the Deep Core's Ash Weaver (ash-weaver.ts) */
+  weaver: AshWeaver | null = null;
+  /** world-space effects the manager puts in the scene beside the rig (a Spitter's glob / mark / patch, a Weaver's heat line) */
+  get worldFx(): THREE.Object3D | null { return this.bio?.fx ?? this.weaver?.fx ?? null; }
 
   constructor(spec: EnemySpec, room: RoomDef | null, groundY: number, startPatrolling: boolean) {
     this.kind = spec.kind;
@@ -344,6 +351,7 @@ export class Enemy {
     if (isGeothermalKind(spec.kind)) this.geothermal = new GeothermalMonster(this, this.body, spec.kind);
     else if (isFacilityKind(spec.kind)) this.facility = new FacilityMonster(this, this.body, spec.kind);
     else if (isBioKind(spec.kind)) this.bio = new BioMonster(this, this.body, spec.kind);
+    else if (spec.kind === 'ashWeaver') this.weaver = new AshWeaver(this, this.body);
     else if (spec.kind === 'husk') this.buildHusk();
     else if (spec.kind === 'ticker') this.buildTicker();
     else if (spec.kind === 'brute') this.buildBrute();
@@ -1118,10 +1126,11 @@ export class Enemy {
     }
     if (this.bio) {
       // the Carapace's plates: a quarter from the front, double into the bared core
-      const r = this.bio.scaleDamage(dmg, dx, dz, this.lastHitCore);
+      const r = this.bio.scaleDamage(dmg, dx, dz, this.lastHitCore, this.lastHitPart);
       dmg = r.dmg;
       armored = r.armored;
       this.lastHitCore = false;
+      this.lastHitPart = null;
     }
     this.hp -= dmg;
     // hit feedback fires the same frame: white-hot flash, a sideways jolt,
@@ -1172,6 +1181,8 @@ export class Enemy {
     this.setState('dead');
     this.facility?.onDeath();
     this.bio?.onDeath();
+    this.weaver?.onDeath();
+    this.geothermal?.onDeath();
     this.atkTgt = null;
     this.faceLocked = false;
     game.audio.play(humanoid(this.kind) ? 'enemyDieA' : 'enemyDieB', this.pos);
@@ -1244,7 +1255,7 @@ export class Enemy {
 
     // dead: the voxel rig already burst into gibs in die() (a Spitter's glob
     // and acid patch run out their own timers)
-    if (this.state === 'dead') { this.bio?.deadUpdate(dt, game); return; }
+    if (this.state === 'dead') { this.bio?.deadUpdate(dt, game); this.weaver?.deadUpdate(dt, game); return; }
     if (this.dormant) {
       this.dormantUpdate(dt, game);
       return;
@@ -1269,11 +1280,12 @@ export class Enemy {
       }
     }
 
-    if (this.geothermal || this.facility || this.bio) {
+    if (this.geothermal || this.facility || this.bio || this.weaver) {
       if (this.state === 'pain' && this.stateTime > this.stunTime) this.setState('chase');
       if (this.geothermal) this.geothermal.update(dt, game, pl);
       else if (this.facility) this.facility.update(dt, game, pl);
-      else this.bio!.update(dt, game, pl);
+      else if (this.bio) this.bio.update(dt, game, pl);
+      else this.weaver!.update(dt, game, pl);
       this.mesh.position.copy(this.pos);
       this.mesh.scale.setScalar(1 + this.flashTime * 0.7);
       this.mesh.rotation.z = this.flashTime * this.flinchSign * 0.4;
@@ -2054,6 +2066,7 @@ export class Enemy {
     if (this.geothermal) { this.geothermal.pose(dt); return; }
     if (this.facility) { this.facility.pose(dt); return; }
     if (this.bio) { this.bio.pose(dt); return; }
+    if (this.weaver) { this.weaver.pose(dt); return; }
     const speed = Math.hypot(this.vel.x, this.vel.z);
     this.animPhase += dt * 2;
     if (this.kind === 'husk') this.animateHusk(dt, game);
@@ -2432,7 +2445,7 @@ export class Enemy {
     else if (!on && attached) this.mesh.remove(this.body);
   }
 
-  disposeArt(): void { this.geothermal?.dispose(); this.facility?.dispose(); this.bio?.dispose(); }
+  disposeArt(): void { this.geothermal?.dispose(); this.facility?.dispose(); this.bio?.dispose(); this.weaver?.dispose(); }
 
   /** the CPU-lit parts (not fullBright), gathered once: the rig never changes */
   private litCache: THREE.Mesh[] | null = null;
@@ -2574,13 +2587,19 @@ export class EnemyManager {
     ox: number, oy: number, oz: number,
     dx: number, dy: number, dz: number,
     maxT: number
-  ): { enemy: Enemy; t: number; core?: boolean } | null {
-    let best: { enemy: Enemy; t: number; core?: boolean } | null = null;
+  ): { enemy: Enemy; t: number; core?: boolean; part?: 'core' | 'plate' | 'body' } | null {
+    let best: { enemy: Enemy; t: number; core?: boolean; part?: 'core' | 'plate' | 'body' } | null = null;
     for (const e of this.list) {
       if (!e.alive) continue;
       if (e.kind === 'wireLeech' && e.facility) {
         const hit = e.facility.raycast(ox, oy, oz, dx, dy, dz, best?.t ?? maxT);
         if (hit && (!best || hit.t < best.t)) best = { enemy: e, ...hit };
+        continue;
+      }
+      // the Carapace: its real boxes, so the core counts only where it shows
+      if (e.kind === 'carapace' && e.bio) {
+        const hit = e.bio.raycast(ox, oy, oz, dx, dy, dz, best?.t ?? maxT);
+        if (hit && (!best || hit.t < best.t)) best = { enemy: e, t: hit.t, core: hit.part === 'core', part: hit.part };
         continue;
       }
       const t = rayBox(ox, oy, oz, dx, dy, dz, maxT, {

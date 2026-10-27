@@ -113,6 +113,13 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-27 — Sector 1 = Husk + Ticker (owner: the Sentry Bud felt boring
+  next to the crawler that rushes and blows up). The Bud's code stays.
+- 2026-10-27 — Geothermal Core sector monsters: sector 6 = Vent Stalker +
+  Kiln Drone, sector 7 = Cinder Hulk + the new Ash Weaver (heat line);
+  Stalker / Drone / Hulk retuned to the brief (the Hulk's slam is now a
+  jumpable 4 u ground ring). Carapace armour by hit location, Spitter and
+  Carapace baked to 9 draws (Codex's review).
 - 2026-10-27 — Survival removed (owner): the mode, its screens, the arena
   dressing, the flow field and survival.mjs. Scrap, upgrades and perks stay
   in the campaign. In git history up to 68832ba.

@@ -2,15 +2,17 @@ import type { EnemyKind, EnemySpec } from '../types';
 
 /**
  * Sector monster rosters (reference/sector-monsters-v2): each Facility
- * sector has its own two monsters — 1 Facility Entry: Husk + Sentry Bud,
- * 2 Security Floor: Clamp Guard + Arc Sentinel, 3 Reactor Access: Brute +
- * Wire Leech. Endless Facility depths pick one of the three by depth.
+ * sector has its own two monsters — 1 Facility Entry: Husk + Ticker (the
+ * owner's call 2026-10-27: the Sentry Bud turret felt boring next to the
+ * crawler that rushes and blows up; the Bud is out of the campaign, its code
+ * kept), 2 Security Floor: Clamp Guard + Arc Sentinel, 3 Reactor Access:
+ * Brute + Wire Leech. Endless Facility depths pick one of the three by depth.
  *
  * The generator still decides how many enemies a room holds and where (the
  * 0.3.4 rules, owner's call); this turns its generic placements into the
  * sector's pair at about the same pressure (owner's call 2026-10-23: rooms
  * stay populated, total health about the same — a heavy monster takes the
- * place of 2–4 light ones, and Tickers leave the Facility).
+ * place of 2–4 light ones; Tickers stay out of sectors 2–3).
  */
 export type FacilityBand = 1 | 2 | 3;
 
@@ -22,7 +24,7 @@ export function facilityBand(n: number): FacilityBand {
 
 /** the keycard alarm: the sector's own pair, cycled; how many come */
 export const FACILITY_RESPONSE: Record<FacilityBand, { kinds: EnemyKind[]; count: number }> = {
-  1: { kinds: ['husk', 'sentryBud', 'husk'], count: 3 },
+  1: { kinds: ['husk', 'ticker', 'husk'], count: 3 },
   2: { kinds: ['clampGuard', 'sentinel', 'clampGuard', 'sentinel'], count: 4 },
   3: { kinds: ['brute', 'wireLeech', 'wireLeech'], count: 3 },
 };
@@ -55,9 +57,10 @@ export function applyFacilityRoster(enemies: EnemySpec[], band: FacilityBand): E
     out.push(...other);
     const at = (src: EnemySpec, kind: EnemyKind): EnemySpec => ({ ...src, kind });
     if (band === 1) {
-      // Entry: husks stay, sentinels become Sentry Buds (bolted where they stood)
+      // Entry: husks stay, each sentinel slot becomes a Ticker (generic ticker
+      // slots stay husk units: sector 1 never placed ticker nests anyway)
       for (const e of melee) out.push(at(e, 'husk'));
-      for (const e of ranged) out.push(at(e, 'sentryBud'));
+      for (const e of ranged) out.push(at(e, 'ticker'));
       continue;
     }
     // heavy slots first, so a brute's spot keeps its heavy
@@ -141,3 +144,64 @@ export function applyBioRoster(enemies: EnemySpec[], band: BioBand): EnemySpec[]
   return out;
 }
 
+
+/**
+ * The Geothermal Core (reference/sector-monsters-v2 §6–7): sector 6 Heat
+ * Exchangers = Vent Stalker + Kiln Drone, sector 7 Deep Core = Cinder Hulk +
+ * Ash Weaver. Endless core depths alternate (even = 6, odd = 7).
+ */
+export type GeoBand = 6 | 7;
+
+export function geoBand(n: number): GeoBand {
+  return n % 2 === 0 ? 6 : 7;
+}
+
+export const GEO_RESPONSE: Record<GeoBand, { kinds: EnemyKind[]; count: number }> = {
+  6: { kinds: ['ventStalker', 'kilnDrone', 'ventStalker'], count: 3 },
+  7: { kinds: ['ashWeaver', 'cinderHulk', 'ashWeaver'], count: 3 },
+};
+
+/**
+ * Re-cast a core sector's generic placements room by room, in order (no
+ * RNG). Close-range "husk units" (husk / Vent Stalker 1, ticker 0.5, brute /
+ * Cinder Hulk 3) and ranged slots (Sentinel / Kiln Drone):
+ *  - 6: a Vent Stalker (55 hp) per 1.1 units, Kiln Drones (75 hp) for ~75%
+ *    of the ranged slots;
+ *  - 7: a Cinder Hulk (180 hp) per four units, Ash Weavers (70 hp) for the
+ *    rest at one per 1.2 units plus ~75% of the ranged slots.
+ * Every occupied room keeps at least one.
+ */
+export function applyGeoRoster(enemies: EnemySpec[], band: GeoBand): EnemySpec[] {
+  const rooms = new Map<number, EnemySpec[]>();
+  for (const e of enemies) {
+    const list = rooms.get(e.roomId) ?? [];
+    list.push(e);
+    rooms.set(e.roomId, list);
+  }
+  const meleeUnits = (k: EnemyKind): number =>
+    (k === 'husk' || k === 'ventStalker' ? 1 : k === 'ticker' ? 0.5 : k === 'brute' || k === 'cinderHulk' ? 3 : 0);
+  const isRanged = (k: EnemyKind): boolean => k === 'sentinel' || k === 'kilnDrone';
+  const out: EnemySpec[] = [];
+  for (const list of rooms.values()) {
+    const melee = list.filter((e) => meleeUnits(e.kind) > 0).sort((a, b) => meleeUnits(b.kind) - meleeUnits(a.kind));
+    const ranged = list.filter((e) => isRanged(e.kind));
+    out.push(...list.filter((e) => !melee.includes(e) && !ranged.includes(e)));
+    const at = (src: EnemySpec, kind: EnemyKind): EnemySpec => ({ ...src, kind });
+    const units = melee.reduce((s, e) => s + meleeUnits(e.kind), 0);
+    const spots = [...melee, ...ranged];
+    if (band === 6) {
+      const stalkers = units > 0 ? Math.max(1, Math.round(units / 1.1)) : 0;
+      for (let i = 0; i < stalkers && i < melee.length; i++) out.push(at(melee[i], 'ventStalker'));
+      const drones = ranged.length ? Math.max(1, Math.round(ranged.length * 0.75)) : 0;
+      for (let i = 0; i < drones; i++) out.push(at(ranged[i], 'kilnDrone'));
+      continue;
+    }
+    const hulks = Math.floor(units / 4);
+    for (let i = 0; i < hulks && i < melee.length; i++) out.push(at(melee[i], 'cinderHulk'));
+    let weavers = Math.round((units - hulks * 4) / 1.2 + ranged.length * 0.75);
+    if (weavers === 0 && hulks === 0 && list.length) weavers = 1;
+    const rest = spots.slice(hulks);
+    for (let i = 0; i < weavers && i < rest.length; i++) out.push(at(rest[i], 'ashWeaver'));
+  }
+  return out;
+}

@@ -56,9 +56,10 @@ node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
 node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + sector 2 as in 0.3.4 (11–13 rooms, no empty rooms), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch: no BASH, a second FIRE above the move stick (either holds the trigger), weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), scrap + upgrades (kills DROP scrap pickups that bank when walked over + HUD counter, clears earn scrap, death screen shows it + Upgrades, buys cost and save, Suit/Plates/Medic/Hands/Head Start work, survives a reload, Armory entry, phone fit), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
-node scripts/facility-monsters.mjs # Facility sector rosters (1 Husk+Sentry Bud, 2 Clamp Guard+Arc Sentinel, 3 Brute+Wire Leech, no Tickers, rooms populated, keycard alarm) + Sentry Bud bolt/lids/cadence/dodge, Clamp Guard pinch/side-step/turn rate/recovery, Wire Leech tether link/slow/stings/coil break/range/rebuild, rig budgets
+node scripts/facility-monsters.mjs # Facility sector rosters (1 Husk+Ticker, 2 Clamp Guard+Arc Sentinel, 3 Brute+Wire Leech, no Tickers past sector 1, rooms populated, keycard alarm) + Sentry Bud bolt/lids/cadence/dodge, Clamp Guard pinch/side-step/turn rate/recovery, Wire Leech tether link/slow/stings/coil break/range/rebuild, rig budgets
 node scripts/facility-rigs.mjs # Facility rig draws (5/12/7), source boxes, floor contact, 4,374 rays against rendered Leech triangles (including detached rigs), real coil shots/door blocking, six visible awake rigs in a complete scene and stable shaders
-node scripts/bio-monsters.mjs # Biofoundry rosters (4 Vatborn+Spitter, 5 Carapace), Spitter mark/glob 10/acid patch 3 per 0.5s/expiry/dodge/patch cap, Carapace front ×0.25 back ×1 core ×2 / 3-spike fan 8 each / no mid-attack flinch, Vatborn 95 hp, Broodkeeper adds = Carapaces ≤2 alive ≤4 per attempt, rig budgets
+node scripts/bio-monsters.mjs # Biofoundry rosters (4 Vatborn+Spitter, 5 Carapace), Spitter mark/glob 10/acid patch 3 per 0.5s/expiry/dodge/patch cap, Carapace front ×0.25 back ×1 core ×2 + real-hitscan core / beside-core / closed plate + seam / leg, 9 draws each / 3-spike fan 8 each / no mid-attack flinch, Vatborn 95 hp, Broodkeeper adds = Carapaces ≤2 alive ≤4 per attempt, rig budgets
+node scripts/geothermal-monsters.mjs <url> # the ?sector6 preview: Cinder Hulk warning mark / downswing / ground ring 22 once / dodge out of 4 u / jump it, Vent Stalker crouch / leap 18 once / dodge after the lock, Kiln Drone slug 14 / doors block aim and slag, Ash Weaver line marks / three spots 6 per 0.5 s / sidestep / jump / stops at a closed door / ≤ 12 draws, core shot ×2, armour, death, reset
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/exit-room-props.mjs [url] # seven props, 24 layouts/four lift directions, boarding route, ride/status/exit, ?exitroom shortcut, ready/docked screenshots
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
@@ -259,11 +260,10 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   lamps (key room red), basalt walls with rusted plate (`dressGeothermal`),
   short molten `GeothermalHeat` seams set FLUSH in room floors (lamp blocks
   that light from below — never trenches: the `?sector6` preview's recessed
-  channels stranded walkers), `GEO_AMBIENT`, and its own roster mixed in —
-  ~55% of melee spawns become Vent Stalkers and of ranged spawns Kiln
-  Drones (position-hashed), the arena's first brute a Cinder Hulk; the
-  ranged share is capped at 50% and tickers at ~45% of rooms in pairs, so
-  sector 6 (~60 enemies) is no harder than sector 5 and 7 (~69) a step up.
+  channels stranded walkers), `GEO_AMBIENT`; the ranged share of its
+  generic placements is capped at 50% and tickers at ~45% of rooms in
+  pairs, then `applyGeoRoster` re-casts them as the sector's own pair
+  (see "Geothermal Core sector monsters" below).
   Every core sector — and every FACILITY sector from 2 (something to find
   off the route; the Biofoundry has its tanks) — gets a POWER LINK
   (`placePowerLink` → `level.powerLink`; the core's steam `vents` and
@@ -654,9 +654,11 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 ## Facility sector monsters (2026-10-27)
 
 Each Facility sector has its own two monsters (reference/sector-monsters-v2,
-BEHAVIOURS.md §1–3): 1 Facility Entry = Husk + **Sentry Bud**, 2 Security
+BEHAVIOURS.md §1–3): 1 Facility Entry = Husk + **Ticker**, 2 Security
 Floor = **Clamp Guard** + Arc Sentinel, 3 Reactor Access = Brute + **Wire
-Leech**. The three new kinds live in `src/entities/facility-monsters.ts`
+Leech**. Sector 1 was Husk + Sentry Bud until the owner found the turret
+boring next to the Ticker (2026-10-27): the Bud is out of the campaign but
+its code stays (spawnable, tested). The three new kinds live in `src/entities/facility-monsters.ts`
 (`FacilityMonster`, hooked like `GeothermalMonster`: `Enemy.facility`;
 rig + poses + AI + strike; `FACILITY_SCHEDULE` feeds `SCHED`):
 - Sentry Bud: bolted turret (speed 0, never flinches), 28 HP; aims 1.0 s with
@@ -681,11 +683,12 @@ speed 9 — and after outside playtesters found it hard to kill: 40 HP,
 2.2 u/s, a lazy drift (×0.35) in its firing band, collider 0.52 × 0.48.
 ROSTERS (`src/world/rosters.ts`, owner's call "same pressure"): levelgen
 still places the 0.3.4 generic slots, then `applyFacilityRoster` re-casts a
-Facility sector's room by room — 1: husks stay, sentinels → Sentry Buds;
+Facility sector's room by room — 1: husks stay, each sentinel slot → a
+Ticker (sector 1 places no ticker nests itself);
 2: sentinels stay, husk / ticker / brute slots → a Clamp Guard per two
 husks' worth; 3: a Brute per three husks' worth, Wire Leeches for the rest
-and ~60% of the sentinels. Every occupied room keeps ≥ 1, Tickers leave the
-Facility, no RNG used. `facilityBand(n)` picks the roster for endless
+and ~60% of the sentinels. Every occupied room keeps ≥ 1, no Tickers in
+sectors 2–3, no RNG used. `facilityBand(n)` picks the roster for endless
 Facility depths; `FACILITY_RESPONSE` → `LevelData.responseKinds/Count`
 (the keycard alarm). `facility-monsters.mjs`
 tests all of it; features.mjs adds generic husks / tickers / a brute to
@@ -713,10 +716,17 @@ Facility module uses it too):
 - Carapace: 120 HP, 1.5 u/s, turns ≤ 70°/s; plants and parts its plates
   0.9 s (locks 0.25 s before), three bone `'spike'` projectiles (pooled, 8
   dmg, speed 9) in a ±0.13 rad fan, then the plates swing open: the core is
-  bared 1.4 s (`coreOpen`; weapons.ts core band pos.y −0.05…+0.4) and
-  closes over 0.35 s. `scaleDamage`: a hit travelling into its closed front
-  ×0.25 (armored clank), sides / back ×1, the bared core ×2. Never flinches
-  mid-attack.
+  bared 1.4 s (`coreOpen`) and closes over 0.35 s. Armour by HIT LOCATION
+  (`scaleDamage`): hitscan rays meet its real boxes (`HitBoxes` in
+  monster-kit.ts, recorded before the bake, following the live pivots —
+  `EnemyManager.raycast` → `Enemy.lastHitPart`): a closed plate — or the
+  2 cm seam between them — ×0.25 (armored clank), the rest of the body ×1,
+  the bared core ×2 only where it shows. Hits with no location (splash,
+  melee, thrown guns, a co-op client's shot) go by direction: into the
+  closed front ×0.25. Never flinches mid-attack.
+Both rigs are BAKED (`RigKit.bake`: one draw per pivot + its glows, 9
+  each; the Spitter's reservoirs sit on their own `sac` pivots so they still
+  swell). The Wire Leech uses the same `HitBoxes` for its coil.
 Rosters (`applyBioRoster`, `bioBand`): sector 4 — a Vatborn per two
 husks' worth of close-range slots, Spitters for ~60% of the sentinels;
 sector 5 — a Carapace per 2.2 husks' worth of everything (~28 per sector:
@@ -724,6 +734,45 @@ fewer bodies, armoured fronts — review if it plays too hard; e2e checks
 sector 5 fields more enemy health than 4). Endless
 Biofoundry depths alternate, boss depths are sector 5; `BIO_RESPONSE` is the
 keycard alarm. `bio-monsters.mjs` tests it.
+
+## Geothermal Core sector monsters (2026-10-27)
+
+Sector 6 Heat Exchangers = Vent Stalker + Kiln Drone, sector 7 Deep Core =
+Cinder Hulk + **Ash Weaver** (reference/sector-monsters-v2 §6–7, sheets 03
+and 04). Retuned to BEHAVIOURS.md (`GEO_SCHEDULE` + TUNING):
+- Vent Stalker: 55 HP; crouch 0.8 s (the target locks for the last 0.25 s),
+  ONE committed 0.45 s leap at the locked spot (speed from the locked
+  distance, never homing), 18 dmg once, starts within 6 u; recover 1.2 s.
+- Kiln Drone: 75 HP; holds 6–10 u; shutters open 1.1 s (aim locks 0.3 s
+  before), one slow slug (14, speed 8), core open through a 1.2 s recovery.
+- Cinder Hulk: 180 HP; fists up 1.2 s while its ground mark grows to the
+  full 4 u (`slam-warning-ring`, centred on it); the slam starts a thin
+  GROUND RING (`slam-ground-ring`, `ringStep`) running out at 7 u/s to 4 u:
+  22 dmg once per cast to feet within 0.35 u of its floor — a jump clears
+  it, a gallery above / floor below is out of it, cover along the ground
+  blocks it; 1.6 s planted recovery with the core open.
+- Ash Weaver (`src/entities/ash-weaver.ts`, `Enemy.weaver`; RigKit, baked
+  to 12 draws): a broad, raised rust crawler on four splayed legs, three
+  square front ports (each its own pivot + material: they light left to
+  right), an ash-grey exhaust box with three tall glowing stacks. 70 HP,
+  1.5 u/s, turns ≤ 80°/s, starts a line at 2–7.5 u with LOS on its own
+  floor: brace, the ports light over 1.2 s while the WHOLE line is marked
+  on the floor (three orange squares at 3 / 5 / 7 u, following its turn),
+  locks for 0.35 s, ignites three heat spots (radius 0.65, 1.5 s; the
+  strongest burning spot stings 6 per 0.5 s — `heatReady` per player, so
+  overlaps never stack; only feet within 0.45 u of the floor), 1.4 s
+  open-port recovery, 2.6 s between lines. `planLine` walks the line on
+  its own floor level and stops at the first wall, closed door or drop.
+  Its marks and spots live in `AshWeaver.fx` (`Enemy.worldFx`); a dead
+  Weaver's spots burn out, its marks go at once.
+ROSTERS (`applyGeoRoster`, `geoBand` — even depths 6, odd 7): 6 — a Vent
+Stalker per 1.1 husk units (husk / stalker 1, ticker 0.5, brute / Hulk 3),
+Kiln Drones for ~75% of the ranged slots (~30 + 18); 7 — a Cinder Hulk per
+four units, Ash Weavers for the rest at one per 1.2 units plus ~75% of the
+ranged slots (~5 + 39). Total enemy health stays within ~3% of the generic
+mix's. `GEO_RESPONSE` is the keycard alarm. `geothermal-monsters.mjs`
+(Codex's suite, extended) tests it; e2e checks each core sector fields
+only its own pair.
 
 ## Build 1 from outside playtesters (2026-10-27)
 

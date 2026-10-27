@@ -10,19 +10,21 @@ export const isGeothermalKind = (kind: EnemyKind): kind is GeothermalKind =>
 
 /**
  * Attack timing (seconds). Every attack reads as prepare → commit → recover:
- *  - Cinder Hulk: prep 1.05 = a dip (0–0.2), fists swung overhead (0.2–0.85)
- *    and a hang at the top (0.85–1.05); `commit` 0.16 is the downswing and the
- *    slam lands at its END (it used to land on the last prep frame, so the
- *    fists never visibly came down); recover 1.3 keeps the fists planted and
- *    the core open, then pushes back up. Aim locks at 0.65.
- *  - Vent Stalker: prep 0.65 crouch + coil, a leap of at most 0.55, recover 0.95.
- *  - Kiln Drone: prep 0.95 opens the shutters and stokes the furnace; the shot
- *    leaves at the end with a recoil; recover 1.1 closes up.
+ * (BEHAVIOURS.md §6–7, reference/sector-monsters-v2)
+ *  - Cinder Hulk: prep 1.2 = a dip, fists swung overhead and a hang at the top
+ *    while the slam's ground mark grows to its full 4 u; `commit` 0.16 is the
+ *    downswing and the slam lands at its END; then a thin ground RING runs out
+ *    from it at 7 u/s to 4 u (0.35 u tall: jump it), and recover 1.6 keeps the
+ *    fists planted and the core open, then pushes back up.
+ *  - Vent Stalker: prep 0.8 crouch + coil (the target locks for the last
+ *    0.25 s), one committed 0.45 s leap at the locked spot, recover 1.2.
+ *  - Kiln Drone: prep 1.1 opens the shutters and stokes the furnace (aim locks
+ *    0.3 s before); one slow slug at the end; recover 1.2 with the core open.
  */
 export const GEO_SCHEDULE = {
-  cinderHulk: { attack: { prep: 1.05, lock: .65, commit: .16, recover: 1.3 }, charge: { prep: 1.05, lock: .65, commit: .16, recover: 1.3 } },
-  ventStalker: { attack: { prep: .65, lock: .38, commit: .55, recover: .95 }, charge: { prep: .65, lock: .38, commit: .55, recover: .95 } },
-  kilnDrone: { attack: { prep: .95, lock: .65, commit: .08, recover: 1.1 }, charge: { prep: .95, lock: .65, commit: .08, recover: 1.1 } },
+  cinderHulk: { attack: { prep: 1.2, lock: .8, commit: .16, recover: 1.6 }, charge: { prep: 1.2, lock: .8, commit: .16, recover: 1.6 } },
+  ventStalker: { attack: { prep: .8, lock: .55, commit: .45, recover: 1.2 }, charge: { prep: .8, lock: .55, commit: .45, recover: 1.2 } },
+  kilnDrone: { attack: { prep: 1.1, lock: .8, commit: .08, recover: 1.2 }, charge: { prep: 1.1, lock: .8, commit: .08, recover: 1.2 } },
 };
 
 // palette read off geothermal-monsters-v1.png
@@ -46,6 +48,14 @@ const span = (t: number, a: number, b: number): number => ease((t - a) / (b - a)
  * TUNING, weapons.ts DRONE_CORE_Y).
  */
 export const DRONE_SCALE = .46;
+/** the Hulk's ground ring: how far, how fast, how tall (a jump clears it), damage once per cast */
+const RING_RADIUS = 4;
+const RING_SPEED = 7;
+const RING_HEIGHT = .35;
+const RING_DAMAGE = 22;
+/** the Stalker's leap: damage, and the farthest it starts one from */
+const LEAP_DAMAGE = 18;
+const LEAP_RANGE = 6;
 /** hover height of the drone's centre above the floor (the Sentinel's is ~1.45) */
 const DRONE_HOVER = 1.5;
 
@@ -84,6 +94,15 @@ export class GeothermalMonster {
   private landed = 9;
   private wasGround = true;
   private ring: THREE.Mesh | null = null;
+  /** the Hulk's running ground ring (seconds since the slam; < 0 = none) and who it already hit */
+  private shock: THREE.Mesh | null = null;
+  private shockT = -1;
+  private shockX = 0;
+  private shockZ = 0;
+  private shockY = 0;
+  private shockHit = new Set<PlayerTarget>();
+  /** the Stalker's locked leap length */
+  private leapDist = 4;
   /** walkers that end up in a trench: the floor cell they climb out onto */
   private exit: { x: number; z: number } | null = null;
   private exitAge = 0;
@@ -181,10 +200,16 @@ export class GeothermalMonster {
     p(head, 'brow', 0, .33, -.27, .6, .1, .1, ROCK);
     p(head, 'face-recess', 0, .15, -.27, .42, .2, .04, DARK);
     p(head, 'single-eye-slit', 0, .16, -.295, .26, .06, .03, HEAT, true);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(1.95, 2.05, 24), new THREE.MeshBasicMaterial({ color: raw(0xffbd48), transparent: true, opacity: .8, depthWrite: false, side: THREE.DoubleSide }));
-    ring.name = 'slam-warning-ring'; ring.rotation.x = -Math.PI / 2; ring.position.set(0, -this.e.half.y + .025, -1.5); ring.visible = false;
+    // the slam's ground mark: the ring's full reach, growing through the wind-up
+    const ring = new THREE.Mesh(new THREE.RingGeometry(RING_RADIUS - .1, RING_RADIUS, 40), new THREE.MeshBasicMaterial({ color: raw(0xffbd48), transparent: true, opacity: .8, depthWrite: false, side: THREE.DoubleSide }));
+    ring.name = 'slam-warning-ring'; ring.rotation.x = -Math.PI / 2; ring.position.set(0, -this.e.half.y + .025, 0); ring.visible = false;
     ring.userData.fullBright = true; ring.userData.baseColor = raw(0xffbd48);
     this.e.mesh.add(ring); this.ring = ring;
+    // the ring itself: a thin, low band of heat running out across the floor
+    const shock = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, RING_HEIGHT, 40, 1, true), new THREE.MeshBasicMaterial({ color: raw(0xff8a1a), transparent: true, opacity: .85, depthWrite: false, side: THREE.DoubleSide }));
+    shock.name = 'slam-ground-ring'; shock.position.set(0, -this.e.half.y + RING_HEIGHT / 2, 0); shock.visible = false;
+    shock.userData.fullBright = true; shock.userData.baseColor = raw(0xff8a1a);
+    this.e.mesh.add(shock); this.shock = shock;
   }
 
   /*
@@ -365,6 +390,8 @@ export class GeothermalMonster {
       this.ring.visible = phase === 'prep' || phase === 'strike';
       const m = this.ring.material as THREE.MeshBasicMaterial;
       m.opacity = phase === 'prep' ? .45 + .4 * Math.abs(Math.sin(t * 9)) : .9;
+      const grow = phase === 'prep' ? .25 + .75 * span(t, 0, s.prep * .8) : 1;
+      this.ring.scale.set(grow, grow, 1);
     }
     this.glowAll(heat);
   }
@@ -490,6 +517,7 @@ export class GeothermalMonster {
         if (e.phaseT < schedule.lock) {
           this.locked.set(dx / dist, 0, dz / dist);
           this.aim.set(dx, target.pos.y - e.pos.y, dz).normalize();
+          this.leapDist = dist;
         }
         if (e.phaseT >= schedule.prep) {
           this.hit = false; e.phaseT = 0;
@@ -501,7 +529,9 @@ export class GeothermalMonster {
         // the Hulk's fists come down; the slam lands at the impact frame
         if (e.phaseT >= schedule.commit) { e.phase = 'recover'; e.phaseT = 0; this.strike(game); }
       } else if (e.phase === 'move') {
-        e.vel.x = this.locked.x * 9.5; e.vel.z = this.locked.z * 9.5;
+        // one leap at the locked spot: fast enough to land on it, never homing
+        const leap = Math.max(6, Math.min(13.5, (this.leapDist - .6) / schedule.commit));
+        e.vel.x = this.locked.x * leap; e.vel.z = this.locked.z * leap;
         // a leap stops at a ledge rather than carrying over it into a trench
         if (this.dropAhead(game, this.locked.x, this.locked.z, .2)) { e.vel.x = e.vel.z = 0; e.phase = 'recover'; e.phaseT = 0; }
         if (e.phaseT >= schedule.commit) { e.phase = 'recover'; e.phaseT = 0; }
@@ -509,7 +539,7 @@ export class GeothermalMonster {
         e.state = 'chase'; e.phaseT = 0; e.coreOpen = false; this.cooldown = this.kind === 'kilnDrone' ? .8 : 1.15;
       }
     } else {
-      const range = this.kind === 'cinderHulk' ? 3.5 : this.kind === 'ventStalker' ? 6.5 : 15;
+      const range = this.kind === 'cinderHulk' ? 3.5 : this.kind === 'ventStalker' ? LEAP_RANGE : 10;
       if (!inPit && los && dist < range && dist > (this.kind === 'kilnDrone' ? 3 : 0) && this.cooldown === 0 && (this.kind !== 'ventStalker' || this.ground)) {
         e.state = this.kind === 'ventStalker' ? 'charge' : 'attack'; e.phase = 'prep'; e.phaseT = 0; this.hit = false;
         this.locked.set(dx / dist, 0, dz / dist); this.aim.set(dx, target.pos.y - e.pos.y, dz).normalize();
@@ -530,7 +560,8 @@ export class GeothermalMonster {
         }
       } else {
         let nx = dx / dist, nz = dz / dist, speed = e.tuning.speed;
-        if (this.kind === 'kilnDrone' && los && dist < 8) { nx = -nx; nz = -nz; speed *= .6; }
+        // the drone holds 6–10 u
+        if (this.kind === 'kilnDrone' && los && dist < 6) { nx = -nx; nz = -nz; speed *= .6; }
         if (this.jink > 0) { const old = nx; nx = -nz * this.jinkSign; nz = old * this.jinkSign; }
         // walkers never step off a ledge: turn along it, or hold at the edge
         if (this.kind !== 'kilnDrone' && this.ground && this.dropAhead(game, nx, nz, .35)) {
@@ -564,7 +595,7 @@ export class GeothermalMonster {
         if (!this.hit) for (const player of game.playerTargets()) {
           if (player.dead || Math.abs(player.pos.y - e.pos.y) > player.half.y + e.half.y) continue;
           if (Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z) < e.half.x + player.half.x + .3 && game.hasLOS(e.pos.x, e.pos.y, e.pos.z, player.pos.x, player.pos.y, player.pos.z)) {
-            player.damage(14, game, { x: e.pos.x, z: e.pos.z, by: e.kind }); this.hit = true; e.phase = 'recover'; e.phaseT = 0; break;
+            player.damage(LEAP_DAMAGE, game, { x: e.pos.x, z: e.pos.z, by: e.kind }); this.hit = true; e.phase = 'recover'; e.phaseT = 0; break;
           }
         }
       } else if (result.hitX || result.hitZ) {
@@ -581,6 +612,7 @@ export class GeothermalMonster {
       const yaw = Math.atan2(-fx, -fz), delta = Math.atan2(Math.sin(yaw - e.mesh.rotation.y), Math.cos(yaw - e.mesh.rotation.y));
       e.mesh.rotation.y += delta * (1 - Math.exp(-12 * dt));
     }
+    this.ringStep(dt, game);
     this.pose(dt);
   }
 
@@ -624,22 +656,61 @@ export class GeothermalMonster {
     const e = this.e;
     if (this.kind === 'kilnDrone') {
       const x = e.pos.x + this.aim.x * .5, y = e.pos.y + this.aim.y * .5, z = e.pos.z + this.aim.z * .5;
-      if (game.hasLOS(e.pos.x, e.pos.y, e.pos.z, x, y, z)) game.projectiles.spawn('slag', x, y, z, this.aim.x, this.aim.y, this.aim.z, 9.5, false);
+      if (game.hasLOS(e.pos.x, e.pos.y, e.pos.z, x, y, z)) game.projectiles.spawn('slag', x, y, z, this.aim.x, this.aim.y, this.aim.z, 8, false);
       game.audio.play('rocketLaunch', e.pos);
       game.dynLights.flash(x, y, z, 1, .55, .1, 1.4, 5, .18); // the muzzle flare
     } else {
       const x = e.pos.x + this.locked.x * 1.5, z = e.pos.z + this.locked.z * 1.5, floor = e.pos.y - e.half.y;
       game.audio.play('bruteSlam', e.pos); game.particles.debris(x, floor + .12, z, .55, .3, .1, 18);
       game.dynLights.flash(x, floor + .3, z, 1, .4, .05, 1.6, 6, .3);
+      // the ring runs out from the Hulk across its own floor (damage in ringStep)
+      this.shockT = 0; this.shockX = e.pos.x; this.shockZ = e.pos.z; this.shockY = floor; this.shockHit.clear();
       for (const player of game.playerTargets()) {
-        const near = Math.hypot(player.pos.x - x, player.pos.z - z);
-        if (!player.dead && near < 2 && player.pos.y - player.half.y < floor + .5 && Math.abs(player.pos.y - e.pos.y) < 2 &&
-          game.hasLOS(e.pos.x, e.pos.y, e.pos.z, player.pos.x, player.pos.y, player.pos.z)) player.damage(24, game, { x: e.pos.x, z: e.pos.z, by: e.kind });
+        const near = Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z);
         // the floor jolt carries further than the damage
         if (!player.dead && near < 6) player.shake = Math.min(.7, player.shake + .35 * (1 - near / 6));
       }
     }
   }
+
+  /**
+   * The Hulk's ground ring, after the slam: it runs out at RING_SPEED to
+   * RING_RADIUS and hits a player once as it passes under them — only feet
+   * within RING_HEIGHT of its floor (a jump clears it; a gallery above or a
+   * floor below is out of it) with a clear line along the ground (cover blocks).
+   */
+  private ringStep(dt: number, game: Game): void {
+    if (this.shockT < 0) return;
+    const before = this.shockT * RING_SPEED;
+    this.shockT += dt;
+    const r = Math.min(RING_RADIUS, this.shockT * RING_SPEED);
+    for (const pl of game.playerTargets()) {
+      if (pl.dead || this.shockHit.has(pl)) continue;
+      const d = Math.hypot(pl.pos.x - this.shockX, pl.pos.z - this.shockZ);
+      if (d + pl.half.x < before || d - pl.half.x > r) continue;
+      const feet = pl.pos.y - pl.half.y;
+      if (feet - this.shockY > RING_HEIGHT || feet < this.shockY - .3) continue;
+      if (!game.hasLOS(this.shockX, this.shockY + .3, this.shockZ, pl.pos.x, feet + .2, pl.pos.z)) continue;
+      this.shockHit.add(pl);
+      pl.damage(RING_DAMAGE, game, { x: this.shockX, z: this.shockZ, by: 'cinderHulk' });
+    }
+    if (this.shock) {
+      this.shock.visible = true;
+      this.shock.scale.set(Math.max(.05, r), 1, Math.max(.05, r));
+      (this.shock.material as THREE.MeshBasicMaterial).opacity = .85 * (1 - .6 * r / RING_RADIUS);
+    }
+    if (r >= RING_RADIUS) { this.shockT = -1; if (this.shock) this.shock.visible = false; }
+  }
+
+  /** the ring stops with the Hulk */
+  onDeath(): void {
+    this.shockT = -1;
+    if (this.shock) this.shock.visible = false;
+    if (this.ring) this.ring.visible = false;
+  }
+
+  /** a ring is running (tests) */
+  get ringLive(): boolean { return this.shockT >= 0; }
 
   dispose(): void { this.textures.forEach((t) => t.dispose()); }
 }

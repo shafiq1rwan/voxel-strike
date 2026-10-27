@@ -339,8 +339,10 @@ try {
         // sectors 6-7: the Geothermal Core, generated like the rest, with its own monsters
         const n = sector + 1;
         check(info.theme === 'geothermal' && info.heat > 0, `sector ${n} is a generated Geothermal Core (theme=${info.theme}, ${info.heat} heat seam cells)`);
-        check(['ventStalker', 'kilnDrone', 'cinderHulk'].every((k) => info.kinds.includes(k)),
-          `sector ${n} fields the core's monsters (${info.kinds.join(', ')})`);
+        // each core sector has its own pair: 6 Vent Stalker + Kiln Drone, 7 Cinder Hulk + Ash Weaver
+        const pair = n === 6 ? ['ventStalker', 'kilnDrone'] : ['cinderHulk', 'ashWeaver'];
+        check(pair.every((k) => info.kinds.includes(k)) && info.kinds.every((k) => pair.includes(k)),
+          `sector ${n} fields only its own pair (${info.kinds.join(', ')})`);
         check(info.save?.sector === n, `progress saved at sector ${n} (${info.save?.sector})`);
         if (n === 6) check(info.banner === '1', 'entering the core ends the NEW SECTOR banner');
         await page.screenshot({ path: `${OUT}/e2e-3e-sector${n}.png` });

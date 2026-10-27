@@ -1,7 +1,8 @@
 /**
  * The Facility's sector monsters (reference/sector-monsters-v2, BEHAVIOURS.md
- * §1–3): sector rosters (1 Husk + Sentry Bud, 2 Clamp Guard + Arc Sentinel,
- * 3 Brute + Wire Leech, no Tickers, every room still populated, the keycard
+ * §1–3): sector rosters (1 Husk + Ticker — the Sentry Bud left the campaign,
+ * owner's call —, 2 Clamp Guard + Arc Sentinel, 3 Brute + Wire Leech, no
+ * Tickers past sector 1, every room still populated, the keycard
  * alarm from the sector's pair, endless Facility depths pick a band), and
  * each new mechanic in isolation with real game time:
  *  - Sentry Bud: bolted down, ~1 s aim with its lids open, one 6-damage bolt,
@@ -43,7 +44,7 @@ try {
   // 1. rosters, straight from the generator
   const rosters = await page.evaluate(async () => {
     const { generateLevel } = await import('/src/world/levelgen.ts');
-    const allowed = { 1: ['husk', 'sentryBud'], 2: ['clampGuard', 'sentinel'], 3: ['brute', 'wireLeech'] };
+    const allowed = { 1: ['husk', 'ticker'], 2: ['clampGuard', 'sentinel'], 3: ['brute', 'wireLeech'] };
     const out = {};
     for (const n of [1, 2, 3, 8]) {
       const band = n === 8 ? 2 : n;
@@ -59,12 +60,12 @@ try {
     }
     return out;
   });
-  check(rosters[1].ok && rosters[1].kinds === 'husk,sentryBud', `sector 1 is Husk + Sentry Bud only (${rosters[1].kinds})`);
+  check(rosters[1].ok && rosters[1].kinds === 'husk,ticker', `sector 1 is Husk + Ticker only (${rosters[1].kinds})`);
   check(rosters[2].ok && rosters[2].kinds === 'clampGuard,sentinel', `sector 2 is Clamp Guard + Arc Sentinel only (${rosters[2].kinds})`);
   check(rosters[3].ok && rosters[3].kinds === 'brute,wireLeech', `sector 3 is Brute + Wire Leech only (${rosters[3].kinds})`);
   check(rosters[8].ok, `endless Facility depth 8 uses one sector roster (${rosters[8].kinds})`);
   check([1, 2, 3].every((n) => rosters[n].empty === 0), 'every room past spawn still holds enemies in sectors 1–3');
-  check(rosters[1].resp.includes('sentryBud') && rosters[2].resp.includes('clampGuard') && rosters[3].resp.includes('wireLeech'),
+  check(rosters[1].resp.includes('ticker') && rosters[2].resp.includes('clampGuard') && rosters[3].resp.includes('wireLeech'),
     `the keycard alarm comes from the sector's pair (${rosters[1].resp} | ${rosters[2].resp} | ${rosters[3].resp})`);
 
   // a quiet arena with one test monster in it

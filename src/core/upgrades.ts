@@ -35,7 +35,7 @@ export const UPGRADES: UpgradeDef[] = [
 /** scrap per kill (anything not listed: 1) */
 export const SCRAP_FOR_KILL: Partial<Record<EnemyKind, number>> = {
   husk: 1, ticker: 1, ventStalker: 1, sentryBud: 1,
-  clampGuard: 2, wireLeech: 2, spitter: 2, carapace: 3,
+  clampGuard: 2, wireLeech: 2, spitter: 2, carapace: 3, ashWeaver: 2,
   sentinel: 2, kilnDrone: 2,
   brute: 5, vatborn: 5, cinderHulk: 5,
   broodkeeper: 40,

@@ -81,7 +81,8 @@ try {
       e.__test = true;
       return e;
     };
-    window.__clear = () => { for (const e of g.enemies.list) if (e.__test && e.alive) { e.hp = 0; e.update = () => {}; e.mesh.visible = false; e.pos.set(2, 30, 2); } };
+    // the model goes too: exact-box rays (Carapace, Wire Leech) follow the model, not pos
+    window.__clear = () => { for (const e of g.enemies.list) if (e.__test && e.alive) { e.hp = 0; e.update = () => {}; e.mesh.visible = false; e.pos.set(2, 30, 2); e.mesh.position.copy(e.pos); } };
     window.__hold = (e, ox, oz) => { g.player.pos.set(e.pos.x + ox, g.player.pos.y, e.pos.z + oz); g.player.vel.set(0, 0, 0); };
   });
 
@@ -189,6 +190,37 @@ try {
   check(cara.coreDmg === 80, `the bared core takes double (${cara.coreDmg} of 40)`);
   check(!cara.painMid, 'no flinch while it loads the fan');
 
+  // 3b. real hitscan against its real boxes: the core counts only where it
+  // shows, a closed plate is armour, the legs below the plates are not
+  const shots = await page.evaluate(() => {
+    const g = window.__voxelstrike;
+    window.__clear();
+    const e = window.__solo('carapace', 0, 0, 0, 7);
+    e.update = () => {};
+    e.bio.face = Math.PI; e.mesh.rotation.y = Math.PI; e.mesh.position.copy(e.pos);
+    e.attachBody(true);
+    const V = e.mesh.position.constructor;
+    const shoot = (open, dx, dy) => {
+      e.state = open ? 'attack' : 'chase'; e.phase = open ? 'recover' : 'prep'; e.phaseT = open ? 0.6 : 0;
+      e.bio.pose(0);
+      e.mesh.updateMatrixWorld(true);
+      const core = new V(); e.body.getObjectByName('orange-core').getWorldPosition(core);
+      const origin = new V(core.x + dx, core.y + dy, core.z + 3), dir = new V(0, 0, -1);
+      e.hp = 1000;
+      const ray = g.enemies.raycast(origin.x, origin.y, origin.z, 0, 0, -1, 10);
+      g.weapons.hitscan(origin, dir, 10, g, origin);
+      const dmg = +(1000 - e.hp).toFixed(2);
+      if (dmg === 0) window.__miss = (window.__miss || '') + JSON.stringify({ open, dx, dy, alive: e.alive, coreOpen: e.coreOpen, ray: ray && { mine: ray.enemy === e, t: ray.t, part: ray.part }, wall: g.world.raycast(origin.x, origin.y, origin.z, 0, 0, -1, 10)?.t, hp: e.hp, state: e.state });
+      return dmg;
+    };
+    const out = { miss: "", coreOpen: shoot(true, 0, 0), beside: shoot(true, 0.35, 0), plate: shoot(false, 0, 0), legs: shoot(false, 0.26, -0.75) }; out.miss = window.__miss || "";
+    window.__clear();
+    return out;
+  });
+  check(shots.coreOpen === 20, `a real shot into the bared core does double (${shots.coreOpen} of 10${shots.miss ? "; " + shots.miss : ""})`);
+  check(shots.beside === 10, `a shot 0.35 u beside the core is not a core hit (${shots.beside} of 10)`);
+  check(shots.plate === 2.5 && shots.legs === 10, `front shots: the closed plates (even the seam between them) take a quarter, a leg below them full (${shots.plate} | ${shots.legs} of 10)`);
+
   // 4. Vatborn + the boss's adds
   const vat = await page.evaluate(() => {
     const g = window.__voxelstrike;
@@ -231,13 +263,13 @@ try {
     const out = {};
     for (const kind of ['spitter', 'carapace']) {
       const e = window.__solo(kind, 0, 0, 0, 6);
-      let n = 0; e.mesh.traverse((o) => { if (o.isMesh) n++; });
-      out[kind] = n;
+      let draws = 0; e.body.traverse((o) => { if (o.isMesh && o.visible) draws++; });
+      out[kind] = { boxes: e.body.userData.boxCount, draws };
       window.__clear();
     }
     return out;
   });
-  check(Object.values(boxes).every((n) => n >= 12 && n <= 32), `rig box counts within budget (${Object.entries(boxes).map(([k, n]) => `${k} ${n}`).join(', ')})`);
+  check(Object.values(boxes).every((b) => b.boxes >= 12 && b.boxes <= 32 && b.draws <= 12), `rig boxes 12–32 baked to ≤ 12 draws (${Object.entries(boxes).map(([k, b]) => `${k} ${b.boxes} boxes / ${b.draws} draws`).join(', ')})`);
   await page.close();
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {

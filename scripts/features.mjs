@@ -79,8 +79,9 @@ try {
     g.level.totalEnemies += extra.length;
     return { rooms, brute: kinds.has('brute'), ticker: kinds.has('ticker'), shotgunAtSpawn, s2 };
   });
-  check(opener.rooms <= 7 && !opener.brute && !opener.ticker && opener.shotgunAtSpawn,
-    `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no tickers, shotgun in the spawn room`);
+  // its pair is Husk + Ticker (the Ticker took the Sentry Bud's place, owner's call)
+  check(opener.rooms <= 7 && !opener.brute && opener.ticker && opener.shotgunAtSpawn,
+    `sector 1 is a short opener: ${opener.rooms} rooms, no brute, Tickers beside the Husks, shotgun in the spawn room`);
   check(opener.s2.gate, `the exit pad sits against the back wall under the EXIT sign (${opener.s2.gateFace} wall)`);
   check(opener.s2.rooms >= 11 && opener.s2.rooms <= 13 && opener.s2.quiet === 0 && opener.s2.enemies >= 20 && opener.s2.kinds === 'clampGuard,sentinel',
     `sector 2 plays as in 0.3.4 with its own pair: ${opener.s2.rooms} rooms (11–13), every room past spawn holds enemies (${opener.s2.quiet} empty), ${opener.s2.enemies} enemies (${opener.s2.kinds})`);

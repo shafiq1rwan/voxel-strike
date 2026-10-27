@@ -1927,6 +1927,7 @@ export class Game {
       e.hitFeedback(dmg, dx, dz, this);
       this.net?.sendHit(this.enemies.list.indexOf(e), dmg, dx, dz, headshot, e.lastHitCore);
       e.lastHitCore = false;
+      e.lastHitPart = null; // the host goes by direction
     } else {
       e.lastHitHead = headshot;
       e.damage(dmg, dx, dz, this);
@@ -2112,7 +2113,7 @@ export class Game {
     this.punchFOV(0.8);
     // score: kill value scaled by the combo chain (kills within 2.5s of each other)
     let points = e.kind === 'broodkeeper' ? 2500 : e.kind === 'brute' || e.kind === 'cinderHulk' ? 300 : e.kind === 'clampGuard' || e.kind === 'carapace' ? 200
-      : e.kind === 'sentinel' || e.kind === 'kilnDrone' || e.kind === 'wireLeech' || e.kind === 'spitter' ? 150 : e.kind === 'ticker' || e.kind === 'sentryBud' ? 75 : 100;
+      : e.kind === 'sentinel' || e.kind === 'kilnDrone' || e.kind === 'wireLeech' || e.kind === 'spitter' || e.kind === 'ashWeaver' ? 150 : e.kind === 'ticker' || e.kind === 'sentryBud' ? 75 : 100;
     if (e.lastHitHead) points += 50; // headshot kill bonus
     this.comboChain = this.comboTimer > 0 ? this.comboChain + 1 : 1;
     this.comboTimer = 2.5;

@@ -21,7 +21,9 @@ export type EnemyKind = 'husk' | 'sentinel' | 'ticker' | 'brute' | 'vatborn' | '
   // turret, sector 2's clamp biped, sector 3's tether parasite
   | 'sentryBud' | 'clampGuard' | 'wireLeech'
   // the Biofoundry's: sector 4's acid lobber, sector 5's plated walker
-  | 'spitter' | 'carapace';
+  | 'spitter' | 'carapace'
+  // the Deep Core's (sector 7): the heat-line crawler
+  | 'ashWeaver';
 
 export type WeaponId = 'pistol' | 'shotgun' | 'smg' | 'rocket' | 'arc' | 'special';
 

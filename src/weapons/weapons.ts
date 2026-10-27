@@ -1240,9 +1240,11 @@ export class WeaponSystem {
           : e.kind === 'kilnDrone' ? hitY > e.pos.y - 0.28 && hitY < e.pos.y + 0.08
             // The Leech's actual animated copper bars; empty space never counts.
             : e.kind === 'wireLeech' ? eHit.core === true
-              // the Carapace's bared orange core, between its swung-open plates
-              : e.kind === 'carapace' && hitY > e.pos.y - 0.05 && hitY < e.pos.y + 0.4);
+              // the Carapace's bared orange core: its real box, between the swung-open plates
+              : e.kind === 'carapace' && eHit.core === true);
       if (core) e.lastHitCore = true;
+      // the Carapace's armour goes by the box the shot landed on
+      if (e.kind === 'carapace') e.lastHitPart = eHit.part ?? null;
       game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, origin.x + dir.x * t, hitY, origin.z + dir.z * t);
       if (headshot || core) {
         game.audio.play('headshot', e.pos);

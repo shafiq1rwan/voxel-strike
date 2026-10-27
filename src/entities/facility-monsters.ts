@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import type { Enemy } from './enemies';
 import type { EnemyKind } from '../types';
 import type { Game, PlayerTarget } from '../game';
-import { moveBody, rayBox } from '../core/physics';
-import { RigKit, sched, span, angleTo, lerp } from './monster-kit';
+import { moveBody } from '../core/physics';
+import { HitBoxes, RigKit, sched, span, angleTo, lerp } from './monster-kit';
 
 /**
  * The Facility's new monsters, after reference/sector-monsters-v2 (sheets 01
@@ -101,8 +101,10 @@ export class FacilityMonster {
   private coil: THREE.Group | null = null;
   private emitter: THREE.Mesh | null = null;
   private eye: THREE.Mesh | null = null;
-  /** Original solid boxes follow their live pivots after the render meshes are baked. */
-  private hitParts: { name: string; parent: THREE.Object3D; matrix: THREE.Matrix4; box: THREE.Box3; core: boolean }[] = [];
+  /** Wire Leech: its original solid boxes, following their live pivots after the bake */
+  private hits: HitBoxes<'coil' | 'body'> | null = null;
+  /** the Leech's recorded boxes (tests) */
+  get hitParts(): HitBoxes<'coil' | 'body'>['parts'] { return this.hits?.parts ?? []; }
   /** Wire Leech: the live link and how far it has run */
   private link: { target: PlayerTarget; t: number; ticks: number; coil: number } | null = null;
 
@@ -114,12 +116,7 @@ export class FacilityMonster {
     else this.buildLeech();
     if (kind === 'wireLeech') {
       e.coreOpen = true;
-      body.traverse(part => {
-        if (!(part instanceof THREE.Mesh)) return;
-        part.updateMatrix(); part.geometry.computeBoundingBox();
-        this.hitParts.push({ name: part.name, parent: part.parent!, matrix: part.matrix.clone(),
-          box: part.geometry.boundingBox!.clone(), core: part.parent === this.coil });
-      });
+      this.hits = new HitBoxes(e.mesh, body, (part) => (part.parent === this.coil ? 'coil' : 'body'));
     }
     this.kit.bake(body);
     this.pose(0);
@@ -354,28 +351,11 @@ export class FacilityMonster {
     this.glowK(this.emitter, glow);
   }
 
-  /** Exact solid-box intersections for the Leech, including the elevated/tilting coil.
-   * Keep the original box frames, so baking cannot turn the coil's hole into a target.
-   */
+  /** Exact solid-box intersections for the Leech, including the elevated/tilting coil
+   * (its original box frames: baking can't turn the coil's hole into a target). */
   raycast(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxT: number): { t: number; core: boolean } | null {
-    if (this.kind !== 'wireLeech') return null;
-    // Occlusion may detach the body from mesh. Include the enemy transform explicitly.
-    this.e.mesh.updateWorldMatrix(true, false);
-    this.body.updateWorldMatrix(false, true);
-    let best: { t: number; core: boolean } | null = null;
-    for (const part of this.hitParts) {
-      _partWorld.copy(part.parent.matrixWorld).multiply(part.matrix);
-      if (this.body.parent !== this.e.mesh) _partWorld.premultiply(this.e.mesh.matrixWorld);
-      _inverse.copy(_partWorld).invert();
-      _origin.set(ox, oy, oz).applyMatrix4(_inverse);
-      // Transform a displacement, not a normalized direction: t stays in world units.
-      _direction.set(ox + dx, oy + dy, oz + dz).applyMatrix4(_inverse).sub(_origin);
-      const b = part.box;
-      const t = rayBox(_origin.x, _origin.y, _origin.z, _direction.x, _direction.y, _direction.z, best?.t ?? maxT,
-        { minX: b.min.x, minY: b.min.y, minZ: b.min.z, maxX: b.max.x, maxY: b.max.y, maxZ: b.max.z });
-      if (t !== null && (!best || t < best.t)) best = { t, core: part.core };
-    }
-    return best;
+    const hit = this.hits?.raycast(ox, oy, oz, dx, dy, dz, maxT);
+    return hit ? { t: hit.t, core: hit.tag === 'coil' } : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -608,8 +588,6 @@ export class FacilityMonster {
 }
 
 const _m = new THREE.Vector3();
-const _partWorld = new THREE.Matrix4(), _inverse = new THREE.Matrix4();
-const _origin = new THREE.Vector3(), _direction = new THREE.Vector3();
 
 
 /** every live link ends (level teardown, retry) */
