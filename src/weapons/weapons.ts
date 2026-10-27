@@ -1237,7 +1237,11 @@ export class WeaponSystem {
         ? hitY > e.pos.y + BOSS_CORE_Y[0] && hitY < e.pos.y + BOSS_CORE_Y[1]
         : e.kind === 'cinderHulk' ? hitY > e.pos.y - 0.15 && hitY < e.pos.y + 0.65
           // the sentinel-sized drone's furnace window (DRONE_SCALE × its rig)
-          : e.kind === 'kilnDrone' && hitY > e.pos.y - 0.28 && hitY < e.pos.y + 0.08);
+          : e.kind === 'kilnDrone' ? hitY > e.pos.y - 0.28 && hitY < e.pos.y + 0.08
+            // the Wire Leech's copper coil on its back (facility-monsters.ts): hits snap its tether
+            : e.kind === 'wireLeech' ? hitY > e.pos.y + 0.08
+              // the Carapace's bared orange core, between its swung-open plates
+              : e.kind === 'carapace' && hitY > e.pos.y - 0.05 && hitY < e.pos.y + 0.4);
       if (core) e.lastHitCore = true;
       game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, origin.x + dir.x * t, hitY, origin.z + dir.z * t);
       if (headshot || core) {

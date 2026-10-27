@@ -3,6 +3,7 @@ import { generateSectorLayout, type SectorArchitecture } from './sector-layouts'
 import { dressEnvironment, isNewTheme, ENVIRONMENTS } from './environments';
 import { Block } from './blocks';
 import { RNG } from '../core/rng';
+import { applyFacilityRoster, facilityBand, FACILITY_RESPONSE, applyBioRoster, bioBand, BIO_RESPONSE } from './rosters';
 import { ExitSignSpec, LedgeRailSpec,
   DoorSpec, ElevatorSpec, EnemySpec, PickupSpec, Rect, RoomDef,
 } from '../types';
@@ -91,6 +92,8 @@ export interface LevelData {
   /** An authored sector can keep the keycard response within its own roster. */
   responseKinds?: EnemySpec['kind'][];
   responseCount?: number;
+  /** sector 1: a free-standing crate by the spawn that always holds a supply (teaches "crates break") */
+  starterCrate?: { x: number; y: number; z: number } | null;
   elevator: ElevatorSpec | null;
   /** center of the 2×2 exit pad on the ledge (y = its top surface) */
   exitPad: { x: number; y: number; z: number } | null;
@@ -1043,6 +1046,19 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     }
   }
 
+  // -- the sector's own monsters (reference/sector-monsters-v2) -------------
+  // Facility sectors 1–3 (and endless Facility depths) re-cast the generic
+  // placements above as the sector's pair at about the same pressure. No RNG:
+  // the rest of the layout stream is untouched.
+  const band = theme === 'facility' && !survival ? facilityBand(difficulty) : null;
+  const bBand = theme === 'biofoundry' && !survival ? bioBand(difficulty, withBoss) : null;
+  if (band || bBand) {
+    const cast = band ? applyFacilityRoster(enemies, band) : applyBioRoster(enemies, bBand!);
+    enemies.length = 0;
+    enemies.push(...cast);
+  }
+  const response = band ? FACILITY_RESPONSE[band] : bBand ? BIO_RESPONSE[bBand] : null;
+
   // -- powerup: at most one per sector, stashed in a far room ----------------
   if (rng.chance(0.65)) {
     const farRooms = rooms.filter((r) => r.kind === 'normal' && r.dist >= 2);
@@ -1120,6 +1136,26 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
       lightOverrides.set(world.index(x, 0, z), { color: [255, 175, 70], range: 3 });
     }
   }
+  // -- the starter crate (sector 1 only) --------------------------------------
+  // One free-standing crate a couple of steps from the spawn: the first-run
+  // tip says crates break, and this one always pays (Game.onVoxelBroken).
+  // Picked by fixed offsets — no RNG — on open floor clear of pickups.
+  let starterCrate: { x: number; y: number; z: number } | null = null;
+  if (theme === 'facility' && difficulty === 1 && !survival) {
+    const sx = spawnRoom.cx, sz = spawnRoom.cz;
+    const usedCells = new Set(pickups.map((p) => Math.floor(p.x) + ',' + Math.floor(p.z)));
+    const open = (x: number, z: number): boolean => world.get(x, 1, z) === Block.Air && world.get(x, 2, z) === Block.Air && world.isSolid(x, 0, z);
+    for (const [ox, oz] of [[2, -2], [-2, -2], [2, 2], [-2, 2], [3, 0], [-3, 0], [0, -3], [0, 3]]) {
+      const x = sx + ox, z = sz + oz;
+      let free = !usedCells.has(x + ',' + z);
+      for (let ax = -1; ax <= 1 && free; ax++) for (let az = -1; az <= 1 && free; az++) if (!open(x + ax, z + az)) free = false;
+      if (!free) continue;
+      world.set(x, 1, z, Block.Crate);
+      starterCrate = { x, y: 1, z };
+      break;
+    }
+  }
+
   // -- bake lights & finish -------------------------------------------------
   world.bakeLighting(isNewTheme(theme) ? ENVIRONMENTS[theme].ambient : isBio ? BIO_AMBIENT : isGeo ? GEO_AMBIENT : undefined, lightOverrides);
 
@@ -1145,6 +1181,8 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     geo,
     powerLink,
     boss,
+    ...(response ? { responseKinds: response.kinds, responseCount: response.count } : {}),
+    starterCrate,
   };
 }
 

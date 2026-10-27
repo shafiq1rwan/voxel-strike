@@ -16,7 +16,12 @@ export type PickupKind =
 
 /** 'vatborn' is sector 4 preview only — levelgen never places it */
 export type EnemyKind = 'husk' | 'sentinel' | 'ticker' | 'brute' | 'vatborn' | 'broodkeeper'
-  | 'cinderHulk' | 'ventStalker' | 'kilnDrone';
+  | 'cinderHulk' | 'ventStalker' | 'kilnDrone'
+  // the Facility's sector monsters (reference/sector-monsters-v2): sector 1's
+  // turret, sector 2's clamp biped, sector 3's tether parasite
+  | 'sentryBud' | 'clampGuard' | 'wireLeech'
+  // the Biofoundry's: sector 4's acid lobber, sector 5's plated walker
+  | 'spitter' | 'carapace';
 
 export type WeaponId = 'pistol' | 'shotgun' | 'smg' | 'rocket' | 'arc' | 'special';
 

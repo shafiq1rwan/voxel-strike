@@ -8,7 +8,8 @@ export function isTouchDevice(): boolean {
 }
 
 const JOY_RADIUS = 48;
-const LOOK_SENS = 2.6;
+// outside playtesters (2026-10-27): 2.6 turned too fast on phones; ~30% slower
+const LOOK_SENS = 1.8;
 
 // weapon button gestures
 const HOLD_MS = 280; // hold this long (without swiping) to open the wheel
@@ -72,7 +73,7 @@ export class TouchControls {
       <div id="tammo"><i id="tammo-ico"></i><span id="tammo-num">–</span></div>
       <button id="tjump" class="tbtn-touch">JUMP</button>
       <button id="tfire" class="tbtn-touch">FIRE</button>
-      <button id="tmelee" class="tbtn-touch">BASH</button>
+      <button id="tfire2" class="tbtn-touch">FIRE</button>
       <button id="tweapon" class="tbtn-touch">${ICONS.swap()}<span id="tweapon-num">1</span><span id="tweapon-name">SIDEARM</span></button>
       <div id="twheel"></div>
       <button id="tmap" class="tbtn-touch">MAP</button>
@@ -112,7 +113,10 @@ export class TouchControls {
     const lookZone = ui.querySelector('#tlook-zone') as HTMLElement;
     const fire = ui.querySelector('#tfire') as HTMLElement;
     const jump = ui.querySelector('#tjump') as HTMLElement;
-    const melee = ui.querySelector('#tmelee') as HTMLElement;
+    // a second FIRE above the move stick (outside playtesters, 2026-10-27): the
+    // left thumb can shoot while the right keeps aiming. The touch BASH button
+    // is gone (they found it clutter); desktop keeps V / right mouse.
+    const fire2 = ui.querySelector('#tfire2') as HTMLElement;
     const pause = ui.querySelector('#tpause') as HTMLElement;
     const map = ui.querySelector('#tmap') as HTMLElement;
 
@@ -199,18 +203,24 @@ export class TouchControls {
       }, { passive: false });
       el.addEventListener('touchcancel', () => up?.());
     };
-    bindButton(fire, () => {
-      this.input.touchState.fire = true;
-      this.input.pressFire();
-    }, () => {
-      this.input.touchState.fire = false;
-    });
+    // either FIRE holds the trigger; it lets go when neither is held
+    let firing = 0;
+    for (const el of [fire, fire2]) {
+      let held = false;
+      bindButton(el, () => {
+        if (!held) { held = true; firing++; }
+        this.input.touchState.fire = true;
+        this.input.pressFire();
+      }, () => {
+        if (held) { held = false; firing = Math.max(0, firing - 1); }
+        this.input.touchState.fire = firing > 0;
+      });
+    }
     bindButton(jump, () => {
       this.input.touchState.jump = true;
     }, () => {
       this.input.touchState.jump = false;
     });
-    bindButton(melee, () => this.input.pressMelee());
     bindButton(pause, () => onPause());
     bindButton(map, () => onMap());
 

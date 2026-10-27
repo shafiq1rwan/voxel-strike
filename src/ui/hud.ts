@@ -67,6 +67,9 @@ body.force-landscape {
 #crosshair.hit .crosshair-marker { opacity: 1; }
 #crosshair.kill .crosshair-marker { opacity: 1; color: #ff5040; transform: scale(1.15); }
 #crosshair.hs .crosshair-marker { color: #ffd028; }
+/* amber corner brackets: the crosshair rests on something breakable / usable */
+#crosshair .crosshair-brackets { position: absolute; left: -10px; top: -10px; width: 44px; height: 44px; color: #ffd028; opacity: 0; transition: opacity .08s; }
+#crosshair.breakable .crosshair-brackets { opacity: 1; }
 #lowvignette {
   position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .5s;
   background: radial-gradient(ellipse at center, rgba(120,0,0,0) 52%, rgba(150,12,6,.55) 100%);
@@ -587,6 +590,9 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 }
 .death-scrap { margin: -4px 0 4px; font-size: 13px; letter-spacing: .14em; color: #ffd028; }
 .sc-scrap { margin-top: 8px; font-size: 12px; letter-spacing: .14em; color: #ffd028; text-align: center; }
+.sc-upg-row { margin-top: 12px; display: flex; justify-content: center; }
+#sector-clear .sc-upg { font-size: 12px; padding: 8px 16px; color: #ffd028; border-color: #ffd028; }
+#sector-clear .sc-upg:hover:not(:disabled) { background: #ffd028; color: #0a0c12; }
 @media (max-height: 560px) {
   .upg-wrap { gap: 5px; }
   .upg-row { padding: 5px 8px; gap: 8px; }
@@ -822,8 +828,10 @@ body.touch-mode .secret-found span { font-size: 12px; }
    further in sits where the thumb drags to aim and gets hit by look swipes */
 #tfire { right: calc(18px + var(--sar)); bottom: calc(18px + var(--sab)); width: 104px; height: 104px; font-size: 16px; }
 #tjump { right: calc(37px + var(--sar)); bottom: calc(134px + var(--sab)); }
-/* quick melee: up and in from FIRE, so the firing thumb rolls onto it (never the aim side) */
-#tmelee { right: calc(122px + var(--sar)); bottom: calc(112px + var(--sab)); width: 56px; height: 56px; font-size: 11px; }
+/* the second FIRE sits above the (invisible) move stick: the left thumb slides
+   up onto it without leaving the stick's side; it is layered over the stick's
+   zone, so a tap on it never starts the stick */
+#tfire2 { left: calc(26px + var(--sal)); bottom: calc(56% + var(--sab)); width: 76px; height: 76px; font-size: 13px; }
 /* weapon button above JUMP: tap = next, swipe = prev/next, hold = wheel */
 #tweapon { right: calc(37px + var(--sar)); bottom: calc(210px + var(--sab)); flex-direction: column; gap: 2px; line-height: 1; }
 #tweapon .ico { opacity: .75; }
@@ -1213,6 +1221,10 @@ export class HUD {
         <svg width="24" height="24" viewBox="0 0 24 24">
           <path class="crosshair-edge" d="M12 2v6 M12 16v6 M2 12h6 M16 12h6"/>
           <path d="M12 2v6 M12 16v6 M2 12h6 M16 12h6"/>
+        </svg>
+        <svg class="crosshair-brackets" width="44" height="44" viewBox="0 0 44 44">
+          <path class="crosshair-edge" d="M3 12V3h9 M32 3h9v9 M41 32v9h-9 M12 41H3v-9"/>
+          <path d="M3 12V3h9 M32 3h9v9 M41 32v9h-9 M12 41H3v-9"/>
         </svg>
         <svg class="crosshair-marker" width="32" height="32" viewBox="0 0 32 32">
           <path class="crosshair-edge" d="M4 4l6 6 M22 22l6 6 M4 28l6-6 M22 10l6-6"/>
@@ -1998,6 +2010,14 @@ export class HUD {
     this.showHitMarker(true, false, 110);
   }
 
+  private aimHintOn = false;
+  /** amber brackets round the crosshair: it rests on something breakable or usable */
+  setAimHint(on: boolean): void {
+    if (on === this.aimHintOn) return;
+    this.aimHintOn = on;
+    this.crosshairEl.classList.toggle('breakable', on);
+  }
+
   /** bigger, distinct confirmation when something dies (gold for headshots) */
   killMarker(headshot = false): void {
     this.showHitMarker(headshot, true, 170);
@@ -2377,7 +2397,7 @@ export class HUD {
         <div class="title-tag">Tune The Machine</div>
         <div class="setlist">
           <div class="setrow">
-            <label for="set-sens">Mouse sensitivity</label>
+            <label for="set-sens">${document.body.classList.contains('touch-mode') || matchMedia('(pointer: coarse)').matches ? 'Look' : 'Mouse'} sensitivity</label>
             <div class="setctl">
               <input id="set-sens" class="tslider" type="range" min="0.3" max="2.5" step="0.1" value="${s.sensitivity}">
               <span class="setval" id="val-sens"></span>
@@ -2673,6 +2693,10 @@ export class HUD {
     final?: { totals: string; record: string };
     /** final screen: "Keep descending" into endless depths */
     onDescend?: () => void;
+    /** re-shown (back from Upgrades): no tally, straight to the pick */
+    instant?: boolean;
+    /** a quiet "Upgrades · N scrap" button under the perk cards */
+    upgrades?: { label: string; open: () => void };
     onTick: () => void;
     onStamp: () => void;
     onPick?: (id: OfferId) => void;
@@ -2712,6 +2736,7 @@ export class HUD {
             <span class="sc-perk-pick">${o.touch ? 'PICK' : `PICK <kbd>${i + 1}</kbd>`}</span>
           </button>`).join('')}
         </div>
+        ${o.upgrades ? `<div class="sc-upg-row"><button id="sc-upgrades-btn" class="tbtn tbtn-quiet sc-upg" disabled>${o.upgrades.label}</button></div>` : ''}
         ${o.saved ? `<div class="sc-note">Progress saved &mdash; you can continue from sector ${o.nextSector} later. The perk carries over.</div>` : ''}`;
     } else {
       after = `<div class="prompt sc-descend">${tap} TO DESCEND TO SECTOR ${o.nextSector}</div>`;
@@ -2755,7 +2780,7 @@ export class HUD {
       armed = true;
       for (const c of cards) c.disabled = false;
       el.querySelector('.sc-perks')?.classList.add('armed');
-      for (const b of el.querySelectorAll<HTMLButtonElement>('#again-btn, #menu-btn, #descend-btn')) b.disabled = false;
+      for (const b of el.querySelectorAll<HTMLButtonElement>('#again-btn, #menu-btn, #descend-btn, #sc-upgrades-btn')) b.disabled = false;
     };
     const finish = (): void => {
       if (done) return;
@@ -2792,6 +2817,11 @@ export class HUD {
       }, countAt + (COUNT_MS * s) / STEPS);
     }
     timer(finish, countAt + COUNT_MS + 120);
+    if (o.instant) finish();
+    el.querySelector('#sc-upgrades-btn')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (armed && !picked) o.upgrades?.open();
+    });
 
     const pick = (i: number): void => {
       if (!armed || picked || !cards[i]) return;

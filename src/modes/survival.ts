@@ -6,6 +6,7 @@ import type { LevelData, LevelTheme } from '../world/levelgen';
 import type { VoxelWorld } from '../world/world';
 import { Block } from '../world/blocks';
 import { RISE_S } from '../entities/enemies';
+import { survivalFacilityBand, survivalBioBand } from '../world/rosters';
 
 /**
  * SURVIVAL — the main mode since 2026-10-23 (docs/RETENTION_PLAN.md §4).
@@ -96,10 +97,26 @@ export function waveHpMult(w: number): number {
 /** the wave's roster: a weighted mix that widens with the wave, plus its heavies */
 export function waveRoster(w: number, theme: LevelTheme, rnd: () => number = Math.random): EnemyKind[] {
   const geo = theme === 'geothermal';
-  const pool: Array<[EnemyKind, number]> = [['husk', geo ? 2 : 5]];
-  if (w >= 2) pool.push(['sentinel', geo ? 1 : 2 + w * 0.15]);
-  if (w >= 3) pool.push(['ticker', 1.5 + w * 0.1]);
-  if (theme === 'biofoundry' && w >= 2) pool.push(['vatborn', 2]);
+  const pool: Array<[EnemyKind, number]> = [];
+  if (theme === 'facility') {
+    // the Facility walks its three sector rosters across the map's five waves:
+    // Entry (Husk, then Sentry Buds) → Security (Clamp Guard + Arc Sentinel) →
+    // Reactor (Wire Leech, Clamp Guards, Brutes as the heavies)
+    const band = survivalFacilityBand(w);
+    const local = (w - 1) % WAVES_PER_MAP;
+    if (band === 1) pool.push(['husk', 5], ['sentryBud', local >= 1 ? 2 : 0]);
+    else if (band === 2) pool.push(['clampGuard', 3], ['sentinel', 3]);
+    else pool.push(['wireLeech', 2], ['clampGuard', 2]);
+  } else if (theme === 'biofoundry') {
+    // Vatborn + Spitter waves, then Carapace pressure (sector 4 → 5)
+    const local = (w - 1) % WAVES_PER_MAP;
+    if (survivalBioBand(w) === 4) pool.push(['vatborn', 3], ['spitter', local >= 1 ? 2 : 0]);
+    else pool.push(['carapace', 2], ['spitter', 1.5]);
+  } else {
+    pool.push(['husk', geo ? 2 : 5]);
+    if (w >= 2) pool.push(['sentinel', geo ? 1 : 2 + w * 0.15]);
+    if (w >= 3) pool.push(['ticker', 1.5 + w * 0.1]);
+  }
   if (geo) pool.push(['ventStalker', 3], ['kilnDrone', w >= 2 ? 1.5 + w * 0.1 : 0]);
   const total = pool.reduce((s, [, n]) => s + n, 0);
   // the map's last wave brings the heavy hitters; later even waves bring one too
@@ -114,7 +131,7 @@ export function waveRoster(w: number, theme: LevelTheme, rnd: () => number = Mat
     }
     out.push(pick);
   }
-  for (let i = 0; i < heavies; i++) out.push(geo && i === 0 ? 'cinderHulk' : 'brute');
+  for (let i = 0; i < heavies; i++) out.push(geo && i === 0 ? 'cinderHulk' : theme === 'biofoundry' ? 'carapace' : 'brute');
   return out;
 }
 

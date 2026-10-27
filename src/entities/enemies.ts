@@ -6,6 +6,8 @@ import { SEEN_HOLD, seenFrom } from '../core/occlusion';
 import type { VoxelWorld } from '../world/world';
 import type { Game, PlayerTarget } from '../game';
 import { GeothermalMonster, isGeothermalKind, GEO_SCHEDULE } from './geothermal-monsters';
+import { FacilityMonster, isFacilityKind, FACILITY_SCHEDULE } from './facility-monsters';
+import { BioMonster, isBioKind, BIO_SCHEDULE } from './bio-monsters';
 
 export type EState = 'idle' | 'patrol' | 'chase' | 'attack' | 'charge' | 'pain' | 'dead';
 
@@ -33,26 +35,37 @@ const SCHED: Record<EnemySpec['kind'], { attack: Sched; charge: Sched }> = {
   cinderHulk: GEO_SCHEDULE.cinderHulk,
   ventStalker: GEO_SCHEDULE.ventStalker,
   kilnDrone: GEO_SCHEDULE.kilnDrone,
+  sentryBud: FACILITY_SCHEDULE.sentryBud,
+  clampGuard: FACILITY_SCHEDULE.clampGuard,
+  wireLeech: FACILITY_SCHEDULE.wireLeech,
+  spitter: BIO_SCHEDULE.spitter,
+  carapace: BIO_SCHEDULE.carapace,
+  // reference/sector-monsters-v2/BEHAVIOURS.md: the claw is pulled back
+  // 0.65 s (facing locks for the last 0.2), one 0.15 s rake, 0.9 s exposed
   husk: {
-    attack: { prep: 0.4, lock: 0.2, commit: 0.12, recover: 0.6 },
+    attack: { prep: 0.65, lock: 0.45, commit: 0.15, recover: 0.9 },
     charge: { prep: 0.5, lock: 0.3, commit: 0.3, recover: 0.85 },
   },
+  // backhand: 0.8 warning, one strike, 1.1 recovery; charge: shoulder down
+  // 1.0 (aim locks for the last 0.3), up to 0.75 of straight travel, 1.4
+  // recovery (a wall slam replaces it with a 2.0 stun)
   brute: {
-    attack: { prep: 0.6, lock: 0.35, commit: 0.15, recover: 0.9 },
-    charge: { prep: 0.8, lock: 0.55, commit: 1.2, recover: 0.9 },
+    attack: { prep: 0.8, lock: 0.5, commit: 0.15, recover: 1.1 },
+    charge: { prep: 1.0, lock: 0.7, commit: 0.75, recover: 1.4 },
   },
   vatborn: {
     // 1.10 of recovery after the impact: follow-through + recover
-    attack: { prep: 0.65, lock: 0.3, commit: 0.15, recover: 0.95 },
+    attack: { prep: 1.0, lock: 0.6, commit: 0.2, recover: 1.5 },
     charge: { prep: 0.3, lock: 0, commit: 0.35, recover: 0.6 },
   },
   ticker: {
     attack: { prep: 0.75, lock: 0, commit: 0, recover: 0 },
     charge: { prep: 0.75, lock: 0, commit: 0, recover: 0 },
   },
+  // paddles spread 0.8 (aim locks for the last 0.25), one bolt, 1.0 recovery
   sentinel: {
-    attack: { prep: 0.7, lock: 0.45, commit: 0, recover: 0.9 },
-    charge: { prep: 0.7, lock: 0.45, commit: 0, recover: 0.9 },
+    attack: { prep: 0.8, lock: 0.55, commit: 0, recover: 1.0 },
+    charge: { prep: 0.8, lock: 0.55, commit: 0, recover: 1.0 },
   },
   // the boss runs its own cycle (bossUpdate); never used
   broodkeeper: {
@@ -64,7 +77,7 @@ const SCHED: Record<EnemySpec['kind'], { attack: Sched; charge: Sched }> = {
 /**
  * The Broodkeeper (reference/sector4-monsters.md): a stationary boss in a
  * cradle. Cycle: acid volley (1 s warning, globs 0.35 s apart) → core open
- * 2.4 s → release up to 2 Husks (1 s of hatch rattle, ≤ 4 summons alive) →
+ * 2.4 s → release a Carapace from a side incubator (1 s of hatch rattle; ≤ 2 alive, ≤ 4 per attempt) →
  * core open 3 s → repeat. Five globs instead of three below 40% health.
  * Closed armor takes 25% of the damage; open, the core zone takes 2×.
  */
@@ -76,7 +89,9 @@ const BOSS_SHOT_GAP = 0.35;
 const BOSS_OPEN_1 = 1.4;
 const BOSS_RELEASE = 1.4;
 const BOSS_OPEN_2 = 1.8;
-const BOSS_SUMMON_CAP = 4;
+/** the adds: Carapaces, at most two alive and four per attempt (BEHAVIOURS.md §5) */
+const BOSS_ALIVE_ADDS = 2;
+const BOSS_TOTAL_ADDS = 4;
 const BOSS_ACID_SPEED = 11;
 /** below this much health it enrages: a fanned volley and a ticker in each release */
 const BOSS_ENRAGE = 0.5;
@@ -94,7 +109,8 @@ const HUSK_LUNGE_SPEED = 9.0;
 const HUSK_RUN_SPEED = 3.2;
 /** Survival: an enemy climbs up out of its warning glow for this long before it acts */
 export const RISE_S = 0.6;
-const BRUTE_CHARGE_SPEED = 2.3 * 4.2;
+/** 8 u/s for at most 0.75 s: a 6-unit charge (BEHAVIOURS.md) */
+const BRUTE_CHARGE_SPEED = 8;
 const VAT_RUSH_SPEED = 6.8;
 /** sentinel: keep this far away when it can */
 const SENTINEL_NEAR = 7;
@@ -113,17 +129,27 @@ const TUNING: Record<EnemySpec['kind'], EnemyTuning> = {
   cinderHulk: { hp: 190, speed: 1.8, halfX: 0.74, halfY: 1.35, painChance: 0.08, bloodColor: [1, 0.43, 0.08] },
   ventStalker: { hp: 50, speed: 3.6, halfX: 0.58, halfY: 0.43, painChance: 0.25, bloodColor: [1, 0.3, 0.05] },
   kilnDrone: { hp: 85, speed: 2.1, halfX: 0.3, halfY: 0.46, painChance: 0.15, bloodColor: [1, 0.6, 0.08] },
+  // the Facility's sector monsters (facility-monsters.ts): a bolted turret
+  // that never flinches, a slow armored clamp biped, a tether parasite
+  sentryBud: { hp: 28, speed: 0, halfX: 0.48, halfY: 0.5, painChance: 0, bloodColor: [0.3, 0.85, 1] },
+  clampGuard: { hp: 85, speed: 1.8, halfX: 0.6, halfY: 0.95, painChance: 0.1, bloodColor: [1, 0.6, 0.15] },
+  wireLeech: { hp: 45, speed: 2.4, halfX: 0.62, halfY: 0.6, painChance: 0.2, bloodColor: [0.7, 0.4, 1] },
   husk: { hp: 45, speed: 5.0, halfX: 0.38, halfY: 0.82, painChance: 0.4, bloodColor: [0.9, 0.45, 0.1] },
-  sentinel: { hp: 60, speed: 2.7, halfX: 0.45, halfY: 0.45, painChance: 0.25, bloodColor: [0.25, 0.85, 1] },
+  // outside playtesters found it hard to kill (it is also the top killer in
+  // sectors 1–2): less health, a slower sidestep, a slightly bigger target
+  sentinel: { hp: 40, speed: 2.2, halfX: 0.52, halfY: 0.48, painChance: 0.3, bloodColor: [0.25, 0.85, 1] },
   // fragile suicide crawler: sprints at the player and self-destructs — and
   // its corpse explodes even when shot at range, so prioritize it near barrels
   ticker: { hp: 20, speed: 6.6, halfX: 0.3, halfY: 0.32, painChance: 0.1, bloodColor: [0.75, 0.85, 0.2] },
   // arena pit boss: slow tank that telegraphs a wall-smashing charge; stunned
   // when it slams a wall, always drops a powerup on death
-  brute: { hp: 170, speed: 2.3, halfX: 0.62, halfY: 1.05, painChance: 0.12, bloodColor: [0.85, 0.4, 0.1] },
+  brute: { hp: 180, speed: 2.3, halfX: 0.62, halfY: 1.05, painChance: 0.12, bloodColor: [0.85, 0.4, 0.1] },
   // sector 4 preview: the escaped specimen (reference/sector4-monsters.md).
   // Shambles, short rush, one heavy swing with a long recovery; green blood
-  vatborn: { hp: 55, speed: 3.4, halfX: 0.5, halfY: 0.9, painChance: 0.3, bloodColor: [0.55, 0.8, 0.3] },
+  vatborn: { hp: 95, speed: 2.3, halfX: 0.5, halfY: 0.9, painChance: 0.25, bloodColor: [0.55, 0.8, 0.3] },
+  // the Biofoundry's sector monsters (bio-monsters.ts)
+  spitter: { hp: 70, speed: 2.2, halfX: 0.55, halfY: 0.5, painChance: 0.3, bloodColor: [0.6, 1, 0.2] },
+  carapace: { hp: 120, speed: 1.5, halfX: 0.62, halfY: 0.9, painChance: 0.05, bloodColor: [0.9, 0.3, 0.2] },
   // boss: never moves, never flinches (its armor and core do the work)
   broodkeeper: { hp: 2200, speed: 0, halfX: 1.5, halfY: 1.4, painChance: 0, bloodColor: [0.8, 0.25, 0.2] },
 };
@@ -132,11 +158,13 @@ const ALERT_SOUND: Record<EnemySpec['kind'], 'huskAlert' | 'sentinelAlert' | 'ti
   husk: 'huskAlert', sentinel: 'sentinelAlert', ticker: 'tickerAlert', brute: 'bruteRoar', vatborn: 'bruteRoar',
   broodkeeper: 'bruteRoar',
   cinderHulk: 'bruteRoar', ventStalker: 'huskAlert', kilnDrone: 'sentinelAlert',
+  sentryBud: 'sentinelAlert', clampGuard: 'bruteRoar', wireLeech: 'tickerAlert',
+  spitter: 'huskAlert', carapace: 'bruteRoar',
 };
 
 /** husk-skeleton walkers: the jointed rig + walker gait/attack animation drive them */
 function humanoid(kind: EnemySpec['kind']): boolean {
-  return kind === 'husk' || kind === 'brute' || kind === 'vatborn';
+  return kind === 'husk' || kind === 'brute' || kind === 'vatborn' || kind === 'clampGuard' || kind === 'carapace';
 }
 
 // per-frame scratch (enemies update one at a time)
@@ -271,6 +299,8 @@ export class Enemy {
     shots: number;
     fired: number;
     released: boolean;
+    /** adds released this attempt (BOSS_TOTAL_ADDS caps it) */
+    releasedTotal?: number;
     summons: Enemy[];
     /** phase 2 announced (below BOSS_ENRAGE) */
     enraged?: boolean;
@@ -301,6 +331,12 @@ export class Enemy {
   private tgt: PlayerTarget | null = null;
   private growlCd = 2 + Math.random() * 4;
   private geothermal: GeothermalMonster | null = null;
+  /** the Facility's sector monsters: rig, poses and behaviour live in facility-monsters.ts */
+  facility: FacilityMonster | null = null;
+  /** the Biofoundry's Spitter / Carapace (bio-monsters.ts) */
+  bio: BioMonster | null = null;
+  /** world-space effects the manager puts in the scene beside the rig (a Spitter's glob, mark and patch) */
+  get worldFx(): THREE.Object3D | null { return this.bio?.fx ?? null; }
 
   constructor(spec: EnemySpec, room: RoomDef | null, groundY: number, startPatrolling: boolean) {
     this.kind = spec.kind;
@@ -313,6 +349,8 @@ export class Enemy {
     this.body = new THREE.Group();
     this.mesh.add(this.body);
     if (isGeothermalKind(spec.kind)) this.geothermal = new GeothermalMonster(this, this.body, spec.kind);
+    else if (isFacilityKind(spec.kind)) this.facility = new FacilityMonster(this, this.body, spec.kind);
+    else if (isBioKind(spec.kind)) this.bio = new BioMonster(this, this.body, spec.kind);
     else if (spec.kind === 'husk') this.buildHusk();
     else if (spec.kind === 'ticker') this.buildTicker();
     else if (spec.kind === 'brute') this.buildBrute();
@@ -609,38 +647,41 @@ export class Enemy {
   }
 
   private buildSentinel(): void {
-    // reference/enemy-upgrade-sentinel.png: a steel-teal hovering box with one
-    // cyan optic between two pale shutters, a dark cap, a cyan emitter below,
-    // and four thick paddles on corner hinges. Charging spreads the paddles and
-    // slides the shutters out; recovery folds everything in. 16 boxes.
-    const TEAL = 0x4c7f93, DARK = 0x202830, CYAN = 0x55e0ff, PALE = 0xb8c4cc, PADDLE = 0x6f9fb0;
-    const body = part(this.body, 0.56, 0.4, 0.5, TEAL);
-    body.position.y = 0;
-    const cap = part(this.body, 0.36, 0.1, 0.3, DARK);
-    cap.position.y = 0.25;
-    const bezel = part(this.body, 0.42, 0.3, 0.06, DARK);
-    bezel.position.set(0, 0, -0.27);
-    const optic = part(this.body, 0.3, 0.2, 0.04, CYAN, true);
-    optic.position.set(0, 0, -0.31);
+    // reference/sector-monsters-v2/01 (ARC SENTINEL): a hovering steel cube,
+    // rust-patched, one square cyan optic in a dark bezel between two pale
+    // shutter blocks, a cyan emitter below, and four tall paddles on the
+    // corners — two up, two down. Charging spreads the paddles wide and
+    // slides the shutters out; recovery folds them in. 15 boxes.
+    const STEEL = 0x6e7682, DARK = 0x23272e, CYAN = 0x55e0ff, PALE = 0xd2cfc6, PADDLE = 0x9aa0a8, RUST = 0x8a4a2e;
+    part(this.body, 0.58, 0.5, 0.52, STEEL);
+    const cap = part(this.body, 0.4, 0.08, 0.36, DARK);
+    cap.position.y = 0.29;
+    const rust = part(this.body, 0.02, 0.16, 0.22, RUST);
+    rust.position.set(0.3, 0.1, 0.08);
+    const bezel = part(this.body, 0.34, 0.32, 0.05, DARK);
+    bezel.position.set(0, 0.02, -0.28);
+    const optic = part(this.body, 0.2, 0.2, 0.04, CYAN, true);
+    optic.position.set(0, 0.02, -0.31);
     this.glowParts.push(optic);
-    const pupil = part(this.body, 0.06, 0.12, 0.03, DARK);
-    pupil.position.set(0, 0, -0.335);
-    const emitter = part(this.body, 0.2, 0.14, 0.2, CYAN, true);
-    emitter.position.y = -0.27;
+    const emitter = part(this.body, 0.22, 0.08, 0.22, CYAN, true);
+    emitter.position.y = -0.29;
     this.glowParts.push(emitter);
     for (const side of [-1, 1]) {
-      const shutter = part(this.body, 0.1, 0.26, 0.06, PALE);
-      shutter.position.set(0.3 * side, 0, -0.29);
+      const shutter = part(this.body, 0.14, 0.3, 0.1, PALE);
+      shutter.position.set(0.26 * side, 0.0, -0.28);
       this.shutters.push(shutter);
     }
     for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        const housing = part(this.body, 0.1, 0.12, 0.1, DARK);
-        housing.position.set(0.3 * sx, 0.06, 0.22 * sz);
+      for (const sy of [-1, 1]) {
         const pivot = new THREE.Group();
-        pivot.position.set(0.3 * sx, 0.06, 0.22 * sz);
-        const paddle = part(pivot, 0.36, 0.12, 0.18, PADDLE);
-        paddle.position.set(0.26 * sx, 0, 0);
+        pivot.position.set(0.3 * sx, 0.18 * sy, 0.02);
+        // broad face to the front, like the sheet's tall paddles
+        const paddle = part(pivot, 0.3, 0.46, 0.1, PADDLE);
+        paddle.position.set(0.16 * sx, 0.22 * sy, 0.04);
+        if (sx === sy) {
+          const spot = part(pivot, 0.02, 0.14, 0.12, RUST);
+          spot.position.set(0.16 * sx, 0.26 * sy, -0.015);
+        }
         this.body.add(pivot);
         this.paddles.push(pivot);
       }
@@ -812,17 +853,16 @@ export class Enemy {
     game.dynLights.flash(mx, my, mz, 0.5, 1, 0.2, 1.2, 5, 0.15);
   }
 
-  /** release up to two Husks into clear spots in front of the cradle (summons alive ≤ 4) */
+  /** release one Carapace beside the cradle (≤ 2 alive, ≤ 4 per attempt; sector 5's own monster, not sector 1's Husks) */
   private bossRelease(game: Game): void {
     const b = this.boss!;
     b.summons = b.summons.filter((e) => e.alive);
-    let slots = Math.min(2, BOSS_SUMMON_CAP - b.summons.length);
-    // enraged: one of the two is a ticker (it sprints in and blows)
-    const kinds: Array<'husk' | 'ticker'> = this.bossFrac < BOSS_ENRAGE ? ['ticker', 'husk'] : ['husk', 'husk'];
+    let slots = Math.min(1, BOSS_ALIVE_ADDS - b.summons.length, BOSS_TOTAL_ADDS - (b.releasedTotal ?? 0));
     if (slots <= 0) return;
     const fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw);
     const rx = Math.cos(b.yaw), rz = -Math.sin(b.yaw);
-    const spots: Array<[number, number]> = [[2.8, -1.3], [2.8, 1.3], [3.9, 0], [3.9, -2], [3.9, 2]];
+    // the side incubators first (beside the cradle), then out in front
+    const spots: Array<[number, number]> = [[1.6, -2.6], [1.6, 2.6], [2.8, -1.3], [2.8, 1.3], [3.9, 0]];
     for (const [f, r] of spots) {
       if (slots <= 0) break;
       const x = this.pos.x + fx * f + rx * r, z = this.pos.z + fz * f + rz * r;
@@ -831,7 +871,8 @@ export class Enemy {
       const near = (px: number, pz: number, rr: number): boolean => (px - x) ** 2 + (pz - z) ** 2 < rr * rr;
       if (game.playerTargets().some((p) => !p.dead && near(p.pos.x, p.pos.z, 1.3))) continue;
       if (game.enemies.list.some((e) => e !== this && e.alive && near(e.pos.x, e.pos.z, 1.0))) continue;
-      game.enemies.spawnFromSpecs([{ kind: kinds[2 - slots] ?? 'husk', x, z, roomId: this.room?.id ?? 0 }], game.level.rooms, game);
+      game.enemies.spawnFromSpecs([{ kind: 'carapace', x, z, roomId: this.room?.id ?? 0 }], game.level.rooms, game);
+      b.releasedTotal = (b.releasedTotal ?? 0) + 1;
       const e = game.enemies.list[game.enemies.list.length - 1];
       e.wake(game);
       b.summons.push(e);
@@ -1077,6 +1118,18 @@ export class Enemy {
       if (game.player.buffs.quad > 0) dmg *= 0.5;
       this.lastHitCore = false;
     }
+    if (this.facility) {
+      // shots into the Wire Leech's coil count toward snapping its tether
+      if (this.lastHitCore) this.facility.coilHit(dmg, game);
+      this.lastHitCore = false;
+    }
+    if (this.bio) {
+      // the Carapace's plates: a quarter from the front, double into the bared core
+      const r = this.bio.scaleDamage(dmg, dx, dz, this.lastHitCore);
+      dmg = r.dmg;
+      armored = r.armored;
+      this.lastHitCore = false;
+    }
     this.hp -= dmg;
     // hit feedback fires the same frame: white-hot flash, a sideways jolt,
     // a meaty thwack, and blood — waiting for the next lighting tick made
@@ -1103,7 +1156,7 @@ export class Enemy {
     }
     // micro-stagger + knockback: the hit interrupts momentum, then shoves
     // (brutes are too heavy to shove far; a committed move keeps its momentum)
-    const mass = this.kind === 'brute' || this.kind === 'cinderHulk' ? 0.25 : 1;
+    const mass = this.kind === 'sentryBud' ? 0 : this.kind === 'brute' || this.kind === 'cinderHulk' ? 0.25 : this.kind === 'clampGuard' || this.kind === 'carapace' ? 0.4 : 1;
     const committed = this.state === 'charge' && this.phase === 'move';
     if (!committed) {
       this.vel.x *= 0.6;
@@ -1124,6 +1177,8 @@ export class Enemy {
 
   private die(game: Game): void {
     this.setState('dead');
+    this.facility?.onDeath();
+    this.bio?.onDeath();
     this.atkTgt = null;
     this.faceLocked = false;
     game.audio.play(humanoid(this.kind) ? 'enemyDieA' : 'enemyDieB', this.pos);
@@ -1164,7 +1219,7 @@ export class Enemy {
       this.pos.x, this.pos.y + 0.2, this.pos.z, 0, 0, 0,
       this.tuning.bloodColor[0], this.tuning.bloodColor[1], this.tuning.bloodColor[2], 12
     );
-    if (this.kind === 'sentinel') {
+    if (this.kind === 'sentinel' || this.kind === 'sentryBud' || this.kind === 'wireLeech') {
       // the drone pops with an electric flash
       game.dynLights.flash(this.pos.x, this.pos.y, this.pos.z, 0.3, 0.85, 1, 1.4, 8, 0.28);
       game.audio.play('boltHit', this.pos);
@@ -1194,8 +1249,9 @@ export class Enemy {
     const pl = this.pickTarget(game);
     this.tgt = pl;
 
-    // dead: the voxel rig already burst into gibs in die()
-    if (this.state === 'dead') return;
+    // dead: the voxel rig already burst into gibs in die() (a Spitter's glob
+    // and acid patch run out their own timers)
+    if (this.state === 'dead') { this.bio?.deadUpdate(dt, game); return; }
     // Survival arrival: the body climbs up out of the floor glow, then hunts
     if (this.rise > 0) {
       this.rise = Math.max(0, this.rise - dt);
@@ -1230,9 +1286,11 @@ export class Enemy {
       }
     }
 
-    if (this.geothermal) {
+    if (this.geothermal || this.facility || this.bio) {
       if (this.state === 'pain' && this.stateTime > this.stunTime) this.setState('chase');
-      this.geothermal.update(dt, game, pl);
+      if (this.geothermal) this.geothermal.update(dt, game, pl);
+      else if (this.facility) this.facility.update(dt, game, pl);
+      else this.bio!.update(dt, game, pl);
       this.mesh.position.copy(this.pos);
       this.mesh.scale.setScalar(1 + this.flashTime * 0.7);
       this.mesh.rotation.z = this.flashTime * this.flinchSign * 0.4;
@@ -1569,9 +1627,10 @@ export class Enemy {
     const s = this.strafeSign;
     if (los && dist < SENTINEL_NEAR) {
       // keep distance + strafe
-      this.steer(-nx * 0.5 + -nz * s * 0.8, -nz * 0.5 + nx * s * 0.8, this.tuning.speed);
+      this.steer(-nx * 0.5 + -nz * s * 0.6, -nz * 0.5 + nx * s * 0.6, this.tuning.speed);
     } else if (los && dist <= SENTINEL_FAR) {
-      this.steer(-nz * s, nx * s, this.tuning.speed * 0.6);
+      // a lazy drift in its firing band, not a dodge: it should be shootable
+      this.steer(-nz * s, nx * s, this.tuning.speed * 0.35);
     } else {
       this.steer(nx, nz, this.tuning.speed);
     }
@@ -1895,16 +1954,16 @@ export class Enemy {
     }
     switch (this.kind) {
       case 'husk':
-        if (this.meleeStrike(2.1, 45, 12, 0, 0, game)) game.audio.play('huskBite', this.pos);
+        if (this.meleeStrike(2.1, 45, 10, 0, 0, game)) game.audio.play('huskBite', this.pos);
         this.enterPhase('strike');
         break;
       case 'brute':
-        if (this.meleeStrike(2.9, 50, 22, 7, 3, game)) game.audio.play('bruteSlam', this.pos);
+        if (this.meleeStrike(2.9, 50, 18, 7, 3, game)) game.audio.play('bruteSlam', this.pos);
         this.enterPhase('strike');
         break;
       case 'vatborn':
         this.attackCooldown = 1.9; // swing cooldown counts from the impact
-        if (this.meleeStrike(2.0, 45, 16, 5, 0, game)) game.audio.play('bruteSlam', this.pos);
+        if (this.meleeStrike(2.2, 45, 18, 5, 0, game)) game.audio.play('bruteSlam', this.pos);
         this.enterPhase('strike');
         break;
       case 'ticker':
@@ -1920,7 +1979,7 @@ export class Enemy {
         const my = this.pos.y + this.aimY * 0.5;
         const mz = this.pos.z + this.aimZ * 0.5;
         if (game.hasLOS(this.pos.x, this.pos.y, this.pos.z, mx, my, mz)) {
-          game.projectiles.spawn('bolt', mx, my, mz, this.aimX, this.aimY, this.aimZ, 13, false);
+          game.projectiles.spawn('bolt', mx, my, mz, this.aimX, this.aimY, this.aimZ, 9, false);
           game.audio.play('boltFire', this.pos);
         }
         this.enterPhase('recover');
@@ -1943,7 +2002,7 @@ export class Enemy {
         game.player.shake = Math.min(0.6, game.player.shake + 0.25);
         game.enemies.alertAt(this.pos.x, this.pos.z, 14, game);
         this.chargeCooldown = 4.5;
-        this.stunTime = 1.3;
+        this.stunTime = 2.0;
         this.vel.x = -this.lockX * 3;
         this.vel.z = -this.lockZ * 3;
         this.atkTgt = null;
@@ -1974,7 +2033,7 @@ export class Enemy {
         const pd = Math.hypot(pdx, pdz);
         if (pd >= this.half.x + 1.0 || !this.overlapsY(p)) continue;
         this.hitConsumed = true;
-        p.damage(28, game, { x: this.pos.x, z: this.pos.z });
+        p.damage(20, game, { x: this.pos.x, z: this.pos.z, by: 'brute' });
         const d = pd || 1;
         p.vel.x += (pdx / d) * 13;
         p.vel.y += 5.5;
@@ -1997,7 +2056,7 @@ export class Enemy {
     switch (this.kind) {
       case 'husk':
         // the lunge itself has no contact damage — one claw at its end
-        if (!obstructed && this.meleeStrike(1.6, 45, 12, 0, 0, game)) game.audio.play('huskBite', this.pos);
+        if (!obstructed && this.meleeStrike(1.6, 45, 10, 0, 0, game)) game.audio.play('huskBite', this.pos);
         break;
       case 'brute':
         if (!this.hitConsumed) this.chargeCooldown = 3.5; // ran out of steam
@@ -2030,6 +2089,8 @@ export class Enemy {
 
   private animate(dt: number, game: Game): void {
     if (this.geothermal) { this.geothermal.pose(dt); return; }
+    if (this.facility) { this.facility.pose(dt); return; }
+    if (this.bio) { this.bio.pose(dt); return; }
     const speed = Math.hypot(this.vel.x, this.vel.z);
     this.animPhase += dt * 2;
     if (this.kind === 'husk') this.animateHusk(dt, game);
@@ -2094,15 +2155,14 @@ export class Enemy {
     for (let i = 0; i < this.paddles.length; i++) {
       const p = this.paddles[i];
       const sx = i < 2 ? -1 : 1;
-      const sz = i % 2 === 0 ? -1 : 1;
-      // sweep toward front/back and lift
-      p.rotation.y = -sx * sz * (0.45 + spread * 0.6);
-      p.rotation.z = sx * (spread * 0.55 - 0.1);
-      p.position.y = 0.06 + spread * 0.04;
+      const sy = i % 2 === 0 ? -1 : 1;
+      // tip outward (up paddles lean out and up, down paddles out and down)
+      p.rotation.z = -sx * sy * (0.12 + spread * 0.55);
+      p.rotation.y = -sx * spread * 0.35;
     }
     for (let i = 0; i < this.shutters.length; i++) {
       const side = i === 0 ? -1 : 1;
-      this.shutters[i].position.x = side * (0.3 + 0.1 * Math.max(0, spread));
+      this.shutters[i].position.x = side * (0.26 + 0.09 * Math.max(0, spread));
     }
     const optic = this.glowParts[0];
     (optic.material as THREE.MeshBasicMaterial).color.copy(optic.userData.baseColor as THREE.Color).multiplyScalar(glow);
@@ -2409,7 +2469,7 @@ export class Enemy {
     else if (!on && attached) this.mesh.remove(this.body);
   }
 
-  disposeArt(): void { this.geothermal?.dispose(); }
+  disposeArt(): void { this.geothermal?.dispose(); this.facility?.dispose(); this.bio?.dispose(); }
 
   /** the CPU-lit parts (not fullBright), gathered once: the rig never changes */
   private litCache: THREE.Mesh[] | null = null;
@@ -2463,6 +2523,7 @@ export class EnemyManager {
   /** remove all enemies (level teardown), freeing their geometry/materials */
   reset(): void {
     for (const e of this.list) {
+      if (e.worldFx) this.group.remove(e.worldFx);
       e.disposeArt();
       this.group.remove(e.mesh);
       e.attachBody(true); // culled rigs are detached: dispose them too
@@ -2497,6 +2558,7 @@ export class EnemyManager {
       const e = new Enemy(s, room, ground, Math.random() < 0.45);
       this.list.push(e);
       this.group.add(e.mesh);
+      if (e.worldFx) this.group.add(e.worldFx);
     }
   }
 

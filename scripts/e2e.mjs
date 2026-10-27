@@ -49,12 +49,17 @@ try {
   await page.evaluate(() => {
     const g = window.__voxelstrike;
     const e = g.enemies.list.find((q) => q.alive);
+    // it must outlive this test's own shots to fight back (sector 1 lists a
+    // husk first now: 45 hp, and a point-blank shot or two killed it)
+    e.hp = e.maxHp = 400;
     // stand in an actually-open cell next to the enemy (not inside a wall)
     const spots = [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5], [1.5, 1.5], [-1.5, -1.5]];
     let px = e.pos.x + 1.5, pz = e.pos.z;
     for (const [dx, dz] of spots) {
       const x = Math.floor(e.pos.x + dx), z = Math.floor(e.pos.z + dz);
-      if (g.world.get(x, 1, z) === 0 && g.world.get(x, 2, z) === 0) {
+      // open AND in its sight: an arena enemy can stand beside a pillar
+      if (g.world.get(x, 1, z) === 0 && g.world.get(x, 2, z) === 0 &&
+        g.hasLOS(e.pos.x, e.pos.y + 0.2, e.pos.z, e.pos.x + dx, e.pos.y + 0.2, e.pos.z + dz)) {
         px = e.pos.x + dx;
         pz = e.pos.z + dz;
         break;

@@ -132,10 +132,11 @@ try {
       g.player.pos.set(32, 1.88, 30.4);
       dodge.awake = true;
       dodge.beginAttack('attack', g.player, g);
-      for (let i = 0; i < 15; i++) dodge.update(1 / 60, g);
+      // the facing locks 0.45 s into the 0.65 s pull-back (BEHAVIOURS.md): step away just after
+      for (let i = 0; i < 30; i++) dodge.update(1 / 60, g);
       g.player.pos.set(33.6, 1.88, 32);
       const beforeDodge = g.player.health;
-      for (let i = 0; i < 35; i++) dodge.update(1 / 60, g);
+      for (let i = 0; i < 40; i++) dodge.update(1 / 60, g);
       return { idleSwing: maxLeg - minLeg, stoppedLeg: stopped.legLG.rotation.x, worstSole, distances, plantedMotion, damage, dodged: beforeDodge === g.player.health, windLean: wind.torsoG.rotation.x };
     });
     check(results.idleSwing < 0.01, `stationary Husk keeps its feet still (${results.idleSwing.toFixed(4)} rad)`);
@@ -143,7 +144,7 @@ try {
     check(results.worstSole < 0.02, `support foot stays at floor height (${results.worstSole.toFixed(4)}u error)`);
     check(Math.max(...results.distances) / Math.min(...results.distances) < 1.06, `chase distance consistent at 30/60/120 Hz (${results.distances.map((d) => d.toFixed(2)).join(', ')})`);
     check(results.plantedMotion < 0.04, `planted windup does not march (${results.plantedMotion.toFixed(3)} rad)`);
-    check(results.damage === 12, `one claw deals damage exactly once (${results.damage})`);
+    check(results.damage === 10, `one claw deals damage exactly once (${results.damage})`);
     check(results.dodged, 'sidestepping the locked claw avoids damage');
     check(results.windLean < 0, 'lunge preparation leans forward toward local -Z');
   }

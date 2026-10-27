@@ -65,13 +65,25 @@ try {
     s2.gate = !!sign && !!pad && sign.y === pad.y &&
       (sign.face === 'zmin' || sign.face === 'zmax' ? sign.x === pad.x && Math.abs(sign.z - pad.z) === 1 : sign.z === pad.z && Math.abs(sign.x - pad.x) === 1);
     s2.gateFace = sign?.face;
+    s2.kinds = [...new Set(g.level.enemies.map((e) => e.kind))].sort().join();
+    // sector 2's own pair is Clamp Guard + Arc Sentinel (reference/sector-monsters-v2;
+    // facility-monsters.mjs tests them). The sections below test generic mechanics
+    // — the ticker chain, quad, combos, the brute's charge — so add those monsters
+    // here, spread over the normal rooms, with a brute in the arena
+    const normals = g.level.rooms.filter((r) => r.kind === 'normal');
+    const arena = g.level.rooms.find((r) => r.kind === 'arena');
+    const extra = [];
+    normals.slice(0, 7).forEach((r, i) => extra.push({ kind: 'husk', x: r.cx + 0.5, z: r.cz + 0.5, roomId: r.id }, ...(i < 2 ? [{ kind: 'ticker', x: r.cx + 1.5, z: r.cz + 0.5, roomId: r.id }] : [])));
+    if (arena) extra.push({ kind: 'brute', x: arena.cx + 0.5, z: arena.cz + 2.5, roomId: arena.id });
+    g.enemies.spawnFromSpecs(extra, g.level.rooms, g);
+    g.level.totalEnemies += extra.length;
     return { rooms, brute: kinds.has('brute'), ticker: kinds.has('ticker'), shotgunAtSpawn, s2 };
   });
   check(opener.rooms <= 7 && !opener.brute && !opener.ticker && opener.shotgunAtSpawn,
     `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no tickers, shotgun in the spawn room`);
   check(opener.s2.gate, `the exit pad sits against the back wall under the EXIT sign (${opener.s2.gateFace} wall)`);
-  check(opener.s2.rooms >= 11 && opener.s2.rooms <= 13 && opener.s2.quiet === 0 && opener.s2.enemies >= 30,
-    `sector 2 plays as in 0.3.4: ${opener.s2.rooms} rooms (11–13), every room past spawn holds enemies (${opener.s2.quiet} empty), ${opener.s2.enemies} enemies`);
+  check(opener.s2.rooms >= 11 && opener.s2.rooms <= 13 && opener.s2.quiet === 0 && opener.s2.enemies >= 20 && opener.s2.kinds === 'clampGuard,sentinel',
+    `sector 2 plays as in 0.3.4 with its own pair: ${opener.s2.rooms} rooms (11–13), every room past spawn holds enemies (${opener.s2.quiet} empty), ${opener.s2.enemies} enemies (${opener.s2.kinds})`);
   await new Promise((r) => setTimeout(r, 300));
 
   // --- 1a. ticker charges the player and self-destructs -----------------------
@@ -292,7 +304,8 @@ try {
     g.player.dead = false;
     g.player.pos.set(a.cx + 0.5 - 6, 2.0, a.cz + 0.5);
     g.player.vel.set(0, 0, 0);
-    b.pos.set(a.cx + 0.5 + 3, b.pos.y, a.cz + 0.5);
+    // within its 6-unit charge (BEHAVIOURS.md): it runs out of steam past that
+    b.pos.set(a.cx + 0.5 - 1.5, b.pos.y, a.cz + 0.5);
     b.mesh.position.copy(b.pos);
     b.vel.set(0, 0, 0);
     b.wake(g);
@@ -819,6 +832,8 @@ try {
       // Momentum: a triple kill hastes
       give('momentum');
       g.player.buffs.haste = 0;
+      const ensure = (kind, n) => { const r = g.level.rooms.find((q) => q.kind === 'normal') ?? g.level.rooms[0]; for (let i = g.enemies.list.filter((e) => e.alive && e.kind === kind).length; i < n; i++) g.enemies.spawnFromSpecs([{ kind, x: r.cx + 0.5 + (i % 2), z: r.cz + 0.5 + (i >> 1), roomId: r.id }], g.level.rooms, g); }; // sector 2's own pair is Clamp Guard + Arc Sentinel
+      ensure('husk', 4);
       const husks = g.enemies.list.filter((e) => e.alive && e.kind === 'husk').slice(0, 3);
       for (const h of husks) h.damage(9999, 0, 0, g);
       out.haste = g.player.buffs.haste;
@@ -1040,7 +1055,15 @@ try {
       window.__stand();
       // put one enemy of `kind` d units straight ahead (yaw 0 = facing -z), same floor
       window.__place = (kind, d) => {
-        const e = g.enemies.list.find((q) => q.kind === kind && q.alive && !q.__used);
+        let e = g.enemies.list.find((q) => q.kind === kind && q.alive && !q.__used);
+        if (!e) {
+          // sector 2's own pair is Clamp Guard + Arc Sentinel: bring in the generic
+          // kind, homed in a far room (the out-of-world net returns a parked enemy there)
+          const home = g.level.rooms.find((q) => q.kind === 'arena') ?? g.level.rooms.find((q) => q.kind === 'normal');
+          g.enemies.spawnFromSpecs([{ kind, x: home.cx + 0.5, z: home.cz + 0.5, roomId: home.id }], g.level.rooms, g);
+          e = g.enemies.list[g.enemies.list.length - 1];
+          e.update = () => {};
+        }
         e.__used = true;
         const p = g.player;
         e.pos.set(p.pos.x, p.pos.y - p.half.y + e.half.y + 0.01, p.pos.z - d);
@@ -1089,9 +1112,9 @@ try {
     // bashing a ticker kills it, and its corpse still blows
     await new Promise((r) => setTimeout(r, 450));
     const tk = await mp.evaluate(() => window.__place('ticker', 1.2));
-    await bash();
+    const tres = await bash();
     const tick = await mp.evaluate((i) => { const g = window.__voxelstrike; return { dead: !g.enemies.list[i].alive, boom: g.pendingExplosions.length > 0 || g.player.health < 1000 }; }, tk);
-    check(tick.dead && tick.boom, `bashing a ticker kills it and it detonates (dead ${tick.dead}, blast ${tick.boom})`);
+    check(tick.dead && tick.boom, `bashing a ticker kills it and it detonates (${tres}: dead ${tick.dead}, blast ${tick.boom})`);
     await mp.evaluate(() => { window.__voxelstrike.player.health = 1000; });
 
     // the secret wall: stand 4 u in front of it, looking at it
@@ -1152,10 +1175,12 @@ try {
     await mp.close();
   }
 
-  // --- 19b. touch: the BASH button sits by FIRE on the right edge and swings --
+  // --- 19b. touch: no BASH button; a second FIRE above the move stick -------
+  // (outside playtesters, 2026-10-27: BASH was clutter; the left thumb wants
+  // to shoot while the right one aims). Either FIRE holds the trigger.
   {
     const tp = await browser.newPage();
-    tp.on('pageerror', (err) => errors.push(`[bash-touch pageerror] ${err.message}`));
+    tp.on('pageerror', (err) => errors.push(`[fire2-touch pageerror] ${err.message}`));
     await tp.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
     await tp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
     await tp.waitForSelector('#start-btn');
@@ -1163,17 +1188,30 @@ try {
     await new Promise((r) => setTimeout(r, 1200));
     const lay = await tp.evaluate(() => {
       const r = (q) => document.querySelector(q)?.getBoundingClientRect();
-      const b = r('#tmelee'), f = r('#tfire'), j = r('#tjump'), a = r('#tammo');
+      const f2 = r('#tfire2'), f = r('#tfire'), j = r('#tjump'), a = r('#tammo'), v = r('#vitals'), w = r('#tweapon');
       const overlap = (p, q) => p && q && p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom;
-      return { ok: !!b, right: b ? innerWidth - b.right : 0, onScreen: b && b.top >= 0 && b.bottom <= innerHeight, hits: [f, j, a].filter((x) => overlap(b, x)).length };
+      return { bash: !!document.querySelector('#tmelee'), ok: !!f2, left: f2 ? f2.left : 0, mid: f2 ? (f2.top + f2.bottom) / 2 / innerHeight : 0,
+        onScreen: f2 && f2.top >= 0 && f2.bottom <= innerHeight, hits: [f, j, a, v, w].filter((x) => overlap(f2, x)).length };
     });
-    check(lay.ok && lay.onScreen && lay.hits === 0 && lay.right < 200,
-      `touch BASH button sits by FIRE on the right side, overlapping nothing (${lay.right.toFixed(0)}px from the edge)`);
-    await tp.evaluate(() => { window.__voxelstrike.state = 'playing'; });
-    await tp.tap('#tmelee');
-    await new Promise((r) => setTimeout(r, 300));
-    check(await tp.evaluate(() => window.__voxelstrike.weapons.lastMelee !== ''), 'tapping BASH swings');
-    await tp.screenshot({ path: 'scripts/shots/features-touch-bash.png' });
+    check(!lay.bash, 'the touch BASH button is gone');
+    check(lay.ok && lay.onScreen && lay.hits === 0 && lay.left < 120 && lay.mid > 0.25 && lay.mid < 0.6,
+      `a second FIRE sits on the left above the move stick, overlapping nothing (${lay.left.toFixed(0)}px in, ${(lay.mid * 100).toFixed(0)}% down)`);
+    const hold = await tp.evaluate(async () => {
+      const g = window.__voxelstrike; g.state = 'playing';
+      const el1 = document.querySelector('#tfire'), el2 = document.querySelector('#tfire2');
+      const send = (el, type, id) => el.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true,
+        changedTouches: [new Touch({ identifier: id, target: el, clientX: 1, clientY: 1 })] }));
+      const ammo0 = g.player.ammo.bullets;
+      send(el2, 'touchstart', 7); const a = g.input.touchState.fire;
+      await new Promise((r) => setTimeout(r, 400));
+      const fired = g.player.ammo.bullets < ammo0;
+      send(el1, 'touchstart', 8); send(el2, 'touchend', 7); const b = g.input.touchState.fire;
+      send(el1, 'touchend', 8); const c = g.input.touchState.fire;
+      return { a, b, c, fired };
+    });
+    check(hold.a && hold.fired, 'holding the left FIRE shoots');
+    check(hold.b && !hold.c, 'with both held, letting one go keeps firing; letting both go stops');
+    await tp.screenshot({ path: 'scripts/shots/features-touch-fire2.png' });
     await tp.close();
   }
 
@@ -1474,7 +1512,10 @@ try {
         for (const o of g.enemies.list) {
           if (o.alive) { o.pos.set(4, o.pos.y, 4); o.awake = false; o.state = 'idle'; o.vel.set(0, 0, 0); o.wake = () => {}; }
         }
+        const ensure = (kind, n) => { const r = g.level.rooms.find((q) => q.kind === 'normal') ?? g.level.rooms[0]; for (let i = g.enemies.list.filter((e) => e.alive && e.kind === kind).length; i < n; i++) g.enemies.spawnFromSpecs([{ kind, x: r.cx + 0.5 + (i % 2), z: r.cz + 0.5 + (i >> 1), roomId: r.id }], g.level.rooms, g); }; // sector 2's own pair is Clamp Guard + Arc Sentinel
+        ensure('husk', 1);
         const h = g.enemies.list.find((q) => q.alive && q.kind === 'husk');
+        h.wake = () => {}; h.awake = false; h.state = 'idle'; h.vel.set(0, 0, 0);
         const a = g.level.rooms.find((r) => r.kind === 'arena');
         g.player.pos.set(a.cx + 0.5 - 5, 2.0, a.cz + 0.5);
         g.player.vel.set(0, 0, 0);
@@ -1567,7 +1608,7 @@ try {
   // rotates into landscape (notch 47 on top, home bar 34 → the game's left
   // and right). The crosshair stays dead centre; no insets = the old spots.
   {
-    const EDGE_IDS = ['#tfire', '#tjump', '#tweapon', '#tmelee', '#tmap', '#tpause', '#vitals', '#topright', '#weaponbar', '#objective', '#unlock'];
+    const EDGE_IDS = ['#tfire', '#tjump', '#tweapon', '#tfire2', '#tmap', '#tpause', '#vitals', '#topright', '#weaponbar', '#objective', '#unlock'];
     const run = async (w, h, insets) => {
       const sp = await browser.newPage();
       sp.on('pageerror', (err) => errors.push(`[safe-area pageerror] ${err.message}`));
@@ -1645,6 +1686,11 @@ try {
       g.input.locked = true;
       const s0 = g.upgrades.scrap;
       const scrapAt = () => g.pickups.items.filter((p) => p.spec.kind === 'scrap' && !p.taken);
+      const ensure = (kind, n) => { const r = g.level.rooms.find((q) => q.kind === 'normal') ?? g.level.rooms[0]; for (let i = g.enemies.list.filter((e) => e.alive && e.kind === kind).length; i < n; i++) g.enemies.spawnFromSpecs([{ kind, x: r.cx + 0.5 + (i % 2), z: r.cz + 0.5 + (i >> 1), roomId: r.id }], g.level.rooms, g); }; // sector 2's own pair is Clamp Guard + Arc Sentinel
+      ensure('husk', 1);
+      // the brute in another room: its scrap must not join the husk's pile
+      const ar = g.level.rooms.find((q) => q.kind === 'arena');
+      if (!g.enemies.list.some((e) => e.alive && e.kind === 'brute')) g.enemies.spawnFromSpecs([{ kind: 'brute', x: ar.cx + 0.5, z: ar.cz + 0.5, roomId: ar.id }], g.level.rooms, g);
       const husk = g.enemies.list.find((e) => e.alive && e.kind === 'husk');
       g.applyEnemyHit(husk, 9999, 1, 0, false);
       const huskDrop = scrapAt().map((p) => p.spec.amount);
@@ -1810,8 +1856,8 @@ try {
     });
     check(first.play === 'Play' && first.playOnScreen && first.goal === 'Escape the facility' && first.steps.length === 3 && /keycard/i.test(first.steps[0]),
       `first visit: the campaign goal, three steps and one PLAY button ("${first.goal}": ${first.steps.join(' > ')})`);
-    check(first.buttons.join() === 'title-settings-btn,title-armory-btn,start-btn,survival-btn' && !first.banner,
-      `first visit: PLAY (the campaign), the quiet Survival button and the two corner buttons, no NEW SECTOR banner (${first.buttons.join(', ')})`);
+    check(first.buttons.join() === 'title-settings-btn,title-armory-btn,start-btn' && !first.banner,
+      `first visit: PLAY (the campaign) and the two corner buttons — Survival hidden — no NEW SECTOR banner (${first.buttons.join(', ')})`);
     await pc.screenshot({ path: 'scripts/shots/features-title-first.png' });
     // a returning player who hasn't reached the Biofoundry yet gets the banner
     await pc.evaluate(() => localStorage.setItem('voxelstrike-tutorial-done', '1'));

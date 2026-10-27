@@ -55,8 +55,10 @@ node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consi
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + sector 2 as in 0.3.4 (11–13 rooms, no empty rooms), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch BASH, weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), scrap + upgrades (kills DROP scrap pickups that bank when walked over + HUD counter, clears earn scrap, death screen shows it + Upgrades, buys cost and save, Suit/Plates/Medic/Hands/Head Start work, survives a reload, Armory entry, phone fit), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
-node scripts/survival.mjs   # SURVIVAL (the quiet button under PLAY): title PLAY = campaign + quiet Survival, sealed arena, waves spawn ≥5 u away, kills drop supplies + scrap pickups (swept home at the clear), wave-clear pick of 3 then the SHOP (gun pictures, Scattergun 20 scrap → slot 2, CONTINUE), scrap flies in + HUD counter, wave 5 → Biofoundry map, death = reached/best wave + Try again / Upgrades / Main menu, best saved, phone pick + shop fit
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation defaults 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + sector 2 as in 0.3.4 (11–13 rooms, no empty rooms), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch: no BASH, a second FIRE above the move stick (either holds the trigger), weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), scrap + upgrades (kills DROP scrap pickups that bank when walked over + HUD counter, clears earn scrap, death screen shows it + Upgrades, buys cost and save, Suit/Plates/Medic/Hands/Head Start work, survives a reload, Armory entry, phone fit), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
+node scripts/survival.mjs   # SURVIVAL (hidden: ?survival shows its quiet button under PLAY): title PLAY = campaign + quiet Survival, sealed arena, waves spawn ≥5 u away, kills drop supplies + scrap pickups (swept home at the clear), wave-clear pick of 3 then the SHOP (gun pictures, Scattergun 20 scrap → slot 2, CONTINUE), scrap flies in + HUD counter, wave 5 → Biofoundry map, death = reached/best wave + Try again / Upgrades / Main menu, best saved, phone pick + shop fit
+node scripts/facility-monsters.mjs # Facility sector rosters (1 Husk+Sentry Bud, 2 Clamp Guard+Arc Sentinel, 3 Brute+Wire Leech, no Tickers, rooms populated, keycard alarm) + Sentry Bud bolt/lids/cadence/dodge, Clamp Guard pinch/side-step/turn rate/recovery, Wire Leech tether link/slow/stings/coil break/range/rebuild, rig budgets
+node scripts/bio-monsters.mjs # Biofoundry rosters (4 Vatborn+Spitter, 5 Carapace), Spitter mark/glob 10/acid patch 3 per 0.5s/expiry/dodge/patch cap, Carapace front ×0.25 back ×1 core ×2 / 3-spike fan 8 each / no mid-attack flinch, Vatborn 95 hp, Broodkeeper adds = Carapaces ≤2 alive ≤4 per attempt, rig budgets
 node scripts/monkey.mjs     # randomized stress run with NaN/out-of-world invariants
 node scripts/exit-room-props.mjs [url] # seven props, 24 layouts/four lift directions, boarding route, ride/status/exit, ?exitroom shortcut, ready/docked screenshots
 node scripts/coop.mjs       # 2-player co-op over the BroadcastChannel transport: link/seed handshake, avatar + puppet sync, authority routing, shared keys/score, level transition, respawn
@@ -80,8 +82,10 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 
 ## Architecture
 
-- SURVIVAL is the SECONDARY mode: a quiet *Survival* button under PLAY
-  (`#survival-btn`, `showTitle({ onSurvival })`; docs/RETENTION_PLAN.md §4).
+- SURVIVAL is HIDDEN from players (owner, 2026-10-27, after outside
+  playtesters): the quiet *Survival* button under PLAY (`#survival-btn`,
+  `showTitle({ onSurvival })`; docs/RETENTION_PLAN.md §4) only shows on web
+  builds with `?survival` (development; `survival.mjs` uses it), never Poki.
   It was PLAY for one Player Fit Test (0.3.5, 2026-10-23) and average
   playtime fell from ~5:00 to ~2:00 with the same audience (132 players), so
   the campaign is PLAY (`#start-btn`) again (owner's call, 0.3.6) — don't
@@ -414,9 +418,10 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   destructibles, get stunned 1.3s on a wall slam via `stunTime`, and
   always drop a powerup; deaths burst into per-part gibs;
   `vatborn` is the Biofoundry's (sector 4) escaped specimen — husk skeleton via
-  `humanoid()`, 0.65s heavy-swing windup + 1.1s recovery, a 0.3s braced
-  rush that can't become a swing, never
-  placed by levelgen. Its right arm (+x — the model faces -z) is a giant
+  `humanoid()`, 95 HP, 2.3 u/s, 1.0s club windup, 0.2s smash for 18 at 2.2u,
+  1.5s recovery (BEHAVIOURS.md §4), a 0.3s braced rush that can't become a
+  swing; sector 4's roster places it in rooms too (`applyBioRoster`), beside
+  the tank occupants. Its right arm (+x — the model faces -z) is a giant
   club ending in a huge dark fist; keep that oversized. A real Vatborn sits
   in each occupied tank with `dormant = true` (no AI/physics/wake, green
   tint, thrashes with `agitation`) and leaves via `startEmerge()` — a
@@ -442,11 +447,13 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   ~8s; a PERFECT held-SMG fight is now ~25s, `features.mjs` 18b keeps it in
   20–50s of game time), dormant until a player enters its chamber
   (`activateBoss`; `wake` does nothing). `bossUpdate` loops volley (1.0s
-  warn, 3 acid globs 0.35s apart) → open 1.4s → release up to 2 Husks (cap
-  4 alive, they bump `totalEnemies`) → open 1.8s. Below half health
+  warn, 3 acid globs 0.35s apart) → open 1.4s → release ONE Carapace (sector
+  5's own monster, from the side-incubator spots beside the cradle;
+  `BOSS_ALIVE_ADDS` 2 alive, `BOSS_TOTAL_ADDS` 4 per attempt via
+  `boss.releasedTotal`; they bump `totalEnemies`) → open 1.8s. Below half health
   (`BOSS_ENRAGE`, against `maxHp`, which follows endless HP scaling) it
   ENRAGES once: a roar + message, volleys of 5 globs fanned `BOSS_FAN`
-  apart so one sidestep can't beat them, and a ticker in each release.
+  apart so one sidestep can't beat them (the adds stay Carapaces).
   `damage()`: ×0.25 closed, ×0.6 on the open body, ×2 on the open core
   (`lastHitCore`, set by weapons.ts when a hitscan lands in `BOSS_CORE_Y`
   while `coreOpen`), and quad counts ×2 not ×4 (`dmg *= 0.5` while the
@@ -538,7 +545,8 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   has the loadout without it). `lastThrown` / `thrown.lastResult` are for
   tests (`features.mjs` #22).
   Quick melee is NOT a slot: `MELEE` + `meleeStrike()` in weapons.ts (V,
-  right mouse, touch `#tmelee` → `Input.consumeMelee`). 0.15s windup, 0.6s
+  right mouse; the touch BASH button was removed — outside playtesters found
+  it clutter — `Input.consumeMelee`). 0.15s windup, 0.6s
   cooldown, centre reach 1.8 (+ big bodies' extra half-width), same floor,
   50° cone, LOS, one target, 35 dmg + shove, ×2 when `Enemy.vulnerable`
   (pain/stun or the recover phase); with no enemy in reach it damages the
@@ -601,8 +609,8 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   Kept bare on purpose (playtime fell to under 2 minutes): wordmark,
   ESCAPE THE FACILITY, three step tiles (keycard → door → lift, the HUD's
   objective icons/colours), one PLAY (`#start-btn` = the campaign; with a
-  save Continue and New run share ONE row), ONE quiet *Survival* button
-  under it (`#survival-btn`, its own row — Survival was PLAY for one Fit
+  save Continue and New run share ONE row) — Survival's quiet button under
+  it only with `?survival` (hidden from players: it was PLAY for one Fit
   Test and playtime fell to ~2:00), one controls line (first visit on desktop
   only), the NEXT SKIN goal line, a Settings gear
   (`#title-settings-btn`) top-right and an Armory button
@@ -695,6 +703,99 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   look-drag), plus a CLOSE MAP button. On desktop it stays pointer-transparent
   (clicks fire the gun; Tab/M close it). `Game.frame()` force-closes it
   whenever state isn't 'playing'. `features.mjs` #12 covers the touch flow.
+
+## Facility sector monsters (2026-10-27)
+
+Each Facility sector has its own two monsters (reference/sector-monsters-v2,
+BEHAVIOURS.md §1–3): 1 Facility Entry = Husk + **Sentry Bud**, 2 Security
+Floor = **Clamp Guard** + Arc Sentinel, 3 Reactor Access = Brute + **Wire
+Leech**. The three new kinds live in `src/entities/facility-monsters.ts`
+(`FacilityMonster`, hooked like `GeothermalMonster`: `Enemy.facility`;
+rig + poses + AI + strike; `FACILITY_SCHEDULE` feeds `SCHED`):
+- Sentry Bud: bolted turret (speed 0, never flinches), 28 HP; aims 1.0 s with
+  its lids swung open (locks 0.25 s before), one bolt 6 dmg at speed 7
+  (`ShotOpts` on the pooled `'bolt'`), 1.5 s dim-lid recovery, ≥ 3.5 s
+  between shots. The base never turns; the head carries the aim.
+- Clamp Guard: 85 HP, 1.8 u/s, turns ≤ 65°/s and walks the way it faces;
+  jaws spread 0.9 s (turning stops for the last 0.3), one 0.2 s pinch for 16
+  across a fixed ±55° arc at ≤ 2.1 u, 1.2 s shut recovery (`vulnerable`).
+- Wire Leech: 45 HP, holds ~4–6.5 u; anchors + opens its coil 1.1 s (locks
+  0.3 s before), one violet `'tether'` projectile; a hit links the player:
+  `Player.slow` (25%), 4 dmg at 0.4 and 0.8 s, then it lets go. One link per
+  player, a 1.2 s re-link grace, detach on LOS / range > 8 / death / rebuild;
+  20 dmg to the coil (`coreOpen` + weapons.ts band above pos.y + 0.08, →
+  `coilHit`) snaps it. Cooldown 4.5 s from the cast.
+Existing three tuned to BEHAVIOURS.md: Husk claw prep 0.65 / lock 0.45 /
+commit 0.15 / recover 0.9, 10 dmg; Brute 180 HP, backhand 0.8 / 0.15 / 1.1
+for 18, charge prep 1.0 (lock 0.7), 8 u/s for ≤ 0.75 s (6 u) for 20, wall
+stun 2.0 s; Arc Sentinel restyled to sheet 01 (grey steel, rust, pale
+shutters, four tall paddles), prep 0.8 / lock 0.55 / recover 1.0, bolt
+speed 9 — and after outside playtesters found it hard to kill: 40 HP,
+2.2 u/s, a lazy drift (×0.35) in its firing band, collider 0.52 × 0.48.
+ROSTERS (`src/world/rosters.ts`, owner's call "same pressure"): levelgen
+still places the 0.3.4 generic slots, then `applyFacilityRoster` re-casts a
+Facility sector's room by room — 1: husks stay, sentinels → Sentry Buds;
+2: sentinels stay, husk / ticker / brute slots → a Clamp Guard per two
+husks' worth; 3: a Brute per three husks' worth, Wire Leeches for the rest
+and ~60% of the sentinels. Every occupied room keeps ≥ 1, Tickers leave the
+Facility, no RNG used. `facilityBand(n)` picks the roster for endless
+Facility depths; `FACILITY_RESPONSE` → `LevelData.responseKinds/Count`
+(the keycard alarm); Survival's Facility map walks Entry → Security →
+Reactor over its five waves (`survivalFacilityBand`). `facility-monsters.mjs`
+tests all of it; features.mjs adds generic husks / tickers / a brute to
+sector 2 for its mechanic sections.
+
+## Biofoundry sector monsters (2026-10-27)
+
+Sector 4 = Vatborn + **Spitter**, sector 5 = **Carapace** + the Broodkeeper
+(reference/sector-monsters-v2 §4–5). `src/entities/bio-monsters.ts`
+(`BioMonster`, `Enemy.bio`; `BIO_SCHEDULE`), rigs built with the shared
+`src/entities/monster-kit.ts` (`RigKit`: part / joint / glow / grain; the
+Facility module uses it too):
+- Spitter: 70 HP, keeps 4.5–10 u; aims 1.0 s with its lime cheek sacs
+  swelling and a square LANDING MARK on the floor under the target (locks
+  0.3 s before), lobs one glob on a ballistic arc (0.8 s flight) that
+  impacts at the first voxel / closed door on its path, 10 dmg within 0.9 u
+  (LOS), 1.4 s recovery, ≥ 4.5 s between lobs. A floor impact leaves an
+  ACID PATCH: radius 0.8, 3 s, 3 dmg per 0.5 s (`acidReady` per player =
+  overlaps never stack; the first sting waits 0.5 s after the glob), one
+  per Spitter (a new one replaces its old), `PATCH_CAP` 3 in the level
+  (oldest retired), never on a doorway / one-wide cell. Its glob, mark and
+  patch live in `BioMonster.fx`, which `EnemyManager` adds to the scene
+  beside the rig (`Enemy.worldFx`) and disposes at reset; a dead Spitter's
+  glob and patch run out their timers (`deadUpdate`). One flinch per charge.
+- Carapace: 120 HP, 1.5 u/s, turns ≤ 70°/s; plants and parts its plates
+  0.9 s (locks 0.25 s before), three bone `'spike'` projectiles (pooled, 8
+  dmg, speed 9) in a ±0.13 rad fan, then the plates swing open: the core is
+  bared 1.4 s (`coreOpen`; weapons.ts core band pos.y −0.05…+0.4) and
+  closes over 0.35 s. `scaleDamage`: a hit travelling into its closed front
+  ×0.25 (armored clank), sides / back ×1, the bared core ×2. Never flinches
+  mid-attack.
+Rosters (`applyBioRoster`, `bioBand`): sector 4 — a Vatborn per two
+husks' worth of close-range slots, Spitters for ~60% of the sentinels;
+sector 5 — a Carapace per three husks' worth of everything (~21 per sector:
+fewer bodies, armoured fronts — review if it plays too hard). Endless
+Biofoundry depths alternate, boss depths are sector 5; `BIO_RESPONSE` is the
+keycard alarm; Survival's Biofoundry map runs Vatborn + Spitter waves, then
+Carapaces (its heavies are Carapaces). `bio-monsters.mjs` tests it.
+
+## Build 1 from outside playtesters (2026-10-27)
+
+- Touch: no BASH button; a second FIRE (`#tfire2`) above the move stick
+  (left, bottom 56%), layered over the stick's zone — either FIRE holds the
+  trigger (a held count), releasing one keeps firing while the other's down.
+- Touch look is ~30% slower (`LOOK_SENS` 1.8, was 2.6); the slider reads
+  "Look sensitivity" on touch.
+- The player's own rockets and barrels hurt them at 27.5% of the blast
+  (enemy blasts and tickers stay 55%).
+- Sector clear: a quiet *Upgrades · N scrap* button under the perk cards
+  (Back re-shows the screen `instant`, no second tally).
+- Breakables: amber corner brackets on the crosshair (`hud.setAimHint`,
+  `Game.updateAimHint` every 0.08 s, 14 u ray) while it rests on a crate,
+  barrel, cracked wall or the Power Link node with no enemy in front;
+  sector 1 places a free-standing STARTER CRATE two steps from the spawn
+  (`LevelData.starterCrate`, no RNG) that always drops shells + a medkit,
+  and the first-run tips add "Crates and barrels break — shoot them".
 
 ## Conventions & gotchas
 

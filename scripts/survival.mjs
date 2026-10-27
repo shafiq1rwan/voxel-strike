@@ -11,7 +11,8 @@
 import puppeteer from 'puppeteer-core';
 import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 
-const URL = process.argv[2] ?? 'http://localhost:5173/?seed=12345';
+// Survival is hidden from players: the title shows its button only with ?survival
+const URL = process.argv[2] ?? 'http://localhost:5173/?seed=12345&survival';
 const EDGE = process.env.VOXEL_BROWSER ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

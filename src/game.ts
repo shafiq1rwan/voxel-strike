@@ -223,6 +223,8 @@ export class Game {
   private state: GameState = 'title';
   private clock = new THREE.Clock();
   private time = 0;
+  /** seconds of simulation since load (pauses with the game): hazard tick timers */
+  get simTime(): number { return this.time; }
   private baseSeed: number;
   levelIndex = 1;
   kills = 0;
@@ -1764,22 +1766,52 @@ export class Game {
   }
 
   /** advances only while actually playing, so pausing holds the sequence */
+  private aimHintT = 0;
+
+  /**
+   * Amber brackets round the crosshair while it rests on something you can
+   * break or use within reach — a crate, a barrel, a cracked wall, the Power
+   * Link node (outside playtesters couldn't tell what breaks). An enemy in
+   * front takes precedence: no brackets on a fight.
+   */
+  private updateAimHint(dt: number): void {
+    if (this.state !== 'playing') { this.hud.setAimHint(false); return; }
+    this.aimHintT -= dt;
+    if (this.aimHintT > 0) return;
+    this.aimHintT = 0.08;
+    const pl = this.player, cp = Math.cos(pl.pitch);
+    const dx = -Math.sin(pl.yaw) * cp, dy = Math.sin(pl.pitch), dz = -Math.cos(pl.yaw) * cp;
+    const ox = pl.pos.x, oy = pl.eyeY(), oz = pl.pos.z;
+    const hit = this.world.raycast(ox, oy, oz, dx, dy, dz, 14);
+    let on = false;
+    if (hit) {
+      const b = this.world.get(hit.x, hit.y, hit.z);
+      const n = this.level.powerLink?.node;
+      on = isDestructible(b) || (!!n && n.x === hit.x && n.y === hit.y && n.z === hit.z && b === Block.LampWarm);
+      if (on && this.enemies.raycast(ox, oy, oz, dx, dy, dz, hit.t)) on = false;
+    }
+    this.hud.setAimHint(on);
+  }
+
   private updateTips(dt: number): void {
     if (this.tipStep < 0) return;
     this.tipTimer -= dt;
     if (this.tipTimer > 0) return;
     const k = (t: string): string => `<span class="kc">${t}</span>`;
     const objective = 'FOLLOW THE <b style="color:#ffd028">YELLOW ARROW</b> AT THE TOP TO YOUR OBJECTIVE';
+    const crates = 'CRATES AND BARRELS BREAK &mdash; SHOOT THEM. <b style="color:#ffd028">AMBER BRACKETS</b> ON THE CROSSHAIR = BREAKABLE';
     const tips: [string, number][] = this.isTouch
       ? [
           ['LEFT THUMB &mdash; MOVE &nbsp;&middot;&nbsp; RIGHT THUMB &mdash; AIM &nbsp;&middot;&nbsp; ' + k('FIRE'), 7],
           [objective, 6],
-          [`${k('BASH')} HITS UP CLOSE &nbsp;&middot;&nbsp; TAP ${k('GUN')} TO SWITCH &middot; HOLD FOR ALL &nbsp;&middot;&nbsp; ${k('MAP')}`, 7],
+          [`${k('FIRE')} ON BOTH SIDES &nbsp;&middot;&nbsp; TAP ${k('GUN')} TO SWITCH &middot; HOLD FOR ALL &nbsp;&middot;&nbsp; ${k('MAP')}`, 7],
+          [crates, 6],
         ]
       : [
           [`${k('W')}${k('A')}${k('S')}${k('D')} MOVE &nbsp;&middot;&nbsp; ${k('MOUSE')} AIM &nbsp;&middot;&nbsp; ${k('CLICK')} FIRE &nbsp;&middot;&nbsp; ${k('SPACE')} JUMP`, 7],
           [objective, 6],
           [`${k('V')} BASH UP CLOSE &nbsp;&middot;&nbsp; ${k('1')}&ndash;${k('5')} OR ${k('WHEEL')} SWITCH GUNS &nbsp;&middot;&nbsp; ${k('TAB')} MAP`, 7],
+          [crates, 6],
         ];
     if (this.tipStep >= tips.length) {
       this.tipStep = -1;
@@ -1938,8 +1970,11 @@ export class Game {
       newSector: storageGet(TUTORIAL_KEY) !== null && storageGet(GEOTHERMAL_SEEN_KEY) === null,
       // ...and returning players skip the goal + steps they already know
       returning: storageGet(TUTORIAL_KEY) !== null,
-      // Survival: the quiet button under PLAY (it was PLAY for one Fit Test: ~2:00 vs the campaign's ~5:00); solo only
-      onSurvival: this.net ? undefined : () => this.afterBreak((ad) => this.startSurvival(ad)),
+      // Survival is hidden from players (owner, 2026-10-23): web builds show the
+      // quiet button under PLAY only with ?survival (development, survival.mjs);
+      // never on Poki. It was PLAY for one Fit Test: ~2:00 vs the campaign's ~5:00.
+      onSurvival: !POKI && !this.net && new URLSearchParams(location.search).has('survival')
+        ? () => this.afterBreak((ad) => this.startSurvival(ad)) : undefined,
       survivalBest: this.survivalBest,
     });
   }
@@ -2190,7 +2225,10 @@ export class Game {
       }
       if (pd < radius && !t.dead && this.hasLOS(x, y, z, t.pos.x, t.pos.y, t.pos.z)) {
         const f = 1 - pd / radius;
-        t.damage(Math.round(damage * 0.55 * f), this, { x, z, by });
+        // the player's own rockets and barrels hurt them half as much as an
+        // enemy blast (~65 self-inflicted deaths in the Player Fit Test events)
+        const share = by === 'rocket' || by === 'barrel' ? 0.275 : 0.55;
+        t.damage(Math.round(damage * share * f), this, { x, z, by });
         // rocket-jump style push (the partner's push is applied on their side)
         if (t === (this.player as PlayerTarget)) {
           t.vel.x += ((t.pos.x - x) / Math.max(0.3, pd)) * 9 * f;
@@ -2250,8 +2288,13 @@ export class Game {
     if (block === Block.Crate) {
       this.particles.debris(x + 0.5, y + 0.5, z + 0.5, 0.5, 0.38, 0.2);
       this.audio.play('crateBreak', { x, y, z });
-      // crates sometimes drop supplies (host decides in co-op)
-      if (!this.isNetClient && Math.random() < 0.35) {
+      // the sector 1 starter crate always pays (it teaches that crates break)
+      const sc = this.level.starterCrate;
+      if (!this.isNetClient && sc && sc.x === x && sc.y === y && sc.z === z) {
+        this.spawnPickup('ammoShells', x + 0.5, y + 0.4, z + 0.5);
+        this.spawnPickup('healthSmall', x + 0.5, y + 0.4, z + 1.2);
+      } else if (!this.isNetClient && Math.random() < 0.35) {
+        // crates sometimes drop supplies (host decides in co-op)
         const drops: PickupKind[] = ['ammoBullets', 'ammoShells', 'healthSmall', 'armorShard'];
         this.spawnPickup(drops[Math.floor(Math.random() * drops.length)], x + 0.5, y + 0.4, z + 0.5);
       }
@@ -2299,7 +2342,8 @@ export class Game {
     if (this.weapons.bashing) this.skinStat('bashKills');
     this.punchFOV(0.8);
     // score: kill value scaled by the combo chain (kills within 2.5s of each other)
-    let points = e.kind === 'broodkeeper' ? 2500 : e.kind === 'brute' || e.kind === 'cinderHulk' ? 300 : e.kind === 'sentinel' || e.kind === 'kilnDrone' ? 150 : e.kind === 'ticker' ? 75 : 100;
+    let points = e.kind === 'broodkeeper' ? 2500 : e.kind === 'brute' || e.kind === 'cinderHulk' ? 300 : e.kind === 'clampGuard' || e.kind === 'carapace' ? 200
+      : e.kind === 'sentinel' || e.kind === 'kilnDrone' || e.kind === 'wireLeech' || e.kind === 'spitter' ? 150 : e.kind === 'ticker' || e.kind === 'sentryBud' ? 75 : 100;
     if (e.lastHitHead) points += 50; // headshot kill bonus
     this.comboChain = this.comboTimer > 0 ? this.comboChain + 1 : 1;
     this.comboTimer = 2.5;
@@ -2568,7 +2612,7 @@ export class Game {
       newBest,
       prevBest,
       touch: this.isTouch,
-      scrap: this.preview ? undefined : `+${this.attemptScrap} SCRAP &middot; ${this.upgrades.scrap} to spend &middot; upgrades in the Armory`,
+      scrap: this.preview ? undefined : `+${this.attemptScrap} SCRAP &middot; ${this.upgrades.scrap} to spend`,
       onTick: () => this.audio.play('termKey'),
       onStamp: () => this.audio.play('rankStamp'),
     };
@@ -2577,14 +2621,23 @@ export class Game {
       // the save points at the NEXT sector: quitting now resumes there
       this.captureCheckpoint(this.levelIndex + 1);
       const offer = rollPerkOffer(this.perks, this.baseSeed, this.levelIndex);
-      this.hud.showSectorClear({
+      // Upgrades are reachable from here (only ~15 buys in the Fit Test events:
+      // players never found the screen); Back re-shows this screen at once
+      const show = (instant: boolean): void => this.hud.showSectorClear({
         ...common,
+        scrap: this.preview ? undefined : `+${this.attemptScrap} SCRAP &middot; ${this.upgrades.scrap} to spend`,
+        instant,
         nextSector: this.levelIndex + 1,
         saved: true,
         perks: offer.map((id) => offerDef(id)),
         onPick: (id) => this.pickPerk(id),
         onContinue: () => this.descendFromClear(),
+        upgrades: this.preview || this.net ? undefined : {
+          label: `Upgrades &middot; ${this.upgrades.scrap} scrap`,
+          open: () => { if (this.state === 'intermission') this.openUpgrades(() => show(true)); },
+        },
       });
+      show(false);
       return;
     }
     // the last sector: the same tally, then the campaign results
@@ -2767,6 +2820,7 @@ export class Game {
     // death screen or intermission (on touch it would also eat their taps)
     if (this.automap.visible && this.state !== 'playing') this.automap.setVisible(false);
     if (this.state === 'playing') this.updateTips(dt);
+    this.updateAimHint(dt);
     if (this.state === 'playing' && this.perks.has('plating')) this.selfRepair(dt);
 
     // fps meter

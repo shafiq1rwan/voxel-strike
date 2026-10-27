@@ -48,6 +48,8 @@ export class Player {
   shakeScale = 1;
   /** timed powerup buffs, seconds remaining */
   readonly buffs = { quad: 0, shield: 0, haste: 0 };
+  /** seconds left of a Wire Leech tether's 25% slow (refreshed while linked) */
+  slow = 0;
   /** walk-cycle phase + strength (read by the weapon view model to bob in step) */
   bobPhase = 0;
   bobAmp = 0;
@@ -138,6 +140,7 @@ export class Player {
     this.buffs.quad = Math.max(0, this.buffs.quad - dt);
     this.buffs.shield = Math.max(0, this.buffs.shield - dt);
     this.buffs.haste = Math.max(0, this.buffs.haste - dt);
+    this.slow = Math.max(0, this.slow - dt);
     this.sinceHurt += dt;
     // mouse look
     const [mdx, mdy] = input.consumeMouse();
@@ -173,7 +176,7 @@ export class Player {
     }
 
     // adrenaline powerup: faster legs
-    const haste = this.buffs.haste > 0 ? 1.35 : 1;
+    const haste = (this.buffs.haste > 0 ? 1.35 : 1) * (this.slow > 0 ? 0.75 : 1);
     const accel = (this.onGround ? ACCEL_GROUND : ACCEL_AIR) * haste;
     if (wl > 0.001) {
       this.vel.x += wx * accel * dt;

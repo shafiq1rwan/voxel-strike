@@ -32,6 +32,57 @@ level 5 → 28, endless 6 → 13. Every step loses about half except sector 2
 
 ## Planned
 
+### Next: outside playtest feedback (2026-10-27)
+Testers outside Poki said: the touch controls feel slightly off (drop BASH,
+add a second FIRE above the move stick), sectors 1–3 all look the same,
+there are no small puzzles ("just hit and run"), there are too few props,
+some monsters are hard to kill, and nobody can tell which props break. The
+Player Fit Test events agree: most players are lost in minutes 1–5
+(sectors 1–2), where Sentinels cause ~60% of campaign deaths. Three builds,
+cheapest high-impact first; reorder once the full tester list is in.
+
+**Build 1 — quick wins (next test build)**
+1. Finish the Facility sector monsters (in progress, uncommitted): sector 1
+   Husk + Sentry Bud, 2 Clamp Guard + Arc Sentinel, 3 Brute + Wire Leech.
+2. Touch: remove the BASH button (desktop keeps V / right mouse).
+3. Touch: a second FIRE button above the movement stick (fixed spot the
+   invisible stick won't grab; safe-area aware).
+4. "Hard to kill" = the Sentinel (also the top killer): 40 HP (was 60),
+   a slower sidestep and a lazy drift in its firing band, a slightly
+   bigger target. Touch look ~30% slower ("too fast" on mobile).
+4b. Survival hidden from players (testers: remove the button); web
+   builds keep it behind ?survival.
+5. Halve the player's own rocket and barrel damage (~65 self-inflicted
+   deaths in the events).
+6. Upgrades where players see them: a button on the sector-clear screen
+   (~15 buys in total).
+7. Breakables, part 1: the crosshair shows amber brackets on anything
+   breakable or interactive within reach; sector 1 starts with a crate
+   (small supply inside) by the spawn and a first-run tip "Crates and
+   barrels break — shoot them".
+
+**Build 2 — sectors 1–3 feel different**
+8. A look per sector: Entry (offices, cool light), Security (checkpoints,
+   glass booths, blue-white light), Reactor (pipes, steam, orange glow).
+9. Room types with props: office, storage, server room, generator room
+   (batched boxes, as on the new maps).
+10. Breakables, part 2: crates crack in stages as they take damage, solid
+    things spark and clank instead; one look per meaning — X-braced wooden
+    crate and red hazard barrel always break, the amber-gleam cracked wall
+    is a secret, everything else never breaks (audit all six maps; a crate
+    that must not break gets a metal-case look).
+
+**Build 3 — small puzzles, never frustrating**
+Rules: always optional (the key → door → lift route never depends on one),
+the reward is visible first, amber glow = interact, only shoot / walk /
+bash / pick up, solvable in ~10 s from where you stand, no punishing
+failure (no timers, codes, jumping or hidden switches).
+11. Sector 1: a light switch (dark side room, supplies) and a barrel next to
+    a weak wall. Sector 2: a fuse box (fuse in the same room opens a side
+    door), a security camera (shoot it first or an alarm brings a few
+    extra enemies) and the existing Power Link. Sector 3: a steam valve
+    (shuts a jet blocking a shortcut) and a two-node Power Link.
+
 ### 0. Retention plan (2026-10-22)
 Scrap + permanent upgrades, Survival mode, three new map themes (Codex),
 secret map weapons — in that order. Full design, data and the Codex theme
