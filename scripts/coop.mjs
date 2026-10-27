@@ -257,6 +257,38 @@ try {
   check(next[0].enemies === next[1].enemies && next[1].puppets,
     `sector 2 rosters match and stay puppeted (${next[0].enemies})`);
 
+  // A client coil shot must retain its hit region on the host (not become a body hit).
+  const coilIndices = await Promise.all([host, client].map(pg => pg.evaluate(async () => {
+    const { Enemy } = await import('/src/entities/enemies.ts');
+    const g = window.__voxelstrike, a = g.level.rooms.find(r => r.kind === 'arena');
+    const e = new Enemy({ kind: 'wireLeech', x: a.cx + .5, z: a.cz + .5, roomId: a.id }, a, 1, false);
+    e.update = () => {}; // freeze the fixture and its 0.8-second link during transport checks
+    e.state = 'attack'; e.phase = 'recover'; e.phaseT = .25; e.facility.pose(0);
+    g.enemies.list.push(e); g.enemies.group.add(e.mesh);
+    if (!g.isNetClient) e.facility.onTetherHit(g.player, g);
+    return g.enemies.list.length - 1;
+  })));
+  check(coilIndices[0] === coilIndices[1], 'matching co-op coil fixtures');
+  await client.evaluate(i => {
+    const g = window.__voxelstrike, e = g.enemies.list[i];
+    // The focused rig suite validates geometry; exercise the authority boundary here.
+    for (let n = 0; n < 2; n++) { e.lastHitCore = true; g.applyEnemyHit(e, 10, 0, 1, false); }
+  }, coilIndices[1]);
+  await sleep(400);
+  const linkedAfterShots = await host.evaluate(i => {
+    const e = window.__voxelstrike.enemies.list[i];
+    return { linked: e.facility.linked, hp: e.hp };
+  }, coilIndices[0]);
+  check(!linkedAfterShots.linked && linkedAfterShots.hp === 25, 'client copper hits break the host-owned tether (Leech survives at 25 HP)');
+  const staleCore = await client.evaluate(i => window.__voxelstrike.enemies.list[i].lastHitCore, coilIndices[1]);
+  check(!staleCore, 'client clears the per-shot core flag after sending it');
+  await Promise.all([host, client].map(pg => pg.evaluate(i => {
+    const g = window.__voxelstrike, e = g.enemies.list[i];
+    e.disposeArt(); g.enemies.group.remove(e.mesh);
+    e.mesh.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+    g.enemies.list.splice(i, 1);
+  }, coilIndices[0])));
+
   // --- co-op death is a respawn, not a game over ------------------------------
   await client.evaluate(() => {
     const g = window.__voxelstrike;

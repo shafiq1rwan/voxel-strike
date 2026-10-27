@@ -128,6 +128,24 @@ CLAUDE.md's command list.
 `node scripts/secret-weapons.mjs <url>` checks secret placement for sectors 1?5 across three seeds, each firing behavior, special ammo cost, knockback, piercing/chaining, delayed spore damage, wall blocking, checkpoint restoration, six HUD slots, key 6 with a partial inventory, dry prototype retention, effect cleanup, and 2?4 model draws (budget 12). Screenshots go to `scripts/shots/secret-weapon-{1..5}.png`. Existing `firing.mjs`, `checkpoint.mjs` and `perf.mjs` cover baseline regressions.
 
 
+### Facility monster geometry and rendering
+
+`node scripts/facility-rigs.mjs <url>` checks actual rendered draw counts across
+four poses (Sentry Bud 5, Clamp Guard 12, Wire Leech 7; ceiling 12), original
+box counts after baking, idle floor contact, and 4,374 gameplay rays against
+the actual rendered Leech triangles across rotations, poses, scaling and
+occlusion detachment. It tests real hitscan damage at a live coil, an empty
+coil opening, a closed door, and the 20-damage tether break. A complete
+Facility scene with six visible awake new monsters must stay under 250 draws
+without shader growth while changing poses. `facility-monsters.mjs` retains
+the roster and timed attack/dodge/slow/reset checks; its coil-break check now
+uses real hitscan instead of injecting the core-hit flag. `coop.mjs` also
+verifies that client copper-hit flags reach the host and break its live link.
+
+`node scripts/review-facility-monsters.mjs <url>` regenerates the reference
+comparison, four-pose sheet, measured rig data, and staged in-game screenshots
+at 320 and 240 lines under `scripts/shots/sector-monsters-v2-review/`.
+
 ### Additional maps
 
 Run `node scripts/new-maps.mjs <url>` for eight seeds/difficulties per theme

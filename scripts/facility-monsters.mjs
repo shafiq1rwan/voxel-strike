@@ -215,6 +215,7 @@ try {
   check(leech.slowed, 'the link slows the player');
   check(leech.hits.join() === '4,4' && leech.held > 0.6 && leech.held < 1.0, `two 4-damage stings, then it lets go (${leech.hits.join(', ')}; held ${leech.held.toFixed(2)} s)`);
   const coil = await page.evaluate(async () => {
+    const THREE = await import('/node_modules/three/build/three.module.js');
     const g = window.__voxelstrike;
     window.__clear();
     await new Promise((r) => setTimeout(r, 1300)); // the relink grace from the last link
@@ -226,8 +227,13 @@ try {
       await new Promise((r) => setTimeout(r, 5));
     }
     const was = e.facility.linked;
-    // two coil hits (weapons.ts sets lastHitCore on the coil band)
-    for (let i = 0; i < 2; i++) { e.lastHitCore = true; e.damage(10, 0, -1, g); }
+    // Real hitscan through the folded copper bar; do not inject a core-hit flag.
+    const bar = e.facility.hitParts.find(p => p.name === 'coil-top');
+    e.mesh.updateWorldMatrix(true, true);
+    const point = new THREE.Vector3().setFromMatrixPosition(bar.matrix).applyMatrix4(bar.parent.matrixWorld);
+    const dir = new THREE.Vector3(0, 0, 1).transformDirection(bar.parent.matrixWorld);
+    const origin = point.clone().addScaledVector(dir, -1.5);
+    for (let i = 0; i < 2; i++) g.weapons.hitscan(origin, dir, 10, g, origin);
     return { was, now: e.facility.linked, alive: e.alive };
   });
   check(coil.was && !coil.now && coil.alive, '20 damage to its coil snaps the link early (the leech still standing)');
@@ -280,7 +286,7 @@ try {
     const out = {};
     for (const kind of ['sentryBud', 'clampGuard', 'wireLeech', 'sentinel']) {
       const e = window.__solo(kind, 0, 0, 0, 6);
-      let n = 0; e.mesh.traverse((o) => { if (o.isMesh) n++; });
+      let n = 0; e.mesh.traverse((o) => { if (o.isMesh) n += o.userData.boxCount ?? 1; });
       out[kind] = n;
       window.__clear();
     }

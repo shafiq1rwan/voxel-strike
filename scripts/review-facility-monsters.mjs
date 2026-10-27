@@ -1,6 +1,7 @@
 // Reproducible visual audit of Claude's Facility rigs against sector-monsters-v2.
 import puppeteer from 'puppeteer-core';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { fakePointerLock } from './lib/fake-pointer-lock.mjs';
 
 const out = 'scripts/shots/sector-monsters-v2-review';
 mkdirSync(out, { recursive: true });
@@ -10,6 +11,7 @@ const browser = await puppeteer.launch({
   args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--mute-audio'],
   defaultViewport: { width: 1500, height: 1100 },
 });
+fakePointerLock(browser);
 try {
   const page = await browser.newPage();
   await page.goto(process.argv[2] ?? 'http://localhost:5173/?seed=12345', { waitUntil: 'networkidle0' });
@@ -25,7 +27,7 @@ try {
     const ctx = sheet.getContext('2d');
     ctx.fillStyle = '#111e2b'; ctx.fillRect(0, 0, sheet.width, sheet.height);
     ctx.textAlign = 'center'; ctx.fillStyle = '#e2d0af'; ctx.font = 'bold 28px monospace';
-    ctx.fillText('CLAUDE IMPLEMENTATION / ACTUAL RIGS', 750, 38);
+    ctx.fillText('REVISED FACILITY MONSTERS / ACTUAL RIGS', 750, 38);
     const stats = {};
     for (const [col, kind] of ['sentryBud', 'clampGuard', 'wireLeech'].entries()) {
       const e = new Enemy({ kind, x: 0, z: 0, roomId: 0 }, null, 0, false);
@@ -52,30 +54,30 @@ try {
         ctx.fillStyle = '#e2d0af'; ctx.font = 'bold 22px monospace';
         ctx.fillText(`${kind} / ${phase}`, col * 500 + 250, 380 + row * 340);
       }
-      let boxes = 0; e.body.traverse(o => { if (o.isMesh) boxes++; });
+      let boxes = 0; e.body.traverse(o => { if (o.isMesh) boxes += o.userData.boxCount ?? 1; });
       stats[kind].boxes = boxes;
       e.mesh.add(e.body);
       if (kind === 'wireLeech') {
         const manager = new EnemyManager(); manager.list.push(e);
         e.state = 'attack'; e.phase = 'prep'; e.phaseT = 1; e.facility.pose(0);
         e.mesh.updateMatrixWorld(true);
-        const top = e.body.getObjectByName('coil-top');
-        const point = top.getWorldPosition(new THREE.Vector3());
+        const coil = e.body.getObjectByName('coil-hinge');
+        const top = e.facility.hitParts.find(p => p.name === 'coil-top');
+        const point = new THREE.Vector3().setFromMatrixPosition(top.matrix).applyMatrix4(top.parent.matrixWorld);
         stats[kind].coilTop = {
           heightAboveBodyCenter: point.y - e.pos.y,
           bodyHitboxHalfHeight: e.half.y,
           gameRayHits: !!manager.raycast(point.x, point.y, point.z - 4, 0, 0, 1, 8),
-          visibleCopperRayHits: new THREE.Raycaster(point.clone().add(new THREE.Vector3(0, 0, -4)), new THREE.Vector3(0, 0, 1)).intersectObject(top).length > 0,
+          visibleCopperRayHits: new THREE.Raycaster(point.clone().add(new THREE.Vector3(0, 0, -4)), new THREE.Vector3(0, 0, 1)).intersectObject(coil, true).length > 0,
         };
         e.phase = 'recover'; e.phaseT = .25; e.facility.pose(0); e.mesh.updateMatrixWorld(true);
-        const coil = e.body.getObjectByName('coil-hinge');
         const hole = coil.localToWorld(new THREE.Vector3(.1, .36, 0));
         const direction = new THREE.Vector3(0, 0, 1).transformDirection(coil.matrixWorld);
         const origin = hole.clone().addScaledVector(direction, -4);
         const hit = manager.raycast(origin.x, origin.y, origin.z, direction.x, direction.y, direction.z, 8);
         stats[kind].coilHoleDuringRecovery = {
           visibleCopperRayHits: new THREE.Raycaster(origin, direction).intersectObject(coil, true).length > 0,
-          gameCountsAsCoil: !!hit && origin.y + direction.y * hit.t > e.pos.y + .08,
+          gameCountsAsCoil: hit?.core === true,
         };
       }
       e.facility.dispose();
@@ -91,8 +93,8 @@ try {
     const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 1160;
     const ctx = canvas.getContext('2d'); ctx.fillStyle = '#111e2b'; ctx.fillRect(0, 0, 1200, 1160);
     ctx.textAlign = 'center'; ctx.fillStyle = '#e2d0af'; ctx.font = 'bold 26px monospace';
-    ctx.fillText('SECTOR-MONSTERS-V2 REFERENCE', 300, 35); ctx.fillText('CLAUDE / ACTUAL RIG', 900, 35);
-    const crops = [[one, 1150, 65, 370, 270], [one, 345, 520, 410, 270], [two, 925, 65, 600, 280]];
+    ctx.fillText('SECTOR-MONSTERS-V2 REFERENCE', 300, 35); ctx.fillText('REVISED / ACTUAL RIG', 900, 35);
+    const crops = [[one, 1170, 65, 350, 270], [one, 355, 520, 400, 270], [two, 1090, 65, 440, 280]];
     for (let i = 0; i < 3; i++) {
       const [img, x, y, w, h] = crops[i], scale = Math.min(570 / w, 315 / h), top = 55 + i * 365;
       ctx.drawImage(img, x, y, w, h, 300 - w * scale / 2, top, w * scale, h * scale);
@@ -106,5 +108,30 @@ try {
     actual: result.png,
   });
   writeFileSync(`${out}/reference-vs-runtime.png`, Buffer.from(comparison.split(',')[1], 'base64'));
+  await page.setViewport({ width: 1280, height: 720 });
+  await page.click('#start-btn');
+  await page.evaluate(async () => {
+    const THREE = await import('/node_modules/three/build/three.module.js');
+    const g = window.__voxelstrike; g.state = 'paused';
+    g.hud.root.style.display = 'none';
+    for (const e of g.enemies.list) e.mesh.visible = false;
+    const a = g.level.rooms.find(r => r.kind === 'arena');
+    const cx = a.cx + .5, cz = a.cz + .5;
+    const before = g.enemies.list.length;
+    g.enemies.spawnFromSpecs(['sentryBud', 'clampGuard', 'wireLeech'].map((kind, i) => ({ kind, x: cx + (i - 1) * 2.2, z: cz + 3, roomId: a.id })), g.level.rooms, g);
+    for (const e of g.enemies.list.slice(before)) {
+      e.awake = true; e.facility.face = Math.PI; e.mesh.rotation.y = Math.PI;
+      e.state = 'idle'; e.vel.set(0, 0, 0); e.facility.pose(0); e.updateLighting(g, 1); e.attachBody(true);
+    }
+    g.player.pos.set(cx, 1.9, cz + 6.5); g.player.yaw = 0; g.player.pitch = -.04; g.player.shake = 0;
+    g.player.applyToCamera(g.camera, 0);
+    g.camera.lookAt(new THREE.Vector3(cx, 1.7, cz));
+    g.weapons.viewModel.visible = false;
+  });
+  for (const resolution of [320, 240]) {
+    await page.evaluate(resolution => window.__voxelstrike.rendererSys.setResolution(resolution), resolution);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await page.screenshot({ path: `${out}/in-game-${resolution}.png` });
+  }
   console.log(JSON.stringify(result.stats, null, 2));
 } finally { await browser.close(); }

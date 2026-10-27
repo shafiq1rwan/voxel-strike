@@ -2151,7 +2151,8 @@ export class Game {
   applyEnemyHit(e: Enemy, dmg: number, dx: number, dz: number, headshot: boolean): void {
     if (this.isNetClient) {
       e.hitFeedback(dmg, dx, dz, this);
-      this.net?.sendHit(this.enemies.list.indexOf(e), dmg, dx, dz, headshot);
+      this.net?.sendHit(this.enemies.list.indexOf(e), dmg, dx, dz, headshot, e.lastHitCore);
+      e.lastHitCore = false;
     } else {
       e.lastHitHead = headshot;
       e.damage(dmg, dx, dz, this);

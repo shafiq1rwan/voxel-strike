@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Enemy } from './enemies';
 import type { EnemyKind } from '../types';
 import type { Game, PlayerTarget } from '../game';
-import { moveBody } from '../core/physics';
+import { moveBody, rayBox } from '../core/physics';
 import { RigKit, sched, span, angleTo, lerp } from './monster-kit';
 
 /**
@@ -101,6 +101,8 @@ export class FacilityMonster {
   private coil: THREE.Group | null = null;
   private emitter: THREE.Mesh | null = null;
   private eye: THREE.Mesh | null = null;
+  /** Original solid boxes follow their live pivots after the render meshes are baked. */
+  private hitParts: { name: string; parent: THREE.Object3D; matrix: THREE.Matrix4; box: THREE.Box3; core: boolean }[] = [];
   /** Wire Leech: the live link and how far it has run */
   private link: { target: PlayerTarget; t: number; ticks: number; coil: number } | null = null;
 
@@ -110,8 +112,17 @@ export class FacilityMonster {
     if (kind === 'sentryBud') this.buildBud();
     else if (kind === 'clampGuard') this.buildGuard();
     else this.buildLeech();
-    // the leech's coil is always a target (weapons.ts reads coreOpen + the band)
-    if (kind === 'wireLeech') e.coreOpen = true;
+    if (kind === 'wireLeech') {
+      e.coreOpen = true;
+      body.traverse(part => {
+        if (!(part instanceof THREE.Mesh)) return;
+        part.updateMatrix(); part.geometry.computeBoundingBox();
+        this.hitParts.push({ name: part.name, parent: part.parent!, matrix: part.matrix.clone(),
+          box: part.geometry.boundingBox!.clone(), core: part.parent === this.coil });
+      });
+    }
+    this.kit.bake(body);
+    this.pose(0);
   }
 
   private part(parent: THREE.Object3D, name: string, x: number, y: number, z: number, w: number, h: number, d: number, color: number, bright = false): THREE.Mesh {
@@ -127,25 +138,28 @@ export class FacilityMonster {
    * SENTRY BUD — feet at y = -0.5, faces -z. A wide two-tier base on four
    * corner blocks, a short neck, and a square head (the aim pivot) with a
    * cyan eye in a dark bezel between two tall lids hinged at the head's
-   * back corners. 16 boxes.
+   * back corners. A deep vented base and thick protective lids, as sheet 01.
    */
   private buildBud(): void {
     const p = this.part.bind(this), b = this.body;
-    p(b, 'base-slab', 0, -.4, 0, 1.0, .18, .9, DARK);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) p(b, 'base-foot', sx * .38, -.37, sz * .32, .28, .26, .28, sx === sz ? RUST : STEEL);
-    p(b, 'base-tier', 0, -.22, .02, .72, .2, .62, STEEL_D);
-    p(b, 'base-vent', 0, -.4, -.46, .46, .1, .03, DARK);
-    p(b, 'neck', 0, -.06, .04, .24, .16, .24, DARK);
+    p(b, 'base-slab', 0, -.32, 0, 1.08, .32, .94, STEEL_D);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      p(b, 'base-foot', sx * .44, -.3, sz * .32, .32, .4, .34, STEEL);
+      p(b, 'foot-wear', sx * .44, -.36, sz * .495, .12, .16, .015, RUST);
+    }
+    p(b, 'base-tier', 0, -.12, .02, .88, .14, .74, STEEL);
+    p(b, 'base-vent', 0, -.32, -.478, .46, .23, .02, DARK);
+    for (const y of [-.36, -.27]) p(b, 'vent-slat', 0, y, -.493, .46, .035, .025, STEEL_D);
+    p(b, 'neck', 0, -.01, .04, .28, .14, .28, DARK);
     const head = this.joint(b, 'aim-head', 0, .02, .02); this.head = head;
-    p(head, 'head-cube', 0, .24, 0, .48, .44, .44, STEEL_L);
-    p(head, 'head-rust', .245, .32, .06, .02, .14, .2, RUST);
-    p(head, 'eye-bezel', 0, .24, -.23, .34, .32, .04, DARK);
-    this.eye = p(head, 'cyan-eye', 0, .24, -.255, .2, .2, .03, CYAN, true);
+    p(head, 'head-cube', 0, .24, 0, .52, .46, .48, STEEL_L);
+    p(head, 'eye-bezel', 0, .24, -.25, .37, .35, .04, DARK);
+    this.eye = p(head, 'cyan-eye', 0, .24, -.277, .2, .21, .025, CYAN, true);
     for (const side of [-1, 1]) {
       // hinged at the head's back corner; the panel runs forward along the side
-      const lid = this.joint(head, 'lid', side * .27, .24, .2); this.lids.push(lid);
-      p(lid, 'lid-panel', side * .05, 0, -.25, .08, .6, .54, STEEL);
-      p(lid, 'lid-rust', side * .095, -.14, -.12, .02, .2, .18, RUST);
+      const lid = this.joint(head, 'lid', side * .33, .25, .2); this.lids.push(lid);
+      p(lid, 'lid-panel', side * .045, 0, -.25, .18, .64, .58, STEEL);
+      p(lid, 'lid-rust', side * .14, -.1, -.2, .015, .23, .12, RUST);
     }
   }
 
@@ -154,66 +168,68 @@ export class FacilityMonster {
    * bands, a dark pelvis, a broad slate chest with an amber seam, a small
    * head with an amber visor slit, piston shoulders glowing amber, and on
    * each arm a huge C clamp: a spine with an upper and a lower jaw that
-   * open and snap shut on their own hinges. 27 boxes.
+   * open and snap shut on their own hinges. Broad braced legs and solid amber pistons.
    */
   private buildGuard(): void {
     const p = this.part.bind(this), b = this.body;
     for (const side of [-1, 1]) {
-      const hip = this.joint(b, 'hip', side * .24, -.3, 0); this.legs.push(hip);
-      p(hip, 'thigh', 0, -.15, 0, .3, .34, .32, SLATE_D);
-      p(hip, 'knee-band', 0, -.33, -.005, .31, .05, .33, AMBER, true);
-      p(hip, 'shin', 0, -.47, 0, .28, .26, .3, SLATE);
-      p(hip, 'foot', 0, -.585, -.05, .36, .13, .46, DARK);
+      const hip = this.joint(b, 'hip', side * .29, -.32, 0); this.legs.push(hip);
+      const thigh = p(hip, 'thigh', 0, -.13, .04, .32, .32, .34, SLATE_D); thigh.rotation.x = -.28;
+      p(hip, 'knee-band', 0, -.29, -.035, .33, .06, .35, AMBER);
+      const shin = p(hip, 'shin', 0, -.4, -.02, .31, .28, .32, SLATE); shin.rotation.x = .2;
+      p(hip, 'foot', 0, -.55, -.09, .4, .16, .49, DARK);
     }
     const torso = this.joint(b, 'torso', 0, 0, 0); this.torso = torso;
     p(torso, 'pelvis', 0, -.22, 0, .56, .22, .38, DARK);
-    p(torso, 'chest', 0, .18, 0, .84, .6, .56, SLATE);
-    p(torso, 'chest-seam', 0, .16, -.285, .08, .34, .03, AMBER, true);
-    p(torso, 'head', 0, .62, -.06, .36, .3, .34, SLATE_D);
-    p(torso, 'visor-slit', 0, .64, -.235, .22, .05, .03, AMBER, true);
+    p(torso, 'chest', 0, .14, 0, .86, .5, .6, SLATE);
+    p(torso, 'chest-seam', 0, .12, -.31, .16, .32, .035, AMBER, true);
+    const head = p(torso, 'head', 0, .51, -.15, .43, .3, .4, CLAMP_D); head.rotation.x = .18;
+    p(torso, 'visor-bezel', 0, .5, -.36, .3, .12, .04, DARK);
+    p(torso, 'visor-slit', 0, .51, -.385, .21, .055, .02, AMBER, true);
     for (const side of [-1, 1]) {
-      p(torso, 'piston-shoulder', side * .56, .4, 0, .34, .34, .36, SLATE_D);
-      p(torso, 'piston-glow', side * .56, .4, -.185, .2, .2, .03, AMBER, true);
-      const arm = this.joint(torso, 'shoulder', side * .6, .34, 0); this.arms.push(arm);
-      p(arm, 'upper-arm', 0, -.18, 0, .22, .32, .24, DARK);
-      const clamp = this.joint(arm, 'clamp', 0, -.5, -.05);
+      const arm = this.joint(torso, 'shoulder', side * .58, .35, 0); this.arms.push(arm);
+      p(arm, 'piston-glow', 0, .02, 0, .26, .28, .36, AMBER, true);
+      for (const y of [-.16, .2]) p(arm, 'piston-cap', 0, y, 0, .36, .1, .42, SLATE_D);
+      p(arm, 'upper-arm', 0, -.22, 0, .24, .3, .26, DARK);
       // a chunky C: a thick back block and two short heavy jaws
-      p(clamp, 'clamp-spine', 0, 0, .16, .38, .92, .38, CLAMP);
-      p(clamp, 'clamp-rust', side * .195, -.08, .16, .02, .32, .24, RUST);
-      const up = this.joint(clamp, 'upper-jaw', 0, .32, .16);
-      p(up, 'jaw', 0, 0, -.27, .38, .28, .54, CLAMP);
-      const low = this.joint(clamp, 'lower-jaw', 0, -.32, .16);
-      p(low, 'jaw', 0, 0, -.27, .38, .28, .54, CLAMP_D);
+      p(arm, 'clamp-spine', 0, -.53, .11, .4, .86, .3, CLAMP);
+      p(arm, 'clamp-rust', side * .205, -.61, .11, .015, .32, .2, RUST);
+      const up = this.joint(arm, 'upper-jaw', 0, -.21, .11);
+      p(up, 'jaw', 0, 0, -.28, .4, .22, .56, CLAMP);
+      const low = this.joint(arm, 'lower-jaw', 0, -.85, .11);
+      p(low, 'jaw', 0, 0, -.28, .4, .22, .56, CLAMP_D);
       this.jaws.push(up, low);
     }
   }
 
   /*
-   * WIRE LEECH — built with feet at y = -0.42 and drawn 0.18 lower (its
-   * collider is 0.6 tall so the coil on its back is inside it), faces -z. A broad dark chassis with a
+   * WIRE LEECH — feet at -0.6, faces -z. A broad dark chassis with a
    * lighter deck and a front block carrying the violet emitter, a square
    * copper coil hinged at the back of the deck, and four splayed legs
-   * (thigh rising outward, knee block, shin down to a pale foot). 26 boxes.
+   * (arched thigh, pale knee, heavy dark foot). The open square coil is a real hit region.
    */
   private buildLeech(): void {
     const p = this.part.bind(this), b = this.body;
-    p(b, 'chassis', 0, 0, 0, 1.0, .34, .86, CHAR);
-    p(b, 'deck', 0, .2, .02, .8, .08, .66, CHAR_L);
-    p(b, 'front-block', 0, -.04, -.47, .6, .26, .12, CHAR_L);
-    this.emitter = p(b, 'violet-emitter', 0, -.06, -.54, .2, .18, .04, VIOLET, true);
+    p(b, 'chassis', 0, -.02, 0, 1.0, .42, .88, CHAR);
+    p(b, 'deck', 0, .22, .02, .8, .12, .72, CHAR_L);
+    for (const side of [-1, 1]) p(b, 'deck-armor', side * .43, .18, 0, .2, .18, .92, CHAR_L);
+    p(b, 'front-block', 0, -.12, -.5, .5, .32, .18, CHAR);
+    this.emitter = p(b, 'violet-emitter', 0, -.13, -.602, .18, .18, .035, VIOLET, true);
     const coil = this.joint(b, 'coil-hinge', 0, .24, .2); this.coil = coil;
-    p(coil, 'coil-top', 0, .66, 0, .76, .16, .18, COPPER);
-    p(coil, 'coil-bottom', 0, .06, 0, .76, .16, .18, COPPER);
-    for (const side of [-1, 1]) p(coil, 'coil-post', side * .3, .36, 0, .16, .44, .18, COPPER);
-    for (const y of [.24, .48]) p(coil, 'coil-winding', 0, y, 0, .48, .06, .07, COPPER_D);
+    p(coil, 'coil-top', 0, .66, 0, .88, .18, .28, COPPER);
+    p(coil, 'coil-bottom', 0, .06, 0, .88, .18, .28, COPPER_D);
+    for (const side of [-1, 1]) {
+      p(coil, 'coil-post', side * .35, .36, 0, .18, .44, .28, COPPER);
+      p(coil, 'coil-winding', side * .45, .36, .025, .08, .42, .22, COPPER_D);
+    }
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      const leg = this.joint(b, 'leg', sx * .4, -.02, sz * .3); this.legs.push(leg);
-      const thigh = p(leg, 'thigh', sx * .22, .1, 0, .5, .18, .2, CHAR);
-      thigh.rotation.z = sx * .5;
-      p(leg, 'knee', sx * .46, .22, 0, .24, .24, .24, CHAR_L);
-      const shin = p(leg, 'shin', sx * .53, -.06, 0, .2, .46, .2, CHAR);
-      shin.rotation.z = -sx * .12;
-      p(leg, 'foot', sx * .57, -.31, 0, .28, .18, .3, FOOT);
+      const leg = this.joint(b, 'leg', sx * .43, -.02, sz * .33); this.legs.push(leg);
+      const thigh = p(leg, 'thigh', sx * .2, -.02, 0, .42, .24, .26, CHAR);
+      thigh.rotation.z = -sx * .45;
+      p(leg, 'knee', sx * .4, -.14, 0, .26, .25, .28, FOOT);
+      const shin = p(leg, 'shin', sx * .46, -.32, 0, .23, .4, .25, CHAR_L);
+      shin.rotation.z = sx * .2;
+      p(leg, 'foot', sx * .5, -.49, -.015, .34, .18, .36, DARK);
     }
   }
 
@@ -246,7 +262,7 @@ export class FacilityMonster {
     const { phase, t } = this.attackT();
     // lids: resting ajar, swung wide while it aims, folded over the eye after the shot
     let open = 0.15, glow = this.e.awake ? 1.1 : 0.85, recoil = 0;
-    if (phase === 'prep') { open = 0.15 + 0.85 * span(t, 0, 0.6); glow = 1.1 + 1.3 * span(t, 0.2, s.prep); }
+    if (phase === 'prep') { open = 0.15 + 0.85 * span(t, 0, 0.6); glow = 1.1 + 0.4 * span(t, 0.2, s.prep); }
     else if (phase === 'recover' || phase === 'strike') {
       open = -0.55 + 0.7 * span(t, s.recover - 0.5, s.recover);
       glow = 0.45 + 0.65 * span(t, s.recover - 0.5, s.recover);
@@ -269,30 +285,37 @@ export class FacilityMonster {
     const stride = Math.sin(this.walked * 3.2);
     const moving = Math.min(1, Math.hypot(this.e.vel.x, this.e.vel.z) / 1.2);
     // rest: clamps hanging, jaws slightly open; walk: heavy stomp + clamp swing
-    let abduct = 0.18, fwd = 0.15 + stride * 0.2 * moving, inward = 0, jaw = 0.18, lean = 0.05, crouch = 0;
+    let abduct = 0.25, fwd = 0.2 + stride * 0.2 * moving, inward = 0, jaw = 0.18, lean = 0.14, crouch = 0;
     if (phase === 'prep') {
       const k = span(t, 0, 0.55);
       abduct = 0.18 + 0.6 * k; fwd = 0.15 + 0.55 * k; jaw = 0.18 + 0.5 * k; crouch = 0.08 * k;
-      lean = 0.05 - 0.12 * k; // rears back
+      lean = 0.14 - 0.18 * k; // rears back
       fwd += Math.sin(this.time * 30) * 0.02 * span(t, 0.6, s.prep); // strain before the snap
     } else if (phase === 'strike') {
       const k = span(t, 0, s.commit);
       abduct = lerp(0.78, -0.2, k); fwd = lerp(0.7, 1.1, k); inward = 0.5 * k; jaw = lerp(0.68, 0, k);
-      lean = lerp(-0.07, 0.22, k); crouch = 0.08;
+      lean = lerp(-0.04, 0.26, k); crouch = 0.08;
     } else if (phase === 'recover') {
       const back = span(t, s.recover - 0.45, s.recover);
       abduct = lerp(-0.2, 0.18, back); fwd = lerp(1.1, 0.15, back); inward = 0.5 * (1 - back); jaw = 0.18 * back;
-      lean = lerp(0.22, 0.05, back); crouch = 0.08 * (1 - back);
+      lean = lerp(0.26, 0.14, back); crouch = 0.08 * (1 - back);
     }
     this.arms.forEach((arm, i) => {
       const side = i === 0 ? -1 : 1;
       arm.rotation.set(fwd, side * inward, side * abduct, 'YXZ');
     });
-    this.jaws.forEach((j, i) => { j.rotation.x = (i % 2 === 0 ? 1 : -1) * jaw; });
+    this.jaws.forEach((j, i) => {
+      const side = i % 2 === 0 ? 1 : -1;
+      j.rotation.x = side * jaw;
+      // The solid tips actually meet at the end of the pinch; zero rotation
+      // alone left a permanent gap between the original upper/lower hinges.
+      j.position.y = -.53 + side * (.11 + .21 * Math.min(1, jaw / .68));
+    });
     if (this.torso) { this.torso.rotation.x = lean; this.torso.position.y = -crouch; }
     this.legs.forEach((leg, i) => {
+      leg.rotation.z = (i === 0 ? -1 : 1) * .16;
       leg.rotation.x = phase === 'none' ? (i === 0 ? 1 : -1) * stride * 0.4 * moving : 0;
-      leg.position.y = -0.3 + (phase === 'none' ? Math.max(0, (i === 0 ? 1 : -1) * stride) * 0.06 * moving : 0);
+      leg.position.y = -.32 + .63 * Math.cos(.16) + .2 * Math.sin(.16) - .63 + (phase === 'none' ? Math.max(0, (i === 0 ? 1 : -1) * stride) * 0.06 * moving : 0);
     });
     // the pistons and seam flare as the jaws load, dim while they're shut
     // (amber saturates to yellow past ~1.35: keep the flare below it)
@@ -305,30 +328,54 @@ export class FacilityMonster {
     const { phase, t } = this.attackT();
     const moving = Math.min(1, Math.hypot(this.e.vel.x, this.e.vel.z) / 1.5);
     // coil: tipped back at rest, stood up and humming while it charges, folded flat after
-    let coil = 0.7, splay = 0, low = 0, glow = 1, shake = 0;
+    let coil = 0.12, splay = 0, low = 0, glow = 1, shake = 0;
     if (phase === 'prep') {
       const k = span(t, 0, 0.6);
-      coil = lerp(0.7, -0.05, k); splay = 0.25 * k; low = 0.08 * k;
-      glow = 1 + 1.6 * span(t, 0.3, s.prep); shake = span(t, 0.5, s.prep) * 0.03;
+      coil = lerp(0.12, -0.05, k); splay = 0.18 * k; low = 0.06 * k;
+      glow = 1 + 0.5 * span(t, 0.3, s.prep); shake = span(t, 0.5, s.prep) * 0.018;
     } else if (phase === 'recover' || phase === 'strike') {
       const back = span(t, s.recover - 0.5, s.recover);
-      coil = lerp(1.25, 0.7, back); splay = 0.25 * (1 - back); low = 0.08 * (1 - back); glow = lerp(0.5, 1, back);
+      coil = lerp(1.3, 0.12, back); splay = 0.18 * (1 - back); low = 0.06 * (1 - back); glow = lerp(0.5, 1, back);
     }
-    if (this.link) glow = Math.max(glow, 1.8);
+    if (this.link) glow = Math.max(glow, 1.5);
     if (this.coil) {
       this.coil.rotation.x = coil;
       this.coil.position.x = (Math.random() - 0.5) * shake;
     }
-    this.body.position.y = -0.18 - low;
+    this.body.position.y = -low;
     this.legs.forEach((leg, i) => {
       const sx = i < 2 ? -1 : 1;
       const gaitPhase = (i === 0 || i === 3) ? 0 : Math.PI;
       const lift = Math.max(0, Math.sin(this.walked * 5 + gaitPhase)) * 0.1 * moving;
-      leg.position.y = -0.02 + lift + low;
+      leg.position.y = -.02 + lift + low + .67 * Math.sin(splay) + .58 * Math.cos(splay) - .58;
       leg.rotation.z = -sx * splay;
       leg.rotation.y = Math.sin(this.walked * 5 + gaitPhase) * 0.25 * moving;
     });
     this.glowK(this.emitter, glow);
+  }
+
+  /** Exact solid-box intersections for the Leech, including the elevated/tilting coil.
+   * Keep the original box frames, so baking cannot turn the coil's hole into a target.
+   */
+  raycast(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxT: number): { t: number; core: boolean } | null {
+    if (this.kind !== 'wireLeech') return null;
+    // Occlusion may detach the body from mesh. Include the enemy transform explicitly.
+    this.e.mesh.updateWorldMatrix(true, false);
+    this.body.updateWorldMatrix(false, true);
+    let best: { t: number; core: boolean } | null = null;
+    for (const part of this.hitParts) {
+      _partWorld.copy(part.parent.matrixWorld).multiply(part.matrix);
+      if (this.body.parent !== this.e.mesh) _partWorld.premultiply(this.e.mesh.matrixWorld);
+      _inverse.copy(_partWorld).invert();
+      _origin.set(ox, oy, oz).applyMatrix4(_inverse);
+      // Transform a displacement, not a normalized direction: t stays in world units.
+      _direction.set(ox + dx, oy + dy, oz + dz).applyMatrix4(_inverse).sub(_origin);
+      const b = part.box;
+      const t = rayBox(_origin.x, _origin.y, _origin.z, _direction.x, _direction.y, _direction.z, best?.t ?? maxT,
+        { minX: b.min.x, minY: b.min.y, minZ: b.min.z, maxX: b.max.x, maxY: b.max.y, maxZ: b.max.z });
+      if (t !== null && (!best || t < best.t)) best = { t, core: part.core };
+    }
+    return best;
   }
 
   // ---------------------------------------------------------------------------
@@ -565,6 +612,8 @@ export class FacilityMonster {
 }
 
 const _m = new THREE.Vector3();
+const _partWorld = new THREE.Matrix4(), _inverse = new THREE.Matrix4();
+const _origin = new THREE.Vector3(), _direction = new THREE.Vector3();
 
 
 /** every live link ends (level teardown, retry) */

@@ -2611,10 +2611,15 @@ export class EnemyManager {
     ox: number, oy: number, oz: number,
     dx: number, dy: number, dz: number,
     maxT: number
-  ): { enemy: Enemy; t: number } | null {
-    let best: { enemy: Enemy; t: number } | null = null;
+  ): { enemy: Enemy; t: number; core?: boolean } | null {
+    let best: { enemy: Enemy; t: number; core?: boolean } | null = null;
     for (const e of this.list) {
       if (!e.alive) continue;
+      if (e.kind === 'wireLeech' && e.facility) {
+        const hit = e.facility.raycast(ox, oy, oz, dx, dy, dz, best?.t ?? maxT);
+        if (hit && (!best || hit.t < best.t)) best = { enemy: e, ...hit };
+        continue;
+      }
       const t = rayBox(ox, oy, oz, dx, dy, dz, maxT, {
         minX: e.pos.x - e.half.x, maxX: e.pos.x + e.half.x,
         minY: e.pos.y - e.half.y, maxY: e.pos.y + e.half.y,

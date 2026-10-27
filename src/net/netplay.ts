@@ -162,8 +162,8 @@ export class Netplay {
   }
 
   /** client: I hit enemy `i` for `dmg` */
-  sendHit(i: number, dmg: number, dx: number, dz: number, head: boolean): void {
-    this.send({ t: 'hit', i, dmg, dx: +dx.toFixed(2), dz: +dz.toFixed(2), head });
+  sendHit(i: number, dmg: number, dx: number, dz: number, head: boolean, core = false): void {
+    this.send({ t: 'hit', i, dmg, dx: +dx.toFixed(2), dz: +dz.toFixed(2), head, core });
   }
 
   /** client: my shot damaged a voxel */
@@ -290,6 +290,7 @@ export class Netplay {
         const e = g.enemies.list[m.i as number];
         if (e && e.alive) {
           e.lastHitHead = m.head as boolean;
+          e.lastHitCore = m.core === true;
           e.damage(m.dmg as number, m.dx as number, m.dz as number, g);
         }
         break;

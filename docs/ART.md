@@ -69,6 +69,14 @@ as black silhouettes. For view-model parts, go through `rawColor()` in
 
 ## World
 
+Facility monster revisions follow `reference/sector-monsters-v2` sheets 01–02:
+the Sentry Bud has a deep vented base and thick paired lids; the Clamp Guard
+has splayed feet, large amber shoulder pistons and closing C jaws; the Wire
+Leech has four arched supports, heavy feet and an open copper square coil
+which stands up to warn and folds down in recovery. Keep these large shapes
+readable at 320 and 240 lines. Static boxes bake per moving pivot without
+flattening the hinges or turning the coil opening into a hit surface.
+
 Optional solo Overload rooms use a compact procedural steel console with a
 cyan screen and a nearest-filtered canvas sign reading **OVERLOAD / OPTIONAL**.
 The screen turns amber during its dangerous two-wave cycle and dim steel
