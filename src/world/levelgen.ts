@@ -1062,14 +1062,17 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     enemies.push(...cast);
   }
   const response = band ? FACILITY_RESPONSE[band] : bBand ? BIO_RESPONSE[bBand] : gBand ? GEO_RESPONSE[gBand] : null;
-  // Sector 2's Sentinel wall (0.3.7 Player Fit Test: 70 of the 171 players
-  // who reached sector 2 died to an Arc Sentinel). With the generic Facility
-  // mix, every other Sentinel in a room becomes a Husk (40 hp for 45: the same
-  // pressure); a room keeps its first. No RNG.
-  if (theme === 'facility' && !band && difficulty === 2) {
+  // The Arc Sentinel wall (0.3.7 Player Fit Test: 70 of the 171 players who
+  // reached sector 2 died to one; 0.3.8: 148 of ~250 deaths, sectors 1–3).
+  // With the generic Facility mix, sector 1's Sentinels become Tickers (its
+  // 0.3.7 opener: 7% failed it, 22% with Sentinels), and in sectors 2–3 every
+  // other Sentinel in a room becomes a Husk (40 hp for 45: the same pressure);
+  // a room keeps its first. No RNG.
+  if (theme === 'facility' && !band && difficulty <= 3) {
     const seen = new Map<number, number>();
     for (const e of enemies) {
       if (e.kind !== 'sentinel') continue;
+      if (difficulty === 1) { e.kind = 'ticker'; continue; }
       const n = (seen.get(e.roomId) ?? 0) + 1;
       seen.set(e.roomId, n);
       if (n % 2 === 0) e.kind = 'husk';

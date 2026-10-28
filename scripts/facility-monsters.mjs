@@ -47,7 +47,7 @@ try {
     // the per-sector pairs are OFF (FACILITY_ROSTERS, owner's call 2026-10-27):
     // sectors 1–3 and endless Facility depths get the generic 0.3.4 mix
     const generic = ['husk', 'sentinel', 'ticker', 'brute'];
-    const allowed = { 1: ['husk', 'sentinel'], 2: generic, 3: generic };
+    const allowed = { 1: ['husk', 'ticker'], 2: generic, 3: generic }; // sector 1: its Sentinels become Tickers (0.3.9)
     const out = {};
     for (const n of [1, 2, 3, 8]) {
       const band = n === 8 ? 2 : n; // depth 8: any generic kind
@@ -63,7 +63,7 @@ try {
     }
     return out;
   });
-  check(rosters[1].ok && /husk/.test(rosters[1].kinds), `sector 1 is the old opener: Husks + Arc Sentinels, no Tickers or Brute (${rosters[1].kinds})`);
+  check(rosters[1].ok && /husk/.test(rosters[1].kinds), `sector 1 is Husks + Tickers: no Arc Sentinel or Brute (${rosters[1].kinds})`);
   check(rosters[2].ok && rosters[2].kinds.includes('husk') && rosters[2].kinds.includes('sentinel'), `sector 2 is the generic 0.3.4 mix (${rosters[2].kinds})`);
   check(rosters[3].ok && rosters[3].kinds.includes('brute'), `sector 3 is the generic 0.3.4 mix (${rosters[3].kinds})`);
   check(rosters[8].ok, `endless Facility depth 8 is the generic mix too (${rosters[8].kinds})`);

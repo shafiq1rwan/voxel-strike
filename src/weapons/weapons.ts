@@ -7,7 +7,7 @@ import { rayBox } from '../core/physics';
 import { BOSS_CORE_Y, type Enemy } from '../entities/enemies';
 import { AimCone, findAimTarget } from '../entities/aimassist';
 import type { Game } from '../game';
-import { bakeFirstPerson, buildFirstPersonArm, buildFirstPersonHand } from '../entities/operative';
+import { bakeFirstPerson, buildFirstPersonArm, buildFirstPersonHand, firstPersonPrimer } from '../entities/operative';
 import { isDestructible } from '../world/blocks';
 import type { SkinDef, SkinRole } from '../core/skins';
 
@@ -582,6 +582,9 @@ export class WeaponSystem {
   private skinIds = new Map<WeaponId, string>();
   /** the operative's arms ride the models: skins can't rebuild them then */
   private operativeArms = false;
+  /** gun models that carry their arms already (a rebuilt model starts bare) */
+  private armed = new WeakSet<THREE.Object3D>();
+  private armsQueued = false;
   private kickRoll = 0;
   private swayX = 0;
   private swayY = 0;
@@ -670,6 +673,12 @@ export class WeaponSystem {
    * the bottom of the screen, as in any FPS. Each gun's hands are baked into
    * one mesh (two on the shotgun: the pump hand moves), and a rebuilt model
    * (a skin, the secret prototype) gets its hands again in `setSkin`.
+   * Building them is slow (~0.1 s a gun on a phone-speed CPU; all five at
+   * boot made 0.3.8 load ~0.6 s slower than 0.3.7, and 21 Player Fit Test
+   * players left during loading against 6), so they are built one gun per
+   * idle slot after loading, while the title is up; a gun raised before its
+   * turn gets them on the spot (`showModel`). A hidden primer in their
+   * material compiles the shader in the level's warm-up.
    */
   useOperativeArms(): void {
     if (this.operativeArms) return;
@@ -677,8 +686,34 @@ export class WeaponSystem {
     // carried higher, as in any FPS with visible arms: at the gun-only
     // height the trigger hand sat under the screen edge
     this.vmY = -0.2;
-    for (const id of ORDER) this.mountArms(id);
+    this.viewModel.add(firstPersonPrimer());
+    this.queueArms();
+  }
+
+  /** mount a gun's arms if its current model has none yet */
+  private ensureArms(id: WeaponId): void {
+    const g = this.models.get(id);
+    if (!this.operativeArms || !g || this.armed.has(g)) return;
+    this.mountArms(id);
+    this.armed.add(g);
     this.lightTick = 1; // tint the new arms on the next frame
+  }
+
+  /** arm the remaining guns in the background, one per idle slot */
+  private queueArms(): void {
+    if (this.armsQueued) return;
+    this.armsQueued = true;
+    const step = (): void => {
+      const id = ORDER.find((w) => { const g = this.models.get(w); return g && !this.armed.has(g); });
+      if (!id) { this.armsQueued = false; return; }
+      this.ensureArms(id);
+      later(step);
+    };
+    const later = (fn: () => void): void => {
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 400 });
+      else setTimeout(fn, 30);
+    };
+    later(step);
   }
 
   /** one gun's two hands + forearms, mounted on its current model and baked */
@@ -782,7 +817,10 @@ export class WeaponSystem {
       p.coils = m.coils;
       p.tips = m.tips;
     }
-    if (this.operativeArms) this.mountArms(id);
+    if (this.operativeArms) {
+      if (id === this.current) this.ensureArms(id);
+      else this.queueArms();
+    }
     this.lightTick = 1;
   }
 
@@ -791,6 +829,7 @@ export class WeaponSystem {
   }
 
   private showModel(id: WeaponId): void {
+    this.ensureArms(id);
     for (const [k, g] of this.models) g.visible = k === id;
     this.resetAction();
     this.lightTick = 1; // tint the new model by the room light on the next frame

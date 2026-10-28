@@ -41,7 +41,7 @@ try {
   await page.waitForSelector('#hud', { timeout: 10000 });
   await page.click('#start-btn');
   await new Promise((r) => setTimeout(r, 600));
-  // sector 1 is a short opener with no brute and no ticker nests: run the
+  // sector 1 is a short opener with no brute and no Arc Sentinel: run the
   // gameplay sections in sector 2, which has the full roster
   const opener = await page.evaluate(() => {
     const g = window.__voxelstrike;
@@ -76,11 +76,11 @@ try {
     if (arena) extra.push({ kind: 'brute', x: arena.cx + 0.5, z: arena.cz + 2.5, roomId: arena.id });
     g.enemies.spawnFromSpecs(extra, g.level.rooms, g);
     g.level.totalEnemies += extra.length;
-    return { rooms, brute: kinds.has('brute'), ticker: kinds.has('ticker'), shotgunAtSpawn, s2 };
+    return { rooms, brute: kinds.has('brute'), sentinel: kinds.has('sentinel'), shotgunAtSpawn, s2 };
   });
   // the Facility's per-sector pairs are off (owner's call): sector 1 is the old opener
-  check(opener.rooms <= 7 && !opener.brute && !opener.ticker && opener.shotgunAtSpawn,
-    `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no ticker nests, shotgun in the spawn room`);
+  check(opener.rooms <= 7 && !opener.brute && !opener.sentinel && opener.shotgunAtSpawn,
+    `sector 1 is a short opener: ${opener.rooms} rooms, no brute, no Arc Sentinel (its slots are Tickers since 0.3.9), shotgun in the spawn room`);
   check(opener.s2.gate, `the exit pad sits against the back wall under the EXIT sign (${opener.s2.gateFace} wall)`);
   check(opener.s2.rooms >= 11 && opener.s2.rooms <= 13 && opener.s2.quiet === 0 && opener.s2.enemies >= 20 && !/clampGuard|wireLeech|sentryBud/.test(opener.s2.kinds),
     `sector 2 plays as in 0.3.4 with the generic mix: ${opener.s2.rooms} rooms (11–13), every room past spawn holds enemies (${opener.s2.quiet} empty), ${opener.s2.enemies} enemies (${opener.s2.kinds})`);

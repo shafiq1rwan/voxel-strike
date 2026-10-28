@@ -162,14 +162,35 @@ export function bakeFirstPerson(parent: THREE.Object3D, groups: THREE.Object3D[]
   for (const g of groups) g.removeFromParent();
   for (const p of parts) { p.geometry.dispose(); (p.material as THREE.Material).dispose(); }
   if (!geos.length) return null;
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, fog: false });
-  addScuffs(mat);
-  const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
+  const mesh = new THREE.Mesh(mergeGeometries(geos), fpArmsMaterial());
   for (const g of geos) g.dispose();
   mesh.name = 'fp-arms';
   mesh.userData.baseColor = new THREE.Color(1, 1, 1);
   mesh.userData.glow = false;
   parent.add(mesh);
+  return mesh;
+}
+
+function fpArmsMaterial(): THREE.MeshBasicMaterial {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, fog: false });
+  addScuffs(mat);
+  return mat;
+}
+
+/**
+ * A hidden one-triangle mesh in the baked arms' material: in the overlay at
+ * the level's warm-up it compiles their shader, so the arms themselves can be
+ * built after loading (WeaponSystem.useOperativeArms) without a first-frame
+ * compile hitch.
+ */
+export function firstPersonPrimer(): THREE.Mesh {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(9), 3));
+  const mesh = new THREE.Mesh(geo, fpArmsMaterial());
+  mesh.name = 'fp-arms-primer';
+  mesh.visible = false;
+  mesh.frustumCulled = false;
   return mesh;
 }
 

@@ -305,11 +305,13 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   40 seeds, the same as 0.3.4. Anything added since (the Power Link cage)
   is placed AFTER pickups and enemies so it never consumes the layout RNG;
   keep it that way — seeds then differ from 0.3.4 only where the exit room
-  was rebuilt. `features.mjs` checks sector 2. SECTOR 2'S SENTINELS: with the
-  generic Facility mix (`FACILITY_ROSTERS` off), every other Sentinel in a
-  room becomes a Husk (a room keeps its first; no RNG) — ~12 instead of ~18
-  per sector, the same total health. The 0.3.7 Player Fit Test had 70 of the
-  171 players who reached sector 2 die to an Arc Sentinel.
+  was rebuilt. `features.mjs` checks sector 2. THE SENTINEL WALL: with the
+  generic Facility mix (`FACILITY_ROSTERS` off), sector 1's Sentinels become
+  Tickers, and in sectors 2–3 every other Sentinel in a room becomes a Husk
+  (a room keeps its first; no RNG) — ~12 instead of ~18 per sector, the same
+  total health. Its bolt does 7 (was 10). The 0.3.7 Player Fit Test had 70
+  of the 171 players who reached sector 2 die to an Arc Sentinel; in 0.3.8
+  (Sentinels back in sector 1) it was 148 of ~250 deaths across sectors 1–3.
   `generateLevel(seed, n, theme, withBoss)`: with a boss, `placeBoss` puts
   the Broodkeeper on a doorway-free N/S (then W/E) wall of the arena with a
   clear 3.4×3.4 footprint (crates/barrels cleared), empties the arena's
@@ -460,7 +462,11 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   (belt down, CPU-tinted, `jumpLift: false`) stands a step behind the eye
   for looking down, and a faint visor frame (`#fp-visor`) shows with the
   helmet on. THE HANDS ARE ON EVERY BUILD, web and Poki (owner's call
-  2026-10-28): `Game` calls `useOperativeArms()` at startup; each gun's
+  2026-10-28): `Game` calls `useOperativeArms()` at startup, which builds
+  them AFTER loading, one gun per idle slot (`queueArms`; a gun raised first
+  gets them in `showModel`) — all five at boot made 0.3.8 load ~0.6 s slower
+  than 0.3.7 —, with a hidden `firstPersonPrimer` compiling their shader in
+  the level warm-up; each gun's
   hands + forearms are BAKED by `bakeFirstPerson` (operative.ts) into one
   mesh (`fp-arms`, scuff shader kept; two on the shotgun, whose left hand
   rides the pump), so a gun in hand stays ≤ 12 draws, and `setSkin`
@@ -670,8 +676,9 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 **The per-sector pairs are OFF** (owner's call, 2026-10-27: "I prefer the
 previous monsters for sectors 1–3, v2 feels weird"): `FACILITY_ROSTERS =
 false` in rosters.ts, so sectors 1–3 and endless Facility depths keep the
-generator's 0.3.4 mix (sector 1 Husk + Arc Sentinel, no tickers or brute;
-2–3 Husk / Arc Sentinel / Ticker / Brute) and the keycard alarm its generic
+generator's 0.3.4 mix (sector 1 Husk + Ticker — its Sentinels become
+Tickers since 0.3.9 —, no brute; 2–3 Husk / Arc Sentinel / Ticker / Brute,
+half the Sentinels Husks) and the keycard alarm its generic
 mix. Everything below stays in the code, spawnable and tested by
 `facility-monsters.mjs` / `facility-rigs.mjs`; flip the flag to bring the
 pairs back. The retunes of the Husk / Brute / Arc Sentinel (BEHAVIOURS.md,

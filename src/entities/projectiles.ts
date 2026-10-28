@@ -10,7 +10,9 @@ interface TetherOwner { onTetherHit(target: PlayerTarget, game: Game): void }
 export interface ShotOpts { damage?: number; by?: string; owner?: TetherOwner }
 
 /** what an enemy shot does to a player it hits */
-const ENEMY_SHOT_DAMAGE: Record<'bolt' | 'acid' | 'slag', number> = { bolt: 10, acid: 14, slag: 14 };
+// bolt = the Arc Sentinel's (10 until 0.3.9: it was 59% of the 0.3.8 Player
+// Fit Test's deaths; the Sentry Bud passes its own)
+const ENEMY_SHOT_DAMAGE: Record<'bolt' | 'acid' | 'slag', number> = { bolt: 7, acid: 14, slag: 14 };
 
 class Projectile {
   alive = false;

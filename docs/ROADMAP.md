@@ -30,6 +30,7 @@ short of ~6:27; CTR is unchanged (the tile, not the game). Builds since 0.3.4
 | 2026-10-23 | ~2:00 | 0.3.5: SURVIVAL as PLAY (132 players, same audience) — reverted in 0.3.6: PLAY = the campaign again, Survival a quiet button |
 | (0.3.6 ×2) | 4:14 / 3:59 | 500 gameplays each |
 | 2026-10-28 | 5:28 | 0.3.7 (500 gameplays; sector monsters, Build 1, scrap drops): sector 1 478 start → 211 clear, 85 quit mid-sector without dying; 40 cleared sector 1 but never started 2; sector 2 171 → 65 clear, **70 died to the Arc Sentinel**; sector 3 61 → 47; sector 4 39 → 19; sector 5 15 → 12 failed, **all to the Carapace**. Playtime reached: 1 min 83%, 3 min 50%, 5 min 37%, 10 min 16% |
+| 2026-10-28 | 5:07 | 0.3.8 (500 gameplays; Build 2 looks, hands on Poki, sector 2 half the Sentinels, sector 5 fewer Carapaces, old Facility monsters): sector 1 430 start → 178 clear, **93 failed (73 to the Arc Sentinel, back in sector 1 with the old mix)**; sector 2 156 → 55; sector 3 44 → 21, **23 failed (21 Sentinel)**; sector 4 only 14; sector 5 9 → 3, Carapace deaths 12 → 2. The Sentinel was 148 of ~250 deaths. Playtime per load ≈ 0.3.7's to 15 min; the gap is the 30-min tail (5 vs 12) and fewer loads reaching level 1 (21 left while loading vs 6). Fixed in 0.3.9: sector 1 Sentinels → Tickers, sector 3 half the Sentinels, bolt 10 → 7 |
 
 Level events in the 4:42 test (all actions added together, so not player
 counts): level 1 → 1,185, level 2 → 548, level 3 → 142, level 4 → 59,
