@@ -801,7 +801,7 @@ try {
     await new Promise((r) => setTimeout(r, 300));
     check(await ph.evaluate(() => !!document.querySelector('#title-screen') && !document.querySelector('#settings-screen')),
       'phone settings: tapping Back returns to the title');
-    check(await ph.evaluate(() => window.__voxelstrike.settings.resolution === 320), 'touch devices default to 320-line pixelation');
+    check(await ph.evaluate(() => window.__voxelstrike.settings.resolution === 180), 'touch devices default to 180-line pixelation');
     await ph.close();
   }
 
@@ -1660,6 +1660,50 @@ try {
     check(up.info.rotated, 'held upright, the game is rotated into landscape');
     check(up.hud.length === 0, `held upright: the rotated HUD clears the notch and home bar${up.hud.length ? ' — ' + up.hud.join(' ') : ''}`);
   }
+  // --- 23b. menus held upright (0.3.9 report: settings could not be scrolled)
+  // The rotated game gets the phone layouts by its GAME-space size, and a
+  // swipe along the game's vertical (horizontal on the glass) scrolls a menu
+  // that's too long — and never navigates the page back when nothing scrolls.
+  {
+    const swipe = async (cdp, x0, y0, x1, y1) => {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+      for (let i = 1; i <= 12; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + (x1 - x0) * i / 12, y: y0 + (y1 - y0) * i / 12 }] });
+        await new Promise((r) => setTimeout(r, 16));
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await new Promise((r) => setTimeout(r, 500));
+    };
+    for (const [w, h] of [[390, 844], [320, 568]]) {
+      const pu = await browser.newPage();
+      pu.on('pageerror', (err) => errors.push(`[upright pageerror] ${err.message}`));
+      await pu.setViewport({ width: w, height: h, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+      await pu.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+      await pu.evaluate(() => localStorage.setItem('voxelstrike-tutorial-done', '1'));
+      await pu.reload({ waitUntil: 'networkidle0' });
+      await pu.waitForSelector('#title-settings-btn');
+      let navs = 0;
+      pu.on('framenavigated', (f) => { if (f === pu.mainFrame()) navs++; });
+      await pu.evaluate(() => document.querySelector('#title-settings-btn').click());
+      await pu.waitForSelector('#settings-back');
+      await new Promise((r) => setTimeout(r, 400));
+      const over = await pu.evaluate(() => { const s = document.querySelector('#settings-screen'); return s.scrollHeight - s.clientHeight; });
+      // finger toward the device's right = up in the game (its top is the device's right)
+      const cdp = await pu.createCDPSession();
+      await swipe(cdp, w * 0.2, h * 0.08, w * 0.85, h * 0.08);
+      const after = await pu.evaluate(() => {
+        const s = document.querySelector('#settings-screen');
+        if (!s) return null;
+        const b = document.querySelector('#settings-back').getBoundingClientRect();
+        return { top: s.scrollTop, back: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight };
+      });
+      if (w === 390) check(over <= 0, `held upright (${w}×${h}): settings use the phone layout and fit (overflow ${over}px)`);
+      check(!!after && navs === 0, `held upright (${w}×${h}): a swipe on settings never navigates the page (${navs} navigations)`);
+      check(!!after && after.back && (over <= 0 || after.top >= over - 2),
+        `held upright (${w}×${h}): a swipe scrolls settings to Back (overflow ${over}px, scrolled ${after?.top})`);
+      await pu.close();
+    }
+  }
 
   // --- 24. scrap + permanent upgrades (docs/RETENTION_PLAN.md, phase 1) -------
   // Kills, clears, secrets and the Power Link earn scrap that is never lost;
@@ -1823,7 +1867,7 @@ try {
 
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
-  // Desktop defaults to 480 lines, touch to 320 (above), still cycled in
+  // Every device defaults to 180 lines (touch above), still cycled in
   // Settings; a 240 saved by the old one-size default moves to the device
   // default once, while a 240 picked under the new settings stays.
   {
@@ -1874,8 +1918,8 @@ try {
       `a returning player sees the NEW SECTOR banner ("${banner.text ?? ''}")`);
     check(banner.shown && banner.aboveMenu && banner.inside, 'the banner sits above the menu, inside the screen');
     await pc.screenshot({ path: 'scripts/shots/features-title-banner.png' });
-    check(fresh.res === 480, `desktop defaults to 480-line pixelation (${fresh.res})`);
-    check(fresh.lines >= 470 && fresh.lines <= 490, `the renderer really draws ~480 lines (${fresh.lines})`);
+    check(fresh.res === 180, `desktop defaults to 180-line pixelation (${fresh.res})`);
+    check(fresh.lines >= 170 && fresh.lines <= 190, `the renderer really draws ~180 lines (${fresh.lines})`);
     // still adjustable: one press on Pixelation cycles to the next step and saves it
     await pc.click('#title-settings-btn');
     await pc.waitForSelector('#settings-back');
@@ -1886,12 +1930,12 @@ try {
         saved: JSON.parse(localStorage.getItem('voxelstrike-settings') || 'null'),
       };
     });
-    check(cycled.res !== 480 && cycled.saved?.resolution === cycled.res, `pixelation is still adjustable and saved (480 → ${cycled.res})`);
+    check(cycled.res !== 180 && cycled.saved?.resolution === cycled.res, `pixelation is still adjustable and saved (180 → ${cycled.res})`);
     // a 240 left by the old default migrates once; a deliberate 240 stays
     await pc.evaluate(() => localStorage.setItem('voxelstrike-settings', JSON.stringify({ resolution: 240, fov: 80 })));
     await pc.reload({ waitUntil: 'networkidle0' });
     const migrated = await pc.evaluate(() => ({ res: window.__voxelstrike.settings.resolution, fov: window.__voxelstrike.settings.fov }));
-    check(migrated.res === 480 && migrated.fov === 80, `old-default 240 moves to 480, other settings kept (res ${migrated.res}, fov ${migrated.fov})`);
+    check(migrated.res === 180 && migrated.fov === 80, `old-default 240 moves to 180, other settings kept (res ${migrated.res}, fov ${migrated.fov})`);
     await pc.evaluate(() => localStorage.setItem('voxelstrike-settings', JSON.stringify({ resolution: 240, v: 2 })));
     await pc.reload({ waitUntil: 'networkidle0' });
     check(await pc.evaluate(() => window.__voxelstrike.settings.resolution === 240), 'a 240 chosen under the new settings stays 240');

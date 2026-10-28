@@ -93,6 +93,40 @@ export class TouchControls {
     };
     applyOrientation(portrait.matches);
     portrait.addEventListener('change', (e) => applyOrientation(e.matches));
+
+    // forced landscape: menus scroll by hand. The browser pans in SCREEN
+    // directions, so a swipe along the game's vertical is a horizontal one on
+    // the glass — with touch-action pan-y nothing scrolled, and handing it
+    // pan-x let a swipe with nothing to scroll navigate the page back. The
+    // menus are touch-action: none there (hud.ts); this moves the nearest
+    // scrollable ancestor by the swipe's game-space travel. Sliders keep
+    // their drag.
+    let scrollEl: HTMLElement | null = null;
+    let scrollY = 0;
+    document.addEventListener('touchstart', (e) => {
+      scrollEl = null;
+      if (!this.forced || e.touches.length !== 1) return;
+      const target = e.target as Element;
+      if (target.closest?.('input[type=range]')) return;
+      for (let el = target as HTMLElement | null; el && el !== document.body; el = el.parentElement) {
+        const oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) {
+          scrollEl = el;
+          scrollY = this.mapXY(e.touches[0].clientX, e.touches[0].clientY).y;
+          break;
+        }
+      }
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (!scrollEl) return;
+      const y = this.mapXY(e.touches[0].clientX, e.touches[0].clientY).y;
+      scrollEl.scrollTop -= y - scrollY;
+      scrollY = y;
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    const endScroll = (): void => { scrollEl = null; };
+    document.addEventListener('touchend', endScroll);
+    document.addEventListener('touchcancel', endScroll);
     this.base = ui.querySelector('#tjoy-base') as HTMLElement;
     this.knob = ui.querySelector('#tjoy-knob') as HTMLElement;
     this.weaponBtn = ui.querySelector('#tweapon') as HTMLElement;

@@ -26,10 +26,11 @@ exit green) that always mean something.
   exit green decoratively in a way that could be misread as an objective,
   a key or the way out.
 - **Low-res on purpose.** The game renders a few hundred lines tall and
-  upscales with nearest-neighbour: 480 lines by default on desktop, 320 on
-  touch devices (owner's call, 2026-10-18), with 180 / 240 / 320 / 480 in
-  Settings. Design details for the chunkiest common setting, 240: a
-  1-pixel feature there is about 0.006 units at arm's length. Anything
+  upscales with nearest-neighbour: 180 lines by default on every device
+  (owner's call, 2026-10-28; it was 480 desktop / 320 touch from
+  2026-10-18), with 180 / 240 / 320 / 480 in Settings. Design details for
+  the default, 180: a 1-pixel feature there is about 0.008 units at arm's
+  length. Anything
   finer disappears or shimmers.
 
 ## Palette

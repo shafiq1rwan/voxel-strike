@@ -14,7 +14,7 @@ const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc', 'special
 const SLOT_TAG: Record<WeaponId, string> = { pistol: 'PST', shotgun: 'SG', smg: 'SMG', rocket: 'RKT', arc: 'ARC', special: 'SEC' };
 
 const CSS = `
-#overload-action { position:absolute; left:50%; bottom:22%; transform:translateX(-50%); max-width:65vw; padding:10px 16px; border:1px solid #34d0ff; color:#8ee8ff; background:rgba(5,10,18,.9); font-weight:bold; font-size:13px; pointer-events:auto; touch-action:manipulation; z-index:7; }
+#overload-action { position:absolute; left:50%; bottom:22%; transform:translateX(-50%); max-width:calc(65 * var(--vw)); padding:10px 16px; border:1px solid #34d0ff; color:#8ee8ff; background:rgba(5,10,18,.9); font-weight:bold; font-size:13px; pointer-events:auto; touch-action:manipulation; z-index:7; }
 #overload-action[hidden] { display:none; }
 #overload-action:disabled { pointer-events:none; opacity:.9; }
 .screen.overload-screen { box-sizing:border-box; padding:16px; overflow:hidden; }
@@ -32,7 +32,7 @@ const CSS = `
 .overload-screen .tradeoff { color:#ffd028; }
 .screen.overload-screen .offer-summary { font-size:16px; line-height:1.6; color:#cfd6e4; margin:16px 0 24px; }
 .overload-screen button:disabled { opacity:.4; cursor:default; }
-@media(max-height:450px) { .overload-screen .panel { padding:14px; } .screen.overload-screen h1 { font-size:22px; } .overload-screen p { font-size:12px; } .overload-screen .reward { width:170px; padding:8px; font-size:12px; } .overload-screen small { margin-top:4px; } }
+@media (max-height: 450px), (orientation: portrait) and (pointer: coarse) and (max-width: 450px) { .overload-screen .panel { padding:14px; } .screen.overload-screen h1 { font-size:22px; } .overload-screen p { font-size:12px; } .overload-screen .reward { width:170px; padding:8px; font-size:12px; } .overload-screen small { margin-top:4px; } }
 /* safe area: index.html asks for viewport-fit=cover (edge to edge, under the
    notch / rounded corners / home bar), so everything pinned to an edge adds
    these. They are 0 on desktops, notch-less phones and inside Poki's iframe.
@@ -40,6 +40,10 @@ const CSS = `
 body {
   --sat: env(safe-area-inset-top, 0px); --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px); --sal: env(safe-area-inset-left, 0px);
+  /* 1% of the GAME's width / height: every size in this sheet uses these, not
+     vw / vh, which follow the physical screen — held upright (rotated below)
+     they are swapped, and a 94vw settings list was 367 px of an 844 px game */
+  --vw: 1vw; --vh: 1vh;
 }
 /* a portrait phone rotated into landscape (body.force-landscape, 90° clockwise):
    the game's top is the device's right, its right the bottom, its bottom the
@@ -47,7 +51,21 @@ body {
 body.force-landscape {
   --sat: env(safe-area-inset-right, 0px); --sar: env(safe-area-inset-bottom, 0px);
   --sab: env(safe-area-inset-left, 0px); --sal: env(safe-area-inset-top, 0px);
+  --vw: 1vh; --vh: 1vw;
 }
+/* the visible viewport where supported, as the rotated body's own size (a
+   custom property takes its last value even when the browser can't use it) */
+@supports (height: 1dvh) {
+  body.force-landscape { --vw: 1dvh; --vh: 1dvw; }
+}
+/* The phone-size media queries below also match a phone held upright (rotated
+   into landscape: portrait + coarse pointer), by its GAME-space size — the
+   device's width is the game's height. Without that the compact layouts never
+   applied upright and the menus ran far off the bottom. Scrolling there is
+   done by TouchControls (touch.ts): touch-action works in SCREEN directions,
+   so pan-y never scrolled a rotated menu, and pan-x let a swipe with nothing
+   to scroll navigate the page back. */
+body.force-landscape .tscreen { touch-action: none; }
 #hud, #hud * { box-sizing: border-box; font-family: 'Courier New', Courier, monospace; }
 #hud {
   position: fixed; inset: 0; pointer-events: none; color: #cfd6e4;
@@ -130,7 +148,7 @@ body.force-landscape {
 @keyframes termcaret { 0% { opacity: 1; } 50% { opacity: 0; } }
 /* ---------------- sector clear: tally, rank stamp, perk choice ---------------- */
 .sc-screen { overflow-y: auto; justify-content: flex-start; cursor: default; padding: 12px 0; }
-.sc-screen > .sc-panel { margin: auto 0; flex-shrink: 0; width: min(780px, 94vw); padding: 24px 32px 20px; box-sizing: border-box; }
+.sc-screen > .sc-panel { margin: auto 0; flex-shrink: 0; width: min(780px, calc(94 * var(--vw))); padding: 24px 32px 20px; box-sizing: border-box; }
 /* the title is centred on the panel on its own; the rank stamp is pinned to
    the right edge, centred on the title's line (centring the pair pushed the
    title off-centre) */
@@ -224,7 +242,7 @@ body.force-landscape {
 .sc-skip { margin-top: 12px; font-size: 11px; letter-spacing: .24em; color: #566076; }
 .sc-totals { margin: 4px 0; font-size: 13px; color: #8a94a8; }
 .sc-record { color: #ffd028; }
-@media (max-height: 560px) {
+@media (max-height: 560px), (orientation: portrait) and (pointer: coarse) and (max-width: 560px) {
   .sc-screen { padding: 4px 0; }
   .sc-screen > .sc-panel { padding: 10px 16px 8px; }
   .sc-head { min-height: 58px; padding: 0 66px; }
@@ -248,7 +266,7 @@ body.force-landscape {
   .sc-note, .sc-skip { font-size: 9.5px; margin-top: 6px; }
 }
 /* landscape phone: tally on the left, the perks on the right */
-@media (max-height: 460px) and (min-width: 600px) {
+@media (max-height: 460px) and (min-width: 600px), (orientation: portrait) and (pointer: coarse) and (max-width: 460px) and (min-height: 600px) {
   .sc-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
   .sc-tally { width: 100%; }
   .sc-after { margin-top: 0; }
@@ -286,7 +304,7 @@ body.force-landscape {
   15% { opacity: 1; background: rgba(120,70,190,.55); }
   100% { opacity: 0; background: rgba(40,20,70,0); }
 }
-@media (max-height: 460px) {
+@media (max-height: 460px), (orientation: portrait) and (pointer: coarse) and (max-width: 460px) {
   .term-screen { padding: 8px; }
   .term-head { font-size: 9px; padding: 4px 10px; letter-spacing: .14em; }
   .term-body { font-size: 11.5px; line-height: 1.32; padding: 8px 12px 2px; min-height: calc(var(--term-lines, 12) * 1.32em + 10px); }
@@ -317,7 +335,7 @@ body.force-landscape {
 #hud-map { width: 58px; }
 #hud-pause { width: 36px; letter-spacing: 0; text-indent: 0; }
 /* top-center: objective tracker */
-#bossbar { width: min(380px, 44vw); margin-top: 4px; }
+#bossbar { width: min(380px, calc(44 * var(--vw))); margin-top: 4px; }
 #bossbar[hidden] { display: none; }
 #boss-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: bold; letter-spacing: .26em; color: #f0f2f6; text-shadow: 0 1px 0 #000; }
 #boss-core { font-size: 10px; letter-spacing: .2em; color: #ff8a2a; opacity: 0; }
@@ -331,12 +349,12 @@ body.force-landscape {
 #boss-fill { background: linear-gradient(180deg, #ff5a48, #b8231a); transition: width .08s linear; }
 #bossbar.core #boss-track { border-color: #ff8a2a; box-shadow: 0 0 10px rgba(255,138,42,.6); }
 #bossbar.core #boss-fill { background: linear-gradient(180deg, #ffb060, #e8602a); }
-body.touch-mode #bossbar { width: min(300px, 40vw); }
+body.touch-mode #bossbar { width: min(300px, calc(40 * var(--vw))); }
 body.touch-mode #boss-head { font-size: 10px; }
 #objective {
   position: absolute; top: calc(12px + var(--sat)); left: 50%; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 4px;
-  max-width: 46vw; text-align: center;
+  max-width: calc(46 * var(--vw)); text-align: center;
 }
 /* the step: an accent bar + icon in the stage colour, the words in caps, and
    three pips for keycard → door → lift (the title screen's numbered tiles) */
@@ -425,7 +443,7 @@ body.touch-mode #scrap { font-size: 15px; }
 }
 #messages {
   position: absolute; top: calc(196px + var(--sat)); left: calc(14px + var(--sal)); font-size: 14px; color: #e8ecf4;
-  display: flex; flex-direction: column; gap: 3px; max-width: 40vw;
+  display: flex; flex-direction: column; gap: 3px; max-width: calc(40 * var(--vw));
 }
 #messages div { animation: msgfade 3.5s forwards; }
 @keyframes msgfade { 0%,70% { opacity: 1; } 100% { opacity: 0; } }
@@ -508,7 +526,7 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 .next-unlock .nu-bar i { display: block; height: 100%; background: #55e0ff; }
 /* upgrades: permanent buys with scrap (docs/RETENTION_PLAN.md) — Armory's look, a list of rows */
 #upgrades-screen { justify-content: flex-start; background: rgba(5,6,10,.93); }
-.upg-wrap { margin: auto; width: min(760px, 96vw); box-sizing: border-box; padding: 0 8px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.upg-wrap { margin: auto; width: min(760px, calc(96 * var(--vw))); box-sizing: border-box; padding: 0 8px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
 .upg-scrap { font-size: 13px; font-weight: bold; letter-spacing: .16em; color: #ffd028; }
 .upg-sub { font-size: 11px; letter-spacing: .12em; color: #8a94a8; }
 .upg-list { display: flex; flex-direction: column; gap: 5px; }
@@ -539,7 +557,7 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 .sc-upg-row { margin-top: 12px; display: flex; justify-content: center; }
 #sector-clear .sc-upg { font-size: 12px; padding: 8px 16px; color: #ffd028; border-color: #ffd028; }
 #sector-clear .sc-upg:hover:not(:disabled) { background: #ffd028; color: #0a0c12; }
-@media (max-height: 560px) {
+@media (max-height: 560px), (orientation: portrait) and (pointer: coarse) and (max-width: 560px) {
   .upg-wrap { gap: 5px; }
   .upg-row { padding: 5px 8px; gap: 8px; }
   .upg-name { font-size: 12px; }
@@ -550,7 +568,7 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 /* armory: a tab per gun, the gun itself on a turntable, its paints beside it */
 #armory-screen { justify-content: flex-start; background: rgba(5,6,10,.93); }
 .arm-wrap {
-  margin: auto; width: min(980px, 96vw); box-sizing: border-box; padding: 0 8px;
+  margin: auto; width: min(980px, calc(96 * var(--vw))); box-sizing: border-box; padding: 0 8px;
   display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
 }
 .arm-head { display: flex; align-items: center; gap: 14px; }
@@ -617,7 +635,7 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 /* locked: dimmed but in its real colours, so the goal is something you can see */
 .arm-skin.locked { color: #9aa3b4; }
 .arm-skin.locked .sw { opacity: .6; }
-@media (max-height: 560px) {
+@media (max-height: 560px), (orientation: portrait) and (pointer: coarse) and (max-width: 560px) {
   .arm-wrap { gap: 6px; }
   .arm-title { font-size: 14px; }
   .arm-back { padding: 6px 12px; font-size: 12px; }
@@ -652,7 +670,7 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
   position: absolute; left: 50%; bottom: calc(74px + var(--sab)); transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
   padding: 8px 16px; font-size: 13px; letter-spacing: 2px; color: #e8ecf4;
-  background: rgba(8,10,16,.78); border: 1px solid #ffd028; max-width: 90vw;
+  background: rgba(8,10,16,.78); border: 1px solid #ffd028; max-width: calc(90 * var(--vw));
   width: max-content; /* left:50% would otherwise cap it at half the screen */
   opacity: 0; transition: opacity .35s; text-align: center; pointer-events: none;
 }
@@ -846,32 +864,32 @@ body.touch-mode .slot { width: 36px; height: 30px; font-size: 14px; }
 body.touch-mode .slot:not(.owned) { display: none; }
 body.touch-mode .slot.active::after { bottom: -6px; height: 2px; }
 body.touch-mode .key { width: 34px; height: 28px; }
-body.touch-mode #objective { top: calc(50px + var(--sat)); max-width: 40vw; }
+body.touch-mode #objective { top: calc(50px + var(--sat)); max-width: calc(40 * var(--vw)); }
 body.touch-mode #obj-main { font-size: 12px; padding: 4px 9px 4px 8px; gap: 7px; letter-spacing: .06em; }
 body.touch-mode #obj-nav { font-size: 12px; }
 body.touch-mode #obj-dial { width: 28px; height: 28px; }
 body.touch-mode #obj-arrow { width: 20px; height: 20px; }
 body.touch-mode #ammo-block { display: none; }
-body.touch-mode #messages { top: calc(52px + var(--sat)); left: calc(10px + var(--sal)); font-size: 11px; max-width: 30vw; gap: 2px; }
+body.touch-mode #messages { top: calc(52px + var(--sat)); left: calc(10px + var(--sal)); font-size: 11px; max-width: calc(30 * var(--vw)); gap: 2px; }
 body.touch-mode #fps { display: none; }
 body.touch-mode #score { font-size: 12px; }
 body.touch-mode #kills { font-size: 11px; }
 body.touch-mode .buff { font-size: 10px; padding: 2px 6px; }
 body.touch-mode .streak { font-size: 19px; letter-spacing: 4px; }
 /* the hint sits low, between the thumbs */
-body.touch-mode #hint { bottom: calc(12px + var(--sab)); max-width: 46vw; font-size: 11px; padding: 6px 10px; gap: 6px; }
+body.touch-mode #hint { bottom: calc(12px + var(--sab)); max-width: calc(46 * var(--vw)); font-size: 11px; padding: 6px 10px; gap: 6px; }
 
 /* ---------------- small screens ---------------- */
-@media (max-width: 760px) {
+@media (max-width: 760px) and (orientation: landscape), (max-width: 760px) and (pointer: fine), (orientation: portrait) and (pointer: coarse) and (max-height: 760px) {
   .death-main.pair .tbtn { min-width: 0; font-size: 12px; padding: 11px 12px; letter-spacing: .12em; }
   #weaponname { font-size: 11px; letter-spacing: 2px; }
   #ammo .value { font-size: 26px; }
-  #objective { max-width: 40vw; }
+  #objective { max-width: calc(40 * var(--vw)); }
   #obj-main { font-size: 12px; letter-spacing: .04em; padding: 4px 9px 4px 8px; }
   .screen h1 { font-size: 32px; letter-spacing: 4px; }
-  .panel { padding: 20px 22px 18px; max-width: 92vw; }
+  .panel { padding: 20px 22px 18px; max-width: calc(92 * var(--vw)); }
   .title-menu-row { flex-wrap: wrap; justify-content: center; }
-  .setlist { width: 94vw; }
+  .setlist { width: calc(94 * var(--vw)); }
   .setrow { font-size: 10px; gap: 10px; }
   input[type=range].tslider { width: 110px; }
   .title-foot { font-size: 9px; }
@@ -900,7 +918,7 @@ body.touch-mode #hint { bottom: calc(12px + var(--sab)); max-width: 46vw; font-s
   padding: 0 16px; max-width: 760px; width: 100%;
 }
 #title-logo {
-  width: min(86vw, 660px); image-rendering: pixelated;
+  width: min(calc(86 * var(--vw)), 660px); image-rendering: pixelated;
   filter: drop-shadow(0 6px 0 rgba(0,0,0,.55)) drop-shadow(0 0 26px rgba(255,208,40,.14));
 }
 .title-tag {
@@ -926,14 +944,14 @@ body.touch-mode #hint { bottom: calc(12px + var(--sab)); max-width: 46vw; font-s
 .ns-text i { font-style: normal; color: #b68ae6; }
 @keyframes nsglow { from { box-shadow: 0 0 0 rgba(255,208,40,0); } to { box-shadow: 0 0 14px rgba(255,208,40,.55); } }
 #pause-logo {
-  width: min(58vw, 400px); image-rendering: pixelated;
+  width: min(calc(58 * var(--vw)), 400px); image-rendering: pixelated;
   filter: drop-shadow(0 5px 0 rgba(0,0,0,.55));
 }
 #settings-logo {
-  width: min(62vw, 430px); image-rendering: pixelated;
+  width: min(calc(62 * var(--vw)), 430px); image-rendering: pixelated;
   filter: drop-shadow(0 5px 0 rgba(0,0,0,.55));
 }
-.setlist { margin-top: 26px; width: min(92vw, 540px); }
+.setlist { margin-top: 26px; width: min(calc(92 * var(--vw)), 540px); }
 .setrow {
   display: flex; align-items: center; justify-content: space-between; gap: 20px;
   padding: 11px 4px; border-bottom: 1px solid #1c212c;
@@ -1066,11 +1084,11 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
 .title-foot.has-mid > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .title-foot.has-mid > span:last-child { text-align: right; }
 .title-foot .next-unlock { margin-top: 0; }
-@media (max-height: 560px) {
+@media (max-height: 560px), (orientation: portrait) and (pointer: coarse) and (max-width: 560px) {
   .new-sector { margin-top: 9px; }
   .ns-tag { font-size: 10px; padding: 4px 9px; letter-spacing: .16em; }
   .ns-text { font-size: 10px; padding: 4px 10px; letter-spacing: .1em; }
-  #title-logo { width: min(62vw, 440px); }
+  #title-logo { width: min(calc(62 * var(--vw)), 440px); }
   .title-goal { margin-top: 6px; font-size: 12px; }
   .tsteps { margin-top: 8px; gap: 6px; }
   .tstep { width: 126px; padding: 9px 6px 8px; gap: 5px; }
@@ -1085,7 +1103,7 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   .tscreen { padding: calc(4px + var(--sat)) var(--sar) calc(7px + var(--sab)) var(--sal); }
   .title-foot { margin-top: 4px; }
   /* settings: smaller logo + tighter rows so Back fits on a landscape phone */
-  #settings-logo { width: min(40vw, 230px); }
+  #settings-logo { width: min(calc(40 * var(--vw)), 230px); }
   #settings-screen .title-tag { margin-top: 4px; }
   #settings-screen .setlist { margin-top: 8px; }
   #settings-screen .setrow { padding: 5px 4px; }
@@ -1093,10 +1111,10 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   #settings-screen .tbtn-primary { padding: 10px 40px; font-size: 15px; }
 }
 /* short AND wide (landscape phone): settings rows in two columns */
-@media (max-height: 560px) and (min-width: 600px) {
+@media (max-height: 560px) and (min-width: 600px), (orientation: portrait) and (pointer: coarse) and (max-width: 560px) and (min-height: 600px) {
   #settings-screen .title-center { max-width: 1000px; }
   #settings-screen .setlist {
-    display: grid; grid-template-columns: 1fr 1fr; column-gap: 26px; width: min(96vw, 960px);
+    display: grid; grid-template-columns: 1fr 1fr; column-gap: 26px; width: min(calc(96 * var(--vw)), 960px);
   }
   #settings-screen .setrow { font-size: 10px; letter-spacing: .1em; gap: 8px; }
   #settings-screen .setctl { gap: 8px; }

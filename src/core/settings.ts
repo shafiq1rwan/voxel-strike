@@ -19,11 +19,12 @@ export interface GameSettings {
 export const RESOLUTIONS = [180, 240, 320, 480];
 
 /**
- * Default pixelation by device: 480 lines on desktop, 320 on touch devices
- * (phones keep a lighter render). Still cycled in Settings.
+ * Default pixelation: 180 lines on every device (owner's call, 2026-10-28;
+ * it was 480 on desktop and 320 on touch). Still cycled in Settings, and a
+ * saved choice is kept.
  */
-export function defaultResolution(touch: boolean): number {
-  return touch ? 320 : 480;
+export function defaultResolution(_touch: boolean): number {
+  return 180;
 }
 
 export function defaultSettings(touch: boolean): GameSettings {
