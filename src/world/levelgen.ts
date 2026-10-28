@@ -1052,7 +1052,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   // Every sector (and endless depth) re-casts the generic placements above as
   // its own pair at about the same pressure: Facility 1–3, Biofoundry 4–5,
   // Geothermal Core 6–7. No RNG: the rest of the layout stream is untouched.
-  // (Facility: off — the generic mix, see FACILITY_ROSTERS)
+  // (Facility: only while FACILITY_ROSTERS is on)
   const band = theme === 'facility' && FACILITY_ROSTERS ? facilityBand(difficulty) : null;
   const bBand = theme === 'biofoundry' ? bioBand(difficulty, withBoss) : null;
   const gBand = isGeo ? geoBand(difficulty) : null;

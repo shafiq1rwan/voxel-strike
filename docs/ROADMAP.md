@@ -31,6 +31,7 @@ short of ~6:27; CTR is unchanged (the tile, not the game). Builds since 0.3.4
 | (0.3.6 ×2) | 4:14 / 3:59 | 500 gameplays each |
 | 2026-10-28 | 5:28 | 0.3.7 (500 gameplays; sector monsters, Build 1, scrap drops): sector 1 478 start → 211 clear, 85 quit mid-sector without dying; 40 cleared sector 1 but never started 2; sector 2 171 → 65 clear, **70 died to the Arc Sentinel**; sector 3 61 → 47; sector 4 39 → 19; sector 5 15 → 12 failed, **all to the Carapace**. Playtime reached: 1 min 83%, 3 min 50%, 5 min 37%, 10 min 16% |
 | 2026-10-28 | 5:07 | 0.3.8 (500 gameplays; Build 2 looks, hands on Poki, sector 2 half the Sentinels, sector 5 fewer Carapaces, old Facility monsters): sector 1 430 start → 178 clear, **93 failed (73 to the Arc Sentinel, back in sector 1 with the old mix)**; sector 2 156 → 55; sector 3 44 → 21, **23 failed (21 Sentinel)**; sector 4 only 14; sector 5 9 → 3, Carapace deaths 12 → 2. The Sentinel was 148 of ~250 deaths. Playtime per load ≈ 0.3.7's to 15 min; the gap is the 30-min tail (5 vs 12) and fewer loads reaching level 1 (21 left while loading vs 6). Fixed in 0.3.9: sector 1 Sentinels → Tickers, sector 3 half the Sentinels, bolt 10 → 7 |
+| 2026-10-28 | 4:26 | 0.3.9 (500 gameplays, read while still running): lower again, though easier than 0.3.8. 0.3.7 is the only build of the three with the per-sector Facility monsters (its zip was built before they were switched off) — back on for the next build |
 
 Level events in the 4:42 test (all actions added together, so not player
 counts): level 1 → 1,185, level 2 → 548, level 3 → 142, level 4 → 59,
@@ -121,6 +122,9 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-28 — Facility per-sector monsters back ON (owner: "we need them to
+  stay longer"): `FACILITY_ROSTERS` true, as in the tested 0.3.7. The
+  0.3.9 bolt (7) and the 180p default stay; to re-test against 0.3.7.
 - 2026-10-27 — Facility sectors 1–3 back to the previous monsters (owner:
   the v2 pairs "feel weird"): `FACILITY_ROSTERS` off, the generic 0.3.4 mix
   (sector 1 Husk + Arc Sentinel; 2–3 Husk / Sentinel / Ticker / Brute) and

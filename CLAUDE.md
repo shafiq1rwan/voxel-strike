@@ -306,7 +306,8 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   is placed AFTER pickups and enemies so it never consumes the layout RNG;
   keep it that way — seeds then differ from 0.3.4 only where the exit room
   was rebuilt. `features.mjs` checks sector 2. THE SENTINEL WALL: with the
-  generic Facility mix (`FACILITY_ROSTERS` off), sector 1's Sentinels become
+  generic Facility mix (only while `FACILITY_ROSTERS` is off — it's on
+  since 2026-10-28, so this is dormant), sector 1's Sentinels become
   Tickers, and in sectors 2–3 every other Sentinel in a room becomes a Husk
   (a room keeps its first; no RNG) — ~12 instead of ~18 per sector, the same
   total health. Its bolt does 7 (was 10). The 0.3.7 Player Fit Test had 70
@@ -674,15 +675,13 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
 
 ## Facility sector monsters (2026-10-27)
 
-**The per-sector pairs are OFF** (owner's call, 2026-10-27: "I prefer the
-previous monsters for sectors 1–3, v2 feels weird"): `FACILITY_ROSTERS =
-false` in rosters.ts, so sectors 1–3 and endless Facility depths keep the
-generator's 0.3.4 mix (sector 1 Husk + Ticker — its Sentinels become
-Tickers since 0.3.9 —, no brute; 2–3 Husk / Arc Sentinel / Ticker / Brute,
-half the Sentinels Husks) and the keycard alarm its generic
-mix. Everything below stays in the code, spawnable and tested by
-`facility-monsters.mjs` / `facility-rigs.mjs`; flip the flag to bring the
-pairs back. The retunes of the Husk / Brute / Arc Sentinel (BEHAVIOURS.md,
+**The per-sector pairs are ON** (owner's call, 2026-10-28: "we need them
+to stay longer"): `FACILITY_ROSTERS = true` in rosters.ts, as in the
+tested 0.3.7 (5:28, the best Player Fit Test). They were OFF for 0.3.8 and
+0.3.9 (2026-10-27: "v2 feels weird") — the generator's 0.3.4 mix of Husk /
+Arc Sentinel / Ticker packs / Brute — and playtime fell to 5:07 and 4:26:
+sector 3 cleared 77% → 48%, players reaching sector 4 39 → 14. With the
+flag off that mix comes back, with levelgen's Sentinel thinning (below). The retunes of the Husk / Brute / Arc Sentinel (BEHAVIOURS.md,
 sheet 01 look, the 40 HP Sentinel) are separate and still apply.
 
 Each Facility sector has its own two monsters (reference/sector-monsters-v2,
