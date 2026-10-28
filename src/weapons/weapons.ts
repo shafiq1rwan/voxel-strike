@@ -7,7 +7,7 @@ import { rayBox } from '../core/physics';
 import { BOSS_CORE_Y, type Enemy } from '../entities/enemies';
 import { AimCone, findAimTarget } from '../entities/aimassist';
 import type { Game } from '../game';
-import { buildFirstPersonArm, buildFirstPersonHand } from '../entities/operative';
+import { bakeFirstPerson, buildFirstPersonArm, buildFirstPersonHand } from '../entities/operative';
 import { isDestructible } from '../world/blocks';
 import type { SkinDef, SkinRole } from '../core/skins';
 
@@ -506,6 +506,8 @@ export function buildWeaponModel(id: WeaponId, skin: SkinDef | null = null, prot
  * owner's request; this is the approved gun-only height.
  */
 const VM_Y = -0.34;
+/** the view-model pass's own camera FOV (Renderer.overlayCamera) */
+const OVERLAY_FOV = 75;
 
 /** Weapon inventory + firing + first-person view model. */
 export class WeaponSystem {
@@ -660,24 +662,35 @@ export class WeaponSystem {
   }
 
   /**
-   * Play-as-operative preview (`?play=operative`): the operative's gloves and
-   * forearm guards on every gun. The arms ride the gun group, so they take
-   * its kick, sway and bob; the left hand rides the shotgun's pump so it
-   * racks with it. The forearms run back and down out of the bottom of the
-   * screen, as in any FPS. Off by default — the shipped view model is the
-   * owner-approved gun-only one.
+   * The operative's gloves and forearm guards on every gun — on every build
+   * since the owner's call of 2026-10-28 (it began as the `?play=operative`
+   * preview; the gun-only view model came before). The arms ride the gun
+   * group, so they take its kick, sway and bob; the left hand rides the
+   * shotgun's pump so it racks with it. The forearms run back and down out of
+   * the bottom of the screen, as in any FPS. Each gun's hands are baked into
+   * one mesh (two on the shotgun: the pump hand moves), and a rebuilt model
+   * (a skin, the secret prototype) gets its hands again in `setSkin`.
    */
   useOperativeArms(): void {
+    if (this.operativeArms) return;
     this.operativeArms = true;
+    // carried higher, as in any FPS with visible arms: at the gun-only
+    // height the trigger hand sat under the screen edge
+    this.vmY = -0.2;
+    for (const id of ORDER) this.mountArms(id);
+    this.lightTick = 1; // tint the new arms on the next frame
+  }
+
+  /** one gun's two hands + forearms, mounted on its current model and baked */
+  private mountArms(id: WeaponId): void {
+    const g = this.models.get(id);
+    if (!g) return;
     // gun-local hand points (grip / support) and where each elbow lies
     // each forearm runs from its hand back towards its own bottom corner of
     // the screen, the way arms enter an FPS view: steeply down it hung below
     // the gun like a brick; straight at the eye it hid its own hand
     const R_ELBOW = new THREE.Vector3(0.18, -0.52, 0.83).normalize();
     const L_ELBOW = new THREE.Vector3(-0.5, -0.25, 0.83).normalize();
-    // carried higher, as in any FPS with visible arms: at the gun-only
-    // height the trigger hand sat under the screen edge
-    this.vmY = -0.2;
     // per gun, in its own model space: the trigger hand wraps the grip (half
     // width / depth of that part) with the index finger laid along the frame;
     // the support hand wraps a fore-grip or cradles the body / pump
@@ -697,7 +710,7 @@ export class WeaponSystem {
     // concept's chunky bracers filled the corner and buried the hands
     const SCALE = 0.68;
     const UP = new THREE.Vector3(0, 1, 0);
-    const mount = (side: 1 | -1, parent: THREE.Object3D, hand: Hand, elbow: THREE.Vector3, groupScale: number): void => {
+    const mount = (side: 1 | -1, parent: THREE.Object3D, hand: Hand, elbow: THREE.Vector3, groupScale: number): THREE.Object3D[] => {
       // the hand: built round the part in gun space, at the gun's rendered
       // size (its own scale undoes the launcher group's)
       const h = buildFirstPersonHand(side, hand.pose, hand.hw * groupScale, (hand.hd ?? 0.04) * groupScale,
@@ -718,17 +731,20 @@ export class WeaponSystem {
       arm.position.set(...at);
       arm.scale.setScalar(SCALE / groupScale); // the launcher group is scaled down
       parent.add(arm);
+      return [h, arm];
     };
-    for (const id of ORDER) {
-      const g = this.models.get(id);
-      if (!g) continue;
-      const h = HANDS[id];
-      const s = g.scale.x;
-      mount(1, g, h.r, R_ELBOW, s);
-      const pump = h.lOnPump ? this.parts.pump : undefined;
-      mount(-1, pump ?? g, h.l, L_ELBOW, s);
-    }
-    this.lightTick = 1; // tint the new arms on the next frame
+    const h = HANDS[id];
+    const s = g.scale.x;
+    const right = mount(1, g, h.r, R_ELBOW, s);
+    // the shotgun's left hand rides its pump: this model's own pump
+    let pump: THREE.Object3D | undefined;
+    if (h.lOnPump) g.traverse((o) => { if (!pump && o === this.parts.pump) pump = o; });
+    const left = mount(-1, pump ?? g, h.l, L_ELBOW, s);
+    // one draw per parent: the gun carries the right hand (and the left, unless it pumps)
+    if (pump) {
+      bakeFirstPerson(g, right);
+      bakeFirstPerson(pump, left);
+    } else bakeFirstPerson(g, [...right, ...left]);
   }
 
   /**
@@ -738,7 +754,7 @@ export class WeaponSystem {
    */
   setSkin(id: WeaponId, skin: SkinDef | null): void {
     const sid = skin?.id ?? '';
-    if ((this.skinIds.get(id) ?? '') === sid || this.operativeArms) return;
+    if ((this.skinIds.get(id) ?? '') === sid) return;
     this.skinIds.set(id, sid);
     const old = this.models.get(id);
     if (old) {
@@ -766,6 +782,7 @@ export class WeaponSystem {
       p.coils = m.coils;
       p.tips = m.tips;
     }
+    if (this.operativeArms) this.mountArms(id);
     this.lightTick = 1;
   }
 
@@ -962,11 +979,19 @@ export class WeaponSystem {
     if (!def.projectile) this.applyAimAssist(origin, fwd, game);
     const right = _right.crossVectors(fwd, _UP).normalize();
     const up = _up.crossVectors(right, fwd).normalize();
-    // approximate world-space muzzle (matches the viewmodel's barrel)
+    // the world point that sits exactly where the muzzle flash is drawn, 0.55
+    // ahead: tracers and rockets leave from it. The gun is drawn by its own
+    // fixed-75° overlay camera (Renderer.overlay), so the flash's view-space
+    // direction is rescaled to the world camera's FOV. (A fixed offset tuned
+    // for the gun-only height left tracers ~50 px under the flash once the
+    // gun was raised for the operative's hands.)
+    const vm = this.viewModel.position, fp = this.flash.position;
+    const vz = -(vm.z + fp.z) || 1;
+    const fovK = Math.tan(cam.fov * Math.PI / 360) / Math.tan(OVERLAY_FOV * Math.PI / 360);
     const muzzle = _muzzle.copy(origin)
       .addScaledVector(fwd, 0.55)
-      .addScaledVector(right, 0.16)
-      .addScaledVector(up, -0.14);
+      .addScaledVector(right, (vm.x + fp.x) / vz * fovK * 0.55)
+      .addScaledVector(up, (vm.y + fp.y) / vz * fovK * 0.55);
 
     // heavier weapons punch the view
     if (def.id === 'shotgun') {

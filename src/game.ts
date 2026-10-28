@@ -35,6 +35,7 @@ import { BASE_AMMO_MAX, BASE_MAX_HEALTH } from './entities/player';
 import { biofoundryTerminal, decorateBiofoundry } from './preview/biofoundry';
 import { decorateGeothermal } from './preview/geothermal-gen';
 import { decorateEnvironment } from './preview/environments';
+import { decorateSectorLandmarks } from './preview/sector-landmarks';
 import { ENVIRONMENTS, isNewTheme } from './world/environments';
 import { ThrownGuns } from './weapons/thrown';
 
@@ -257,8 +258,8 @@ export class Game {
 
   /**
    * Play-as-operative preview (`?play=operative[&helmet=0]`, web builds only):
-   * the operative's arms on the guns, his body under you when you look
-   * down, and with the helmet on a faint visor frame. Off by default.
+   * his body under you when you look down and, with the helmet on, a faint
+   * visor frame. Off by default. (His arms on the guns are on every build.)
    */
   private fpBody: OperativeRig | null = null;
   private fpStride = 0;
@@ -296,6 +297,8 @@ export class Game {
     }
     // the gun renders in its own depth-cleared pass (see Renderer.overlay)
     this.rendererSys.overlay.add(this.weapons.viewModel);
+    // the operative's gloves on every gun, web and Poki (owner's call 2026-10-28)
+    this.weapons.useOperativeArms();
     for (const w of WEAPON_ORDER) this.weapons.setSkin(w, this.skins.skinFor(w));
     scene.add(this.camera);
     // menu shows the bare facility; the gun raises when the run starts
@@ -600,11 +603,13 @@ export class Game {
     this.chunks.buildAll();
     scene.add(this.chunks.group);
     // Biofoundry scenery + live tanks: the authored ?sector4 map, or a generated sector 4
-    // (or the Power Link puzzle — facility from sector 2 — and the core's steam + signs)
-    if (authored || isNewTheme(theme) || this.level.bio || this.level.geo || this.level.powerLink) {
+    // (or the Power Link puzzle — facility from sector 2 — and the core's steam + signs;
+    // a Facility sector's room props, Build 2, also carry its Power Link)
+    if (authored || isNewTheme(theme) || this.level.bio || this.level.geo || this.level.powerLink || this.level.architecture) {
       this.previewArt = authored ? authored.decorate(this.level)
         : isNewTheme(theme) ? decorateEnvironment(this.level, theme)
-        : this.level.bio ? decorateBiofoundry(this.level) : decorateGeothermal(this.level);
+        : this.level.bio ? decorateBiofoundry(this.level)
+        : this.level.architecture ? decorateSectorLandmarks(this.level) : decorateGeothermal(this.level);
       scene.add(this.previewArt.group);
     }
 

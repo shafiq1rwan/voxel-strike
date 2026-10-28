@@ -305,7 +305,11 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   40 seeds, the same as 0.3.4. Anything added since (the Power Link cage)
   is placed AFTER pickups and enemies so it never consumes the layout RNG;
   keep it that way — seeds then differ from 0.3.4 only where the exit room
-  was rebuilt. `features.mjs` checks sector 2.
+  was rebuilt. `features.mjs` checks sector 2. SECTOR 2'S SENTINELS: with the
+  generic Facility mix (`FACILITY_ROSTERS` off), every other Sentinel in a
+  room becomes a Husk (a room keeps its first; no RNG) — ~12 instead of ~18
+  per sector, the same total health. The 0.3.7 Player Fit Test had 70 of the
+  171 players who reached sector 2 die to an Arc Sentinel.
   `generateLevel(seed, n, theme, withBoss)`: with a boss, `placeBoss` puts
   the Broodkeeper on a doorway-free N/S (then W/E) wall of the arena with a
   clear 3.4×3.4 footprint (crates/barrels cleared), empties the arena's
@@ -455,9 +459,19 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   pump; view model raised to `vmY = -0.25` so the arms read), his body
   (belt down, CPU-tinted, `jumpLift: false`) stands a step behind the eye
   for looking down, and a faint visor frame (`#fp-visor`) shows with the
-  helmet on. Without the flag the shipped gun-only view model is unchanged —
-  the owner removed hands before, so this stays opt-in until approved,
-  240P, COMPARE with the reference). The Poki build
+  helmet on. THE HANDS ARE ON EVERY BUILD, web and Poki (owner's call
+  2026-10-28): `Game` calls `useOperativeArms()` at startup; each gun's
+  hands + forearms are BAKED by `bakeFirstPerson` (operative.ts) into one
+  mesh (`fp-arms`, scuff shader kept; two on the shotgun, whose left hand
+  rides the pump), so a gun in hand stays ≤ 12 draws, and `setSkin`
+  re-mounts them on every rebuilt model (skins, the secret prototype — both
+  were skipped while the hands were preview-only). The body under you and
+  the visor frame stay behind `?play=operative`, 240P, COMPARE with the
+  reference). Tracers and rockets leave from the world point where the
+  muzzle flash is DRAWN (`fire`: the flash's view-model position rescaled
+  from the overlay's fixed 75° to the world camera's FOV) — a fixed offset
+  tuned for the gun-only height left them ~50 px under the flash once the
+  gun was raised for the hands. The Poki build
   tree-shakes the viewer, and `pokiPlugin.generateBundle` drops reference
   art that Vite would otherwise still emit.
 - `src/weapons/weapons.ts` — defs, hold-to-fire with a 0.25s click buffer,
@@ -739,9 +753,11 @@ Both rigs are BAKED (`RigKit.bake`: one draw per pivot + its glows, 9
   swell). The Wire Leech uses the same `HitBoxes` for its coil.
 Rosters (`applyBioRoster`, `bioBand`): sector 4 — a Vatborn per two
 husks' worth of close-range slots, Spitters for ~60% of the sentinels;
-sector 5 — a Carapace per 2.2 husks' worth of everything (~28 per sector:
-fewer bodies, armoured fronts — review if it plays too hard; e2e checks
-sector 5 fields more enemy health than 4). Endless
+sector 5 — a Carapace per three husks' worth of everything (~21 per
+sector; 2.2 / ~28 for one test build, when all 12 players who failed sector
+5 in the 0.3.7 Player Fit Test died to a Carapace). Its step up from sector
+4 is the Broodkeeper and the extra tanks: e2e keeps its other enemies at
+80–115% of sector 4's raw health (raw hp undercounts the armoured fronts). Endless
 Biofoundry depths alternate, boss depths are sector 5; `BIO_RESPONSE` is the
 keycard alarm. `bio-monsters.mjs` tests it.
 
@@ -802,6 +818,41 @@ only its own pair.
   (`LevelData.starterCrate`, no RNG) that always drops shells + a medkit,
   and the first-run tips add "Crates and barrels break — shoot them".
 
+## Build 2: Facility sector looks (2026-10-28)
+
+Each Facility sector has its own look, its rooms a purpose, built to Codex's
+reference `reference/facility-props-v1/` (three sheets + PROPS.md: 24 props,
+each with an envelope, box recipe, colours and glow; placement and signal
+rules — no red / green / amber glow, cyan only on screens / LEDs, glass as
+opaque ice-blue, nothing that looks like the breakable crate or barrel):
+1 Facility Entry — office (desk + notice board, file cabinet, intercom),
+storage (stores shelves), server (racks with cyan LED bars, cooling grilles),
+white task lights, cool ceiling light (`Block.LampCool` 57); 2 Security
+Floor — checkpoint (a GUARD BOOTH centrepiece, camera console, stowed
+barrier, inspection counter), lockers (locker banks, equipment cabinets),
+inspection, wall cameras, blue-white lights (`Block.LampIce` 58);
+3 Reactor Access — generator (a TRANSFORMER centrepiece with orange heat
+slots, pipe runs, steam vents), control (control panel, heat exchanger,
+valve), service, cable trunks, orange worklights (`Block.LampOrange` 59, a
+muted orange so grey wall still shows). `src/world/facility-rooms.ts`
+`dressFacilityRooms`: `PROPS` (the recipes as data: cells along the wall,
+depth, collision height, wall `mount`, parts in prop space) and `ROOMS`
+(each purpose's centrepiece / floor props / wall fixtures / light); a room
+gets one purpose by position hash (the spawn the look's first), a
+centrepiece on its longest wall that fits (rooms ≥ 8 wide; ~2.6 booths per
+sector 2, ~1.3 transformers per sector 3), floor props along every wall,
+then wall fixtures above what stands there. Rules (PROPS.md): solid wall
+behind, ≤ 1 cell deep (the centrepieces 2), two cells clear of doorways /
+pickups / enemies / the spawn / the cracked secret wall, two walkable cells
+in front; the Power Link's room is skipped (its cage is the feature).
+Instanced boxes in `LevelData.architecture` (two draws per sector, drawn by
+sector-landmarks.ts, which also carries the Power Link) over invisible
+`PowerBarrier` collision; `LevelData.roomPurposes` records each room's.
+Runs after every pickup / enemy / the Power Link and the starter crate, hash
+only — layouts are identical with and without it (checked over 90 layouts,
+sectors 1–3). Each look's ceiling lamps are re-tinted after the layout RNG
+draws them (key-room red and the exit's warm keep their meaning).
+
 ## Conventions & gotchas
 
 - Game state (grids, positions, AI) is plain data; Three.js objects only mirror
@@ -861,7 +912,10 @@ only its own pair.
   and the touch Resume — since it only works inside a tap: asking only on
   a new run left returning players (who tap Continue) and anyone who swiped
   out mid-run without it. When held in portrait, the
-  whole body gets `.force-landscape` (CSS rotate 90°); Renderer.resize reads
+  whole body gets `.force-landscape` (CSS rotate 90°, sized `100dvh × 100dvw` —
+  the VISIBLE viewport; plain `100vh` is the height with the browser bars
+  hidden, and on real phones the rotated title ran on under the toolbar and
+  cut off New run); Renderer.resize reads
   BODY client dims (not window) and TouchControls.mapXY converts raw touch
   coords into the rotated game space — keep those three in sync. The
   joystick is invisible until touched (appears under the thumb, hides on

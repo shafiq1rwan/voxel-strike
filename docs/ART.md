@@ -166,11 +166,13 @@ there and both update.
   charge). New guns should get an action too.
 - **Muzzle flash:** an uneven starburst (warm for bullets, cool blue for the
   arc caster), plus a dynamic light so the walls flash.
-- **No hands.** The gun floats alone, Doom-style. Hands were built and
-  reviewed in several forms — gloved and bare, one- and two-handed, with
-  forearms (an olive sleeve across the frame read as a "green stick"), a
-  Doom-style angled-in pose, a hand wrapping the grip — and the owner chose
-  to drop them entirely. Don't reintroduce them without asking.
+- **The operative's hands, on every build** (owner's call, 2026-10-28,
+  after seeing them in the `?play=operative` preview): his charcoal gloves
+  and light-steel forearm guards on every gun, the left hand riding the
+  shotgun's pump. Before that the gun floated alone, Doom-style: earlier
+  hands (gloved and bare, one- and two-handed, an olive sleeve that read as
+  a "green stick", a Doom-style angled-in pose) were all dropped. The body
+  under you and the helmet visor stay preview-only.
 
 ## HUD and menus
 

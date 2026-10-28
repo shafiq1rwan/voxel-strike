@@ -77,10 +77,16 @@ export function applyFacilityRoster(enemies: EnemySpec[], band: FacilityBand): E
     const slots = [...melee].sort((a, b) => meleeUnits(b.kind, band) - meleeUnits(a.kind, band));
     const units = melee.reduce((s, e) => s + meleeUnits(e.kind, band), 0);
     if (band === 2) {
-      // Security: a Clamp Guard (85 hp) for every two husks' worth; sentinels stay
-      const guards = units > 0 ? Math.max(1, Math.round(units / 2)) : 0;
-      for (let i = 0; i < guards && i < slots.length; i++) out.push(at(slots[i], 'clampGuard'));
-      for (const e of ranged) out.push(e);
+      // Security: a Clamp Guard (85 hp) for every two husks' worth. Only about
+      // half the Sentinel slots stay Sentinels (0.3.7 Player Fit Test: 70 of
+      // 171 players in sector 2 died to one; ~18 per sector outnumbered the
+      // Guards); every two dropped (40 hp each) come back as one more Guard.
+      const keep = ranged.length ? Math.max(1, Math.round(ranged.length * 0.5)) : 0;
+      const dropped = ranged.slice(keep);
+      const guards = (units > 0 ? Math.max(1, Math.round(units / 2)) : 0) + Math.round(dropped.length * 40 / 85);
+      const spots = [...slots, ...dropped];
+      for (let i = 0; i < guards && i < spots.length; i++) out.push(at(spots[i], 'clampGuard'));
+      for (const e of ranged.slice(0, keep)) out.push(e);
       continue;
     }
     // Reactor: a Brute for every three husks' worth, Wire Leeches for the rest
@@ -119,8 +125,10 @@ export const BIO_RESPONSE: Record<BioBand, { kinds: EnemyKind[]; count: number }
  * Re-cast a Biofoundry sector's generic placements, room by room, in order
  * (no RNG). Sector 4: a Vatborn (95 hp) per two husks' worth of close-range
  * slots, Spitters for ~60% of the sentinels. Sector 5: one Carapace (120 hp,
- * armoured front) per 2.2 husks' worth of everything (sector 5 must field
- * more enemy health than sector 4). Every occupied room
+ * armoured front) per three husks' worth of everything (it was 2.2 for one
+ * test build: all 12 players who failed sector 5 in the 0.3.7 Player Fit
+ * Test died to a Carapace; the boss and the extra tanks keep sector 5 a step
+ * up from 4). Every occupied room
  * keeps at least one.
  */
 export function applyBioRoster(enemies: EnemySpec[], band: BioBand): EnemySpec[] {
@@ -148,7 +156,7 @@ export function applyBioRoster(enemies: EnemySpec[], band: BioBand): EnemySpec[]
       continue;
     }
     const total = generic.reduce((s, e) => s + units(e.kind), 0);
-    const cara = total > 0 ? Math.max(1, Math.round(total / 2.2)) : 0;
+    const cara = total > 0 ? Math.max(1, Math.round(total / 3)) : 0;
     for (let i = 0; i < cara && i < heavyFirst.length; i++) out.push(at(heavyFirst[i], 'carapace'));
   }
   return out;

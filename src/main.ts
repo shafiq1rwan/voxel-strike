@@ -15,8 +15,12 @@ if (POKI) {
     new Game(app);
     poki.loadingFinished();
     // which upload this page load is: Poki's event tables add every build
-    // together, so without it later events can't be told from older ones
-    poki.measure('build', __APP_VERSION__, 'load');
+    // together, so without it later events can't be told from older ones.
+    // The SDK drops an event with more than two runs of digits across its
+    // three values ("build 0.3.7 load" has three — 0.3.7 never arrived), so
+    // the version goes as ONE: v + major + two-digit minor + two-digit patch
+    // (0.3.7 → v00307, 1.12.4 → v11204).
+    poki.measure('build', buildTag(__APP_VERSION__), 'load');
   });
 } else {
   // ?sector6 opens the geothermal preview, ?sector4 the Biofoundry, ?operative the main-character
@@ -47,4 +51,10 @@ if ('serviceWorker' in navigator && import.meta.env.PROD && !POKI) {
       // not fatal — the game just won't work offline
     });
   });
+}
+
+/** a version as one run of digits for Poki's measure(): 0.3.7 → v00307 */
+export function buildTag(version: string): string {
+  const [major = '0', minor = '0', patch = '0'] = version.split('.');
+  return `v${major}${minor.padStart(2, '0')}${patch.padStart(2, '0')}`;
 }

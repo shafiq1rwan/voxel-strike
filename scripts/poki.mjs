@@ -128,8 +128,10 @@ try {
   check(c.includes('commercialBreak'), 'commercialBreak before the run');
   check(c.indexOf('commercialBreak') < c.indexOf('gameplayStart'), 'ad comes before gameplayStart');
   const builds = c.filter((x) => x.startsWith('measure build'));
-  check(builds.length === 1 && /^measure build \d+\.\d+\.\d+ load$/.test(builds[0]) && c.indexOf(builds[0]) > c.indexOf('gameLoadingFinished'),
-    `every load sends its version once, after gameLoadingFinished (${builds.join(', ')})`);
+  // one run of digits (v00307 = 0.3.7): the real SDK drops an event with more
+  // than two across its three values, and "build 0.3.7 load" had three
+  check(builds.length === 1 && /^measure build v\d{5,} load$/.test(builds[0]) && c.indexOf(builds[0]) > c.indexOf('gameLoadingFinished'),
+    `every load sends its version once, as one number, after gameLoadingFinished (${builds.join(', ')})`);
   check(prog(c).join() === 'measure level 1 fresh-start,measure level 1 start',
     'starting a run sends level 1 fresh-start + level 1 start (Poki\'s Started column needs start)');
 
@@ -388,7 +390,13 @@ try {
   check(muted === 0 && won.gain !== 0, `audio is muted during the video and back after (${muted} → ${won.gain})`);
   check(won.owned && won.worn === 'arc.voidSignal' && /EQUIPPED/.test(won.status), `a watched video unlocks and equips the skin (${won.worn})`);
   await page.evaluate(() => localStorage.removeItem('voxelstrike-skins'));
-  console.log('  calls:', (await calls(page)).join(' | '));
+  const all = await calls(page);
+  console.log('  calls:', all.join(' | '));
+  // the real SDK's rule (poki-sdk.js): more than two runs of digits across
+  // category, what and action and the event is dropped
+  const pokiRule = (line) => (line.replace(/^measure /, '').match(/\d+/g) ?? []).length <= 2;
+  const broken = all.filter((x) => x.startsWith('measure ') && !pokiRule(x));
+  check(broken.length === 0, `no event has more than two runs of digits (Poki's SDK drops those): ${broken.join(', ') || 'none'}`);
   await page.close();
 
   // ---- SDK blocked (ad blocker) ------------------------------------------

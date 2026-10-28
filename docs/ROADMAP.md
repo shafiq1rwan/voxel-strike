@@ -15,6 +15,11 @@ Conversion is fine. Playtime and the category click-through are the two gaps,
 so everything below is ordered by how much it lengthens a run or sells the
 tile. Re-submit when the playtime items are in.
 
+Second Web Fit Test, 0.3.4 (result 2026-10-28): conversion 74.2%, playtime
+5:52, CTR 1.11% — failed. Playtime rose 4:08 → 5:52 but is still ~35 s
+short of ~6:27; CTR is unchanged (the tile, not the game). Builds since 0.3.4
+(scrap + upgrades, Build 1, the sector monsters) have not been Web-tested.
+
 ### Player Fit Tests since
 
 | Date | Average playtime | Notes |
@@ -23,6 +28,8 @@ tile. Re-submit when the playtime items are in.
 | 2026-10-19 | 5:00 | after the five-sector campaign, endless, perks, skins |
 | 2026-10-19 | 4:42 | after the simpler title + Broodkeeper retune |
 | 2026-10-23 | ~2:00 | 0.3.5: SURVIVAL as PLAY (132 players, same audience) — reverted in 0.3.6: PLAY = the campaign again, Survival a quiet button |
+| (0.3.6 ×2) | 4:14 / 3:59 | 500 gameplays each |
+| 2026-10-28 | 5:28 | 0.3.7 (500 gameplays; sector monsters, Build 1, scrap drops): sector 1 478 start → 211 clear, 85 quit mid-sector without dying; 40 cleared sector 1 but never started 2; sector 2 171 → 65 clear, **70 died to the Arc Sentinel**; sector 3 61 → 47; sector 4 39 → 19; sector 5 15 → 12 failed, **all to the Carapace**. Playtime reached: 1 min 83%, 3 min 50%, 5 min 37%, 10 min 16% |
 
 Level events in the 4:42 test (all actions added together, so not player
 counts): level 1 → 1,185, level 2 → 548, level 3 → 142, level 4 → 59,
@@ -62,7 +69,7 @@ cheapest high-impact first; reorder once the full tester list is in.
    (small supply inside) by the spawn and a first-run tip "Crates and
    barrels break — shoot them".
 
-**Build 2 — sectors 1–3 feel different**
+**Build 2 — sectors 1–3 feel different** (items 8–9 built 2026-10-28 from Codex's reference/facility-props-v1: Entry offices / stores / server rooms, Security checkpoints with guard booths / lockers, Reactor generator rooms with transformers / control bays; each look's light. Item 10, breakables part 2, is still open)
 8. A look per sector: Entry (offices, cool light), Security (checkpoints,
    glass booths, blue-white light), Reactor (pipes, steam, orange glow).
 9. Room types with props: office, storage, server room, generator room

@@ -3,6 +3,7 @@ import { generateSectorLayout, type SectorArchitecture } from './sector-layouts'
 import { dressEnvironment, isNewTheme, ENVIRONMENTS } from './environments';
 import { Block } from './blocks';
 import { RNG } from '../core/rng';
+import { dressFacilityRooms, type FacilityLook, type RoomPurpose } from './facility-rooms';
 import { applyFacilityRoster, facilityBand, FACILITY_RESPONSE, FACILITY_ROSTERS, applyBioRoster, bioBand, BIO_RESPONSE, applyGeoRoster, geoBand, GEO_RESPONSE } from './rosters';
 import { ExitSignSpec, LedgeRailSpec,
   DoorSpec, ElevatorSpec, EnemySpec, PickupSpec, Rect, RoomDef,
@@ -94,6 +95,8 @@ export interface LevelData {
   responseCount?: number;
   /** sector 1: a free-standing crate by the spawn that always holds a supply (teaches "crates break") */
   starterCrate?: { x: number; y: number; z: number } | null;
+  /** Build 2: what each dressed Facility room is (office / storage / server) */
+  roomPurposes?: Array<{ roomId: number; purpose: RoomPurpose }>;
   elevator: ElevatorSpec | null;
   /** center of the 2×2 exit pad on the ledge (y = its top surface) */
   exitPad: { x: number; y: number; z: number } | null;
@@ -166,6 +169,8 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   const rng = new RNG(seed);
   const isBio = theme === 'biofoundry';
   const isGeo = theme === 'geothermal';
+  // Build 2: a Facility sector's look (1 Entry, 2 Security, 3 Reactor; endless by depth)
+  const look: FacilityLook | null = theme === 'facility' ? (['entry', 'security', 'reactor'] as const)[facilityBand(difficulty) - 1] : null;
   const world = new VoxelWorld(WORLD_X, WORLD_Y, WORLD_Z);
   const pickups: PickupSpec[] = [];
   const enemies: EnemySpec[] = [];
@@ -721,6 +726,15 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     else if (r.kind === 'key') lamp = Block.LampRed;
     else if (r.kind === 'arena') lamp = rng.chance(0.5) ? Block.LampTeal : Block.LampRed;
     else lamp = rng.chance(0.28) ? Block.LampTeal : rng.chance(0.14) ? Block.LampRed : Block.LampWarm;
+    // Build 2: each Facility look has its light — Entry cool office white (for
+    // the warm lamps), Security blue-white (all but the teal), Reactor orange;
+    // the key room's red and the exit's warm keep their meaning. (The layout
+    // RNG above is drawn exactly as before.)
+    if (look && r.kind !== 'exit' && r.kind !== 'key') {
+      if (look === 'entry' && lamp === Block.LampWarm) lamp = Block.LampCool;
+      else if (look === 'security' && lamp !== Block.LampTeal) lamp = Block.LampIce;
+      else if (look === 'reactor') lamp = Block.LampOrange;
+    }
     if (r.kind === 'exit' && elevator && exitPad) {
       const fx = elevator.walkAxis === 'x' ? Math.sign(exitPad.x - elevator.x - 1) : 0;
       const fz = elevator.walkAxis === 'z' ? Math.sign(exitPad.z - elevator.z - 1) : 0;
@@ -1048,6 +1062,19 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     enemies.push(...cast);
   }
   const response = band ? FACILITY_RESPONSE[band] : bBand ? BIO_RESPONSE[bBand] : gBand ? GEO_RESPONSE[gBand] : null;
+  // Sector 2's Sentinel wall (0.3.7 Player Fit Test: 70 of the 171 players
+  // who reached sector 2 died to an Arc Sentinel). With the generic Facility
+  // mix, every other Sentinel in a room becomes a Husk (40 hp for 45: the same
+  // pressure); a room keeps its first. No RNG.
+  if (theme === 'facility' && !band && difficulty === 2) {
+    const seen = new Map<number, number>();
+    for (const e of enemies) {
+      if (e.kind !== 'sentinel') continue;
+      const n = (seen.get(e.roomId) ?? 0) + 1;
+      seen.set(e.roomId, n);
+      if (n % 2 === 0) e.kind = 'husk';
+    }
+  }
 
   // -- powerup: at most one per sector, stashed in a far room ----------------
   if (rng.chance(0.65)) {
@@ -1146,6 +1173,22 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     }
   }
 
+  // -- Build 2: rooms with a purpose (Facility sectors 1–3) ------------------
+  // Each look's rooms (facility-rooms.ts, after reference/facility-props-v1)
+  // dressed against their walls, after everything else and by position hash
+  // only: a seed keeps its layout. The Power Link's room keeps its cage alone.
+  let architecture: SectorArchitecture | undefined;
+  let roomPurposes: Array<{ roomId: number; purpose: RoomPurpose }> | undefined;
+  if (look) {
+    const avoid = [...pickups, ...enemies, { x: spawnRoom.cx + 0.5, z: spawnRoom.cz + 0.5 },
+      ...crackCells.map(([x, , z]) => ({ x, z })), ...(starterCrate ? [starterCrate] : [])];
+    const node = powerLink?.node;
+    const linkRoom = (r: RoomDef): boolean => !!node && node.x >= r.x - 1 && node.x <= r.x + r.w && node.z >= r.z - 1 && node.z <= r.z + r.d;
+    const dressed = dressFacilityRooms(world, rooms, look, dhash, avoid, linkRoom);
+    architecture = { boxes: dressed.boxes, signs: [], stairs: [], beds: 0, version: 2 };
+    roomPurposes = dressed.purposes;
+  }
+
   // -- bake lights & finish -------------------------------------------------
   world.bakeLighting(isNewTheme(theme) ? ENVIRONMENTS[theme].ambient : isBio ? BIO_AMBIENT : isGeo ? GEO_AMBIENT : undefined, lightOverrides);
 
@@ -1173,6 +1216,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     boss,
     ...(response ? { responseKinds: response.kinds, responseCount: response.count } : {}),
     starterCrate,
+    ...(architecture ? { architecture, roomPurposes } : {}),
   };
 }
 

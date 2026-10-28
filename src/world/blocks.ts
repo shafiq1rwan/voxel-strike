@@ -64,9 +64,14 @@ export const enum Block {
   FreightCargoRed = 54, // rust-red corrugated container side
   FreightGrate = 55, // dark floor grating (the loading track)
   FreightHazardFloor = 56, // hazard-striped floor edge (Trim on every face)
+  // Build 2: Facility Entry's cool office light (drawn with the white troffer tile)
+  LampCool = 57,
+  // Build 2: Security Floor's blue-white and Reactor Access's orange ceiling light
+  LampIce = 58,
+  LampOrange = 59,
 }
 
-export const BLOCK_COUNT = 57;
+export const BLOCK_COUNT = 60;
 
 /** Which lamp blocks emit light, and their color (0-255 per channel). */
 export const LAMP_COLORS: Partial<Record<Block, [number, number, number]>> = {
@@ -82,6 +87,11 @@ export const LAMP_COLORS: Partial<Record<Block, [number, number, number]>> = {
   [Block.LampGreen]: [90, 255, 120],
   [Block.ExitPad]: [60, 200, 90],
   [Block.LampViolet]: [205, 90, 255],
+  [Block.LampCool]: [190, 218, 255],
+  [Block.LampIce]: [150, 196, 255],
+  // a muted orange: the props' heat slots carry the saturated colour, the
+  // room keeps enough grey wall to stay Facility (PROPS.md)
+  [Block.LampOrange]: [236, 168, 120],
   // the glass faces are lit by their own flood, so this sets the liquid's
   // brightness as much as the room's green tint — keep it mild
   [Block.TankGlass]: [125, 190, 85],
@@ -191,6 +201,9 @@ export function tileFor(block: Block, dir: number): Tile {
     case Block.MedicalCabinet: return Tile.MedicalCabinet;
     case Block.MedicalCeil: return Tile.MedicalCeil;
     case Block.MedicalLamp: return Tile.MedicalLamp;
+    case Block.LampCool: return Tile.MedicalLamp;
+    case Block.LampIce: return Tile.MedicalLamp;
+    case Block.LampOrange: return Tile.LampWarm;
     case Block.MedicalWallLower: return Tile.MedicalWallLower;
 
     case Block.ServiceLampWarm: return Tile.ServiceLampWarm;

@@ -815,8 +815,14 @@ body.force-landscape {
   position: fixed;
   top: 0;
   left: 0;
+  /* the VISIBLE viewport (dvh / dvw): 100vh is the height with the browser's
+     bars hidden, so on a real phone the rotated page ran on under the toolbar
+     and the right of every screen (the title's New run) was cut off.
+     vh / vw stay as the fallback for browsers without dynamic units. */
   width: 100vh;
+  width: 100dvh;
   height: 100vw;
+  height: 100dvw;
   transform: rotate(90deg) translate(0, -100%);
   transform-origin: top left;
   overflow: hidden;

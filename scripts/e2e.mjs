@@ -457,8 +457,12 @@ try {
   check(harder.theme5, 'sector 5 is always the Biofoundry theme');
   check(harder.sum[5].occupied > harder.sum[4].occupied,
     `sector 5 fills more tanks (${harder.sum[5].occupied} vs ${harder.sum[4].occupied} over 4 seeds)`);
-  check(harder.sum[5].enemies > harder.sum[4].enemies,
-    `sector 5 fields more enemy health (${harder.sum[5].enemies} vs ${harder.sum[4].enemies} hp over 4 seeds)`);
+  // sector 5's step up is the Broodkeeper and the extra tanks; its own
+  // Carapaces stay close to sector 4's pressure (one per 3 units, after the
+  // 0.3.7 Player Fit Test: every sector-5 failure was a Carapace death). Raw
+  // hp undercounts them — a closed front takes a quarter — hence 80% at the low end.
+  check(harder.sum[5].enemies > harder.sum[4].enemies * 0.8 && harder.sum[5].enemies < harder.sum[4].enemies * 1.15,
+    `sector 5's enemies (boss aside) carry 80–115% of sector 4's health (${harder.sum[5].enemies} vs ${harder.sum[4].enemies} hp over 4 seeds)`);
 } finally {
   await browser.close();
 }

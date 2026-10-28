@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { WeaponId } from '../types';
 
 /**
@@ -122,6 +123,54 @@ function fpPart(
   mesh.userData.baseColor = raw(hex);
   mesh.userData.glow = false;
   g.add(mesh);
+}
+
+/**
+ * Bake first-person hands / forearms: every part under `groups` merges into
+ * ONE mesh under `parent` (same pose, parent space), colour moved into vertex
+ * colours (part colour × face shade), one white scuffed material — so the view
+ * model's light tick still tints it through `material.color`. A jointed glove
+ * is dozens of parts; unbaked, two hands cost more draws than the gun.
+ */
+export function bakeFirstPerson(parent: THREE.Object3D, groups: THREE.Object3D[]): THREE.Mesh | null {
+  parent.updateMatrixWorld(true);
+  const toParent = new THREE.Matrix4().copy(parent.matrixWorld).invert();
+  const rel = new THREE.Matrix4();
+  const geos: THREE.BufferGeometry[] = [];
+  const parts: THREE.Mesh[] = [];
+  for (const g of groups) {
+    g.updateMatrixWorld(true);
+    g.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || !o.visible) return;
+      parts.push(o);
+      const src = o.geometry as THREE.BufferGeometry;
+      const geo = src.index ? src.toNonIndexed() : src.clone();
+      geo.deleteAttribute('normal');
+      geo.deleteAttribute('uv');
+      const base = (o.userData.baseColor as THREE.Color | undefined) ?? new THREE.Color(1, 1, 1);
+      const shade = geo.getAttribute('color') as THREE.BufferAttribute | undefined;
+      const n = geo.attributes.position.count, col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const s = shade ? shade.getX(i) : 1;
+        col[i * 3] = base.r * s; col[i * 3 + 1] = base.g * s; col[i * 3 + 2] = base.b * s;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.applyMatrix4(rel.multiplyMatrices(toParent, o.matrixWorld));
+      geos.push(geo);
+    });
+  }
+  for (const g of groups) g.removeFromParent();
+  for (const p of parts) { p.geometry.dispose(); (p.material as THREE.Material).dispose(); }
+  if (!geos.length) return null;
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, fog: false });
+  addScuffs(mat);
+  const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
+  for (const g of geos) g.dispose();
+  mesh.name = 'fp-arms';
+  mesh.userData.baseColor = new THREE.Color(1, 1, 1);
+  mesh.userData.glow = false;
+  parent.add(mesh);
+  return mesh;
 }
 
 /**

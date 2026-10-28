@@ -106,7 +106,7 @@ ads, playtime) Poki already tracks on its own. None of the values may contain
 | `endless` | `8` – `20` | `fail` | The player dies at that endless depth (same cap) |
 | `death` | `1` – `20` (sector / depth, capped) | what landed the killing hit: `husk`, `sentinel`, `ticker`, `brute`, `vatborn`, `broodkeeper`, `cinderHulk`, `ventStalker`, `kilnDrone`, `barrel`, `rocket` (their own), `explosion`, `unknown` | Sent with every `fail` (solo). In the dashboard: death → 2 → ticker / brute / … — a difficulty spike shows up as one killer |
 | `upgrade` | `suit` `plates` `medic` `belt` `hands` `headstart` `scanner` | `tier1` – `tier3` | A scrap upgrade is bought (docs/RETENTION_PLAN.md). Shows which upgrades players want and how far they save up; tune the costs from it |
-| `build` | the version, e.g. `0.3.7` | `load` | Once per page load, right after `gameLoadingFinished`. Poki's tables add every uploaded build together, so events that only newer builds send (playtime, death, start) can't otherwise be told from an older build's. Compare `build <version> load` with that build's other counts |
+| `build` | the version as one number: `v` + major + two-digit minor + two-digit patch, e.g. `v00308` = 0.3.8 | `load` | Once per page load, right after `gameLoadingFinished`. Poki's tables add every uploaded build together, so events that only newer builds send (playtime, death, start) can't otherwise be told from an older build's. Compare `build v<version> load` with that build's other counts. 0.3.7 sent `0.3.7` and Poki's SDK dropped it: **an event may hold at most two runs of digits across category, what and action** (`poki.mjs` checks every event) |
 | `playtime` | `1` `2` `3` `4` `5` `6` `7` `8` `10` `12` `15` `20` `30` | `reached` | That many minutes of real play this page load (state `playing` only: menus, ads, death and clear screens don't count). Once per mark per load. Shows when sessions end — e.g. whether sector 1 quitters leave in the first minute or after three |
 
 Since sectors 6–7 (the Geothermal Core) joined the campaign, builds before
@@ -118,8 +118,9 @@ export did): the level fresh-start / complete / fail events go back to the
 first build, but playtime, death and level start only exist from 0.3.5. With
 ~80,000 fresh starts from the tested build and a few hundred playtime marks
 from later ones, "669 reached minute 1" is a different, smaller group, not a
-broken event. From 0.3.7 every load sends `build <version> load`, so a
-build's share can be read straight off the table.
+broken event. From 0.3.8 every load sends `build v<version> load` (0.3.7
+tried with dots and the SDK rejected it), so a build's share can be read
+straight off the table.
 
 **`start` is what fills Poki's Started / Completed / Failed / Left columns**
 (Completed and Failed are shares of `start`; Left = started, then neither
