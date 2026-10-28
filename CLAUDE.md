@@ -443,7 +443,23 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   maintains/restores it), plus a jolt tilt + scale pop on the mesh, a
   'fleshHit' thwack, micro-stagger, and knockback (brutes ×0.25) — routing it
   through the light tick alone makes hits feel like nothing.
-- `src/fx/` — pooled particles (one InstancedMesh), tracers, dynamic light pool.
+- `src/fx/` — pooled particles (one InstancedMesh), tracers, dynamic light pool,
+  bullet marks (`decals.ts`: one InstancedMesh, 96 marks round-robin, 8×8
+  pockmark cut out by alphaTest, placed by `hitscan` on the wall face it
+  hits, 9 s then shrink, gone with their block; never on PowerBarrier / tank
+  glass, which the mesher doesn't draw. The material WRITES depth — without
+  it the wall chunks drawn after painted over every mark).
+- JUICE (0.3.11 test build): HIT-STOP — `Game.kickHitStop` from
+  `onEnemyKilled` (solo only): `frame()` runs `update()` at 8% speed for
+  35 ms (headshot 60, two+ kills in one frame 70, the boss 160), at most one
+  per 0.3 s; look and the camera stay live. ROOM CLEAR — `checkRoomClear`:
+  a room's last placed enemy dies (dormant tank occupants don't count;
+  `Enemy.roomId`) → `hud.roomClear()` (a steel stamp under the objective,
+  never exit green, and the objective pulses) + the `roomClear` chime, once
+  per room per sector. NEXT UPGRADE — `UpgradeBook.nextGoal()` (cheapest
+  next tier) on the death and sector-clear screens: name, bar, have / cost,
+  UPGRADE READY + a pulsing yellow Upgrades button once affordable.
+  `features.mjs` #26.
 - `src/entities/operative.ts` — the main character, the Facility Operative:
   `buildOperative()` returns a jointed 65-box rig (hands are jointed: three-bone fingers + opposable thumb, buildHandRig; waist/neck/shoulders/
   elbows/hips/knees, right-hand weapon socket, `animate(t, walk)`, `jump(t)`,

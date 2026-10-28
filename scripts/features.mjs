@@ -1973,6 +1973,71 @@ try {
     });
     check(map.theme === theme && map.link && map.supplies === 0 && map.secret, `${theme}: Power Link opens and secret wall breaks`);
   }
+
+  // --- 26. juice: bullet marks, hit-stop, ROOM CLEAR, the next upgrade -------
+  {
+    const jp = await browser.newPage();
+    jp.on('pageerror', (err) => errors.push(`[juice pageerror] ${err.message}`));
+    await jp.setViewport({ width: 1280, height: 720 });
+    await jp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await jp.evaluate(() => { localStorage.removeItem('voxelstrike-upgrades'); localStorage.setItem('voxelstrike-tutorial-done', '1'); });
+    await jp.reload({ waitUntil: 'networkidle0' });
+    await jp.waitForSelector('#start-btn');
+    await jp.evaluate(() => document.querySelector('#start-btn').click());
+    await new Promise((r) => setTimeout(r, 1500));
+    const j = await jp.evaluate(async () => {
+      const g = window.__voxelstrike;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (const e of g.enemies.list) e.awake = false;
+      g.camera.updateMatrixWorld();
+      const m = g.camera.matrixWorld.elements, o = g.camera.position;
+      const d = { x: -m[8], y: -m[9], z: -m[10] };
+      const hit = g.world.raycast(o.x, o.y, o.z, d.x, d.y, d.z, 60);
+      const before = g.decals.live();
+      g.weapons.hitscan({ x: o.x, y: o.y, z: o.z }, d, 1, g, { x: o.x, y: o.y - 0.2, z: o.z });
+      const marked = g.decals.live() - before;
+      // a mark goes with its block
+      g.world.set(hit.x, hit.y, hit.z, 0);
+      await wait(400);
+      const gone = g.decals.live() === before;
+      // hit-stop: one kill 35 ms, two in one frame 70 ms; ROOM CLEAR on a room's last enemy
+      const rooms = [...new Set(g.enemies.list.filter((e) => e.alive && e.roomId !== null).map((e) => e.roomId))];
+      const byRoom = (id) => g.enemies.list.filter((e) => e.alive && e.roomId === id);
+      const multi = rooms.find((id) => byRoom(id).length >= 2) ?? rooms[0];
+      const single = rooms.find((id) => id !== multi) ?? null;
+      await wait(400);
+      const first = byRoom(multi)[0];
+      g.applyEnemyHit(first, 99999, 0, 0, false);
+      const one = { stop: g.lastHitStop, clears: g.roomClears, stamp: !!document.querySelector('.room-clear') };
+      await wait(400);
+      for (const e of byRoom(multi)) g.applyEnemyHit(e, 99999, 0, 0, false);
+      const two = { stop: g.lastHitStop, clears: g.roomClears, stamp: !!document.querySelector('.room-clear') };
+      let again = g.roomClears;
+      if (single !== null) { await wait(400); for (const e of byRoom(single)) g.applyEnemyHit(e, 99999, 0, 0, false); again = g.roomClears; }
+      // the death screen names the next upgrade, and lights Upgrades once it's affordable
+      g.upgrades.scrap = 34;
+      g.player.damage(9999, g, { x: g.player.pos.x + 1, z: g.player.pos.z, by: 'husk' });
+      await wait(1500);
+      const goal = document.querySelector('.upg-goal')?.textContent.replace(/\s+/g, ' ').trim() ?? '';
+      const lit = document.querySelector('#upgrades-btn')?.classList.contains('upg-ready') ?? null;
+      g.upgrades.scrap = 60;
+      g.hud.hideScreen(); g.showDeathScreen();
+      await wait(300);
+      const ready = document.querySelector('.upg-goal')?.textContent.replace(/\s+/g, ' ').trim() ?? '';
+      const lit2 = document.querySelector('#upgrades-btn')?.classList.contains('upg-ready') ?? null;
+      // a new level starts with no marks
+      g.hud.hideScreen(); g.buildLevel();
+      return { marked, gone, one, two, again, single, goal, lit, ready, lit2, cleared: g.decals.live() };
+    });
+    check(j.marked === 1 && j.gone, `a shot into a wall leaves a bullet mark, which goes when its block does (marked ${j.marked}, gone ${j.gone})`);
+    check(j.one.stop === 0.035 && j.one.clears === 0 && !j.one.stamp, `one kill: a 35 ms hit-stop, no ROOM CLEAR while the room still holds enemies (${j.one.stop}, ${j.one.clears})`);
+    check(j.two.clears === 1 && j.two.stamp && j.two.stop >= 0.035, `the room's last kill: ROOM CLEAR stamp + hit-stop (${j.two.clears}, ${j.two.stop})`);
+    check(j.single === null || j.again === 2, `each room clears once (${j.again} after a second room)`);
+    check(/NEXT UPGRADE/.test(j.goal) && /34 \/ 50/.test(j.goal) && j.lit === false, `death screen: the next upgrade and the way to it ("${j.goal}")`);
+    check(/UPGRADE READY/.test(j.ready) && j.lit2 === true, `death screen: an affordable upgrade lights Upgrades ("${j.ready}")`);
+    check(j.cleared === 0, 'a new level starts with no bullet marks');
+    await jp.close();
+  }
 } finally {
   await browser.close();
 }

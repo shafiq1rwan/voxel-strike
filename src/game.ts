@@ -19,6 +19,7 @@ import { ProjectilePool } from './entities/projectiles';
 import { Overload, type OverloadReward } from './entities/overload';
 import { Particles } from './fx/particles';
 import { Tracers } from './fx/tracers';
+import { Decals } from './fx/decals';
 import { DynLights } from './fx/dynlights';
 import { WeaponSystem, ORDER as WEAPON_ORDER } from './weapons/weapons';
 import { SkinBook, type SkinDef, type SkinStat } from './core/skins';
@@ -186,6 +187,8 @@ export class Game {
   readonly dynLights = new DynLights();
   readonly particles = new Particles();
   readonly tracers = new Tracers();
+  /** bullet marks on the walls */
+  readonly decals = new Decals();
   /** empty guns in flight (WeaponSystem throws them) */
   readonly thrown = new ThrownGuns();
   readonly projectiles = new ProjectilePool();
@@ -241,6 +244,17 @@ export class Game {
   private solidBoxCache: Box[] = [];
   private solidBoxFrame = -1;
   private frameCounter = 0;
+  /** hit-stop: seconds the world still holds on a kill (solo; frame() scales its dt) */
+  private hitStop = 0;
+  private hitStopFrame = -1;
+  private hitStopKills = 0;
+  private hitStopNext = 0;
+  /** last hit-stop given (tests) */
+  lastHitStop = 0;
+  /** rooms whose last enemy has died this sector (ROOM CLEAR fires once each) */
+  private readonly clearedRooms = new Set<number>();
+  /** ROOM CLEAR stamps shown this sector (tests) */
+  roomClears = 0;
   /** delayed explosions (barrel chains, ticker corpses): fuse seconds + yield */
   private pendingExplosions: Array<{ x: number; y: number; z: number; t: number; dmg: number; radius: number; by: string }> = [];
   /** score + kill-combo chain (window resets on each kill) */
@@ -280,6 +294,7 @@ export class Game {
     const scene = this.rendererSys.scene;
     scene.add(this.particles.mesh);
     scene.add(this.tracers.group);
+    scene.add(this.decals.mesh);
     scene.add(this.thrown.group);
     scene.add(this.projectiles.group);
     // shader primer: one hidden box in each of the sector monsters' material
@@ -534,6 +549,9 @@ export class Game {
   private teardownLevel(): void {
     const scene = this.rendererSys.scene;
     this.thrown.clear();
+    this.decals.clear();
+    this.clearedRooms.clear();
+    this.hitStop = 0;
     if (this.overload) {
       scene.remove(this.overload.group);
       this.overload.dispose();
@@ -1346,6 +1364,7 @@ export class Game {
       keycard: this.keyCheckpoint !== null,
       revive,
       scrap: this.preview ? undefined : { gained: this.attemptScrap, total: this.upgrades.scrap },
+      goal: this.preview ? undefined : this.upgrades.nextGoal(),
       onUpgrades: this.preview ? undefined : () => {
         if (this.state === 'dead') this.openUpgrades(() => this.showDeathScreen());
       },
@@ -2124,6 +2143,8 @@ export class Game {
     this.kills++;
     this.dropScrap(e);
     this.hud.killMarker(e.lastHitHead);
+    this.kickHitStop(e.lastHitHead, e.kind === 'broodkeeper');
+    this.checkRoomClear(e);
     this.skinStat('kills');
     if (e.lastHitHead) this.skinStat('headshots');
     if (this.weapons.bashing) this.skinStat('bashKills');
@@ -2150,6 +2171,40 @@ export class Game {
       const kind: PickupKind = ammo === 'special' ? 'ammoSpecial' : ammo === 'shells' ? 'ammoShells' : ammo === 'cells' ? 'ammoCells' : ammo === 'rockets' ? 'ammoRockets' : 'ammoBullets';
       this.spawnPickup(kind, e.pos.x, this.floorTopAt(e.pos.x, e.pos.y, e.pos.z) + 0.4, e.pos.z);
     }
+  }
+
+  /**
+   * Hit-stop on a kill (solo only — co-op's world never stops): 35 ms, a
+   * headshot 60, two or more kills in one frame (a shotgun blast, an arc
+   * chain) 70, the boss 160. At most one per 0.3 s, so a sprayed room
+   * doesn't stutter.
+   */
+  private kickHitStop(headshot: boolean, boss: boolean): void {
+    if (this.net) return;
+    if (this.hitStopFrame === this.frameCounter) {
+      if (++this.hitStopKills >= 2) this.hitStop = this.lastHitStop = Math.max(this.hitStop, 0.07);
+      return;
+    }
+    if (this.time < this.hitStopNext && !boss) return;
+    this.hitStopFrame = this.frameCounter;
+    this.hitStopKills = 1;
+    this.hitStop = this.lastHitStop = boss ? 0.16 : headshot ? 0.06 : 0.035;
+    this.hitStopNext = this.time + 0.3;
+  }
+
+  /**
+   * ROOM CLEAR: the last enemy placed in a room is down (dormant tank
+   * occupants don't count) — a stamp, a chime and the objective pulses, so
+   * the player knows to move on. Once per room per sector.
+   */
+  private checkRoomClear(e: Enemy): void {
+    const id = e.roomId;
+    if (id === null || this.clearedRooms.has(id) || this.state !== 'playing') return;
+    for (const o of this.enemies.list) if (o !== e && o.alive && !o.dormant && o.roomId === id) return;
+    this.clearedRooms.add(id);
+    this.roomClears++;
+    this.hud.roomClear();
+    this.audio.play('roomClear');
   }
 
   /** the Broodkeeper fell: its acid goes, the red keycard drops where it stood guard */
@@ -2401,6 +2456,7 @@ export class Game {
       const show = (instant: boolean): void => this.hud.showSectorClear({
         ...common,
         scrap: this.preview ? undefined : `+${this.attemptScrap} SCRAP &middot; ${this.upgrades.scrap} to spend`,
+        goal: this.preview || this.net ? undefined : this.upgrades.nextGoal(),
         instant,
         nextSector: this.levelIndex + 1,
         saved: true,
@@ -2647,8 +2703,15 @@ export class Game {
     // co-op never pauses the world — the pause menu just overlays it
     const playing = this.state === 'playing' || this.state === 'dead' ||
       (this.net !== null && this.state === 'paused');
+    // hit-stop: for a few hundredths of a second after a kill the world all
+    // but stops (look and the camera stay live), so a kill lands with weight
+    let simDt = dt;
+    if (this.hitStop > 0) {
+      this.hitStop = Math.max(0, this.hitStop - dt);
+      simDt = dt * 0.08;
+    }
     if (playing) {
-      this.update(dt);
+      this.update(simDt);
     }
 
     this.player.applyToCamera(this.camera, this.time);
@@ -2768,6 +2831,7 @@ export class Game {
     this.thrown.update(dt, this);
     this.particles.update(dt, this.world);
     this.tracers.update(dt);
+    this.decals.update(dt, this.world);
     this.pickups.update(dt, this.time, this);
     this.elevator?.animate(dt, this.time);
     if (this.elevator) this.exitProps?.update(this.elevator);

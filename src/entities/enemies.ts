@@ -997,6 +997,11 @@ export class Enemy {
     return this.state !== 'dead';
   }
 
+  /** the room it was placed in (ROOM CLEAR), or null */
+  get roomId(): number | null {
+    return this.room?.id ?? null;
+  }
+
   /** dormant in a tank or walking out of one: scripted, outside the AI */
   get scripted(): boolean {
     return this.dormant || this.emerge !== null;

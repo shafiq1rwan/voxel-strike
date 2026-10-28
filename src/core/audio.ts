@@ -16,7 +16,7 @@ export type SoundName =
   | 'pickup' | 'pickupKey' | 'pickupWeapon' | 'powerup' | 'secret' | 'scrap'
   | 'doorOpen' | 'doorClose' | 'doorLocked' | 'elevator' | 'teleport'
   | 'step' | 'clank' | 'termKey' | 'termOff' | 'rankStamp'
-  | 'meleeSwing' | 'meleeHit' | 'secretHint'
+  | 'meleeSwing' | 'meleeHit' | 'secretHint' | 'roomClear'
   | 'win';
 
 interface ListenerState {
@@ -305,6 +305,11 @@ export class AudioMan {
         // heavy blunt thud: low knock + a body crunch
         this.tone(out, 'sine', 0.6, 0.002, 0.14, 150, 55);
         this.noise(out, 0.55, 0.002, 0.12, 'lowpass', 1300, 200);
+        break;
+      case 'roomClear':
+        // a room's last enemy down: a short two-note all-clear, under the kill sounds
+        this.tone(out, 'triangle', 0.26, 0.004, 0.12, 784);
+        this.tone(out, 'triangle', 0.3, 0.004, 0.22, 1175, undefined, 0.1);
         break;
       case 'secretHint':
         // faint glassy shimmer from a cracked wall: something is behind it

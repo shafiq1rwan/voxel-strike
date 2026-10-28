@@ -8,6 +8,19 @@ import { typeLines, type TerminalLine, type TerminalRun } from './terminal';
 import type { OfferId } from '../core/perks';
 import { SKINS, WEAPON_LABEL, needText, swatchHtml, STANDARD_SWATCH, type SkinDef } from '../core/skins';
 import { startArmoryPreview } from './armory-preview';
+import type { UpgradeGoal } from '../core/upgrades';
+
+/** "NEXT UPGRADE · Reinforced Suit I · ▮▮▯ 34 / 50" (or UPGRADE READY) */
+function upgradeGoalHtml(g: UpgradeGoal | null | undefined): string {
+  if (!g) return '';
+  const pct = Math.min(100, Math.round((g.have / g.cost) * 100));
+  return `<div class="upg-goal${g.ready ? ' ready' : ''}">
+    <span class="upg-goal-label">${g.ready ? 'UPGRADE READY' : 'NEXT UPGRADE'}</span>
+    <b>${g.name} ${['I', 'II', 'III'][g.tier - 1] ?? ''}</b>
+    <span class="upg-goal-bar"><i style="width:${pct}%"></i></span>
+    <span class="upg-goal-num">${Math.min(g.have, g.cost)} / ${g.cost}</span>
+  </div>`;
+}
 
 const ORDER: WeaponId[] = ['pistol', 'shotgun', 'smg', 'rocket', 'arc', 'special'];
 /** a slot's tiny label: which gun ended up there */
@@ -555,6 +568,21 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 .death-scrap { margin: -4px 0 4px; font-size: 13px; letter-spacing: .14em; color: #ffd028; }
 .sc-scrap { margin-top: 8px; font-size: 12px; letter-spacing: .14em; color: #ffd028; text-align: center; }
 .sc-upg-row { margin-top: 12px; display: flex; justify-content: center; }
+/* the next upgrade to save for, under the scrap line (death + sector clear) */
+.upg-goal {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  margin: 2px 0 8px; font-size: 11px; letter-spacing: .12em; color: #cfd6e4; white-space: nowrap;
+}
+.upg-goal b { color: #f0f2f6; letter-spacing: .06em; }
+.upg-goal-label { color: #8a94a8; }
+.upg-goal-bar { width: 90px; height: 7px; border: 1px solid #8a94a8; background: #0b0d13; display: inline-block; }
+.upg-goal-bar i { display: block; height: 100%; background: #ffd028; }
+.upg-goal-num { color: #ffd028; min-width: 56px; text-align: left; }
+.upg-goal.ready .upg-goal-label { color: #ffd028; }
+.upg-goal.ready .upg-goal-bar { border-color: #ffd028; }
+/* the Upgrades button when something is affordable: hazard yellow, a slow pulse */
+.tbtn.upg-ready { color: #ffd028; border-color: #ffd028; animation: upgready 1.4s ease-in-out infinite; }
+@keyframes upgready { 50% { box-shadow: 0 0 14px rgba(255,208,40,.45); } }
 #sector-clear .sc-upg { font-size: 12px; padding: 8px 16px; color: #ffd028; border-color: #ffd028; }
 #sector-clear .sc-upg:hover:not(:disabled) { background: #ffd028; color: #0a0c12; }
 @media (max-height: 560px), (orientation: portrait) and (pointer: coarse) and (max-width: 560px) {
@@ -686,6 +714,24 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
   text-shadow: 2px 2px 0 #000, 0 0 18px rgba(255,208,40,.6);
   pointer-events: none; animation: streakup 1.1s forwards; white-space: nowrap;
 }
+/* ROOM CLEAR: a quiet steel stamp under the objective when a room's last enemy
+   dies — smaller than a streak, never the exit green (that means the way out) */
+.room-clear {
+  position: absolute; left: 50%; top: calc(108px + var(--sat)); transform: translateX(-50%);
+  font-size: 15px; font-weight: bold; letter-spacing: 5px; text-indent: 5px; color: #f0f2f6;
+  padding: 4px 14px; border: 1px solid #8a94a8; background: rgba(14,17,24,.72);
+  text-shadow: 2px 2px 0 #000; pointer-events: none; white-space: nowrap;
+  animation: roomclear 1.5s forwards;
+}
+@keyframes roomclear {
+  0% { opacity: 0; transform: translateX(-50%) scale(1.35); }
+  12% { opacity: 1; transform: translateX(-50%) scale(.97); }
+  20% { transform: translateX(-50%) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -10px); }
+}
+/* touch: bottom centre — under the top strip it sat on the streak popup */
+body.touch-mode .room-clear { top: auto; bottom: calc(22px + var(--sab)); font-size: 12px; letter-spacing: 4px; }
 /* SECRET FOUND: a gold stamp in the middle of the screen, bigger and longer than a streak */
 .secret-found {
   position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%);
@@ -1787,6 +1833,19 @@ export class HUD {
     window.addEventListener('keydown', this.titleKey);
   }
 
+  /** a room's last enemy is down: ROOM CLEAR under the objective, which pulses (go on) */
+  roomClear(): void {
+    this.root.querySelectorAll('.room-clear').forEach((el) => el.remove());
+    const el = document.createElement('div');
+    el.className = 'room-clear';
+    el.textContent = 'ROOM CLEAR';
+    this.root.appendChild(el);
+    setTimeout(() => el.remove(), 1550);
+    this.objMainEl.classList.remove('flash');
+    void this.objMainEl.offsetWidth; // restart the animation
+    this.objMainEl.classList.add('flash');
+  }
+
   /** big center popup for kill streaks (DOUBLE KILL etc.) */
   streak(text: string): void {
     // a fast chain escalates: the newest streak replaces the previous popup
@@ -2075,6 +2134,8 @@ export class HUD {
     revive: 'ad' | 'free' | null;
     /** scrap from this attempt and the total to spend */
     scrap?: { gained: number; total: number };
+    /** the next upgrade to save for (null: everything bought) */
+    goal?: UpgradeGoal | null;
     onUpgrades?: () => void;
     onRetry: () => void;
     onRestart: () => void;
@@ -2094,6 +2155,7 @@ export class HUD {
       <h1>YOU DIED</h1>
       <p>${o.stats}</p>
       ${o.scrap ? `<div class="death-scrap">+${o.scrap.gained} SCRAP &middot; ${o.scrap.total} to spend</div>` : ''}
+      ${upgradeGoalHtml(o.goal)}
       <div class="screen-btns">
         <div class="tbtn-row death-main${o.revive ? ' pair' : ''}">
           ${revive}
@@ -2101,7 +2163,7 @@ export class HUD {
         </div>
         <div class="tbtn-row">
           ${o.keycard ? `<button id="restart-btn" class="tbtn tbtn-quiet">Restart ${unit} ${o.sector}</button>` : ''}
-          ${o.onUpgrades ? '<button id="upgrades-btn" class="tbtn tbtn-quiet">Upgrades</button>' : ''}
+          ${o.onUpgrades ? `<button id="upgrades-btn" class="tbtn tbtn-quiet${o.goal?.ready ? ' upg-ready' : ''}">Upgrades</button>` : ''}
           <button id="newrun-btn" class="tbtn tbtn-quiet">New run</button>
         </div>
       </div>
@@ -2484,6 +2546,8 @@ export class HUD {
     perks: Array<{ id: OfferId; name: string; short: string; desc: string }> | null;
     /** "+64 SCRAP · 312 to spend" under the tally */
     scrap?: string;
+    /** the next upgrade to save for (null: everything bought) */
+    goal?: UpgradeGoal | null;
     final?: { totals: string; record: string };
     /** final screen: "Keep descending" into endless depths */
     onDescend?: () => void;
@@ -2530,7 +2594,7 @@ export class HUD {
             <span class="sc-perk-pick">${o.touch ? 'PICK' : `PICK <kbd>${i + 1}</kbd>`}</span>
           </button>`).join('')}
         </div>
-        ${o.upgrades ? `<div class="sc-upg-row"><button id="sc-upgrades-btn" class="tbtn tbtn-quiet sc-upg" disabled>${o.upgrades.label}</button></div>` : ''}
+        ${o.upgrades ? `<div class="sc-upg-row"><button id="sc-upgrades-btn" class="tbtn tbtn-quiet sc-upg${o.goal?.ready ? ' upg-ready' : ''}" disabled>${o.upgrades.label}</button></div>` : ''}
         ${o.saved ? `<div class="sc-note">Progress saved &mdash; you can continue from sector ${o.nextSector} later. The perk carries over.</div>` : ''}`;
     } else {
       after = `<div class="prompt sc-descend">${tap} TO DESCEND TO SECTOR ${o.nextSector}</div>`;
@@ -2545,6 +2609,7 @@ export class HUD {
           <div class="sc-tally">
             <div class="sc-rows">${rowsHtml}</div>
             ${o.scrap ? `<div class="sc-scrap">${o.scrap}</div>` : ''}
+            ${upgradeGoalHtml(o.goal)}
             <div class="sc-total"><span>SCORE</span><b id="sc-score">${fmt(o.scoreFrom)}</b></div>
             <div class="sc-best${o.newBest ? ' new' : ''}">${o.newBest ? 'NEW BEST RANK!' : o.prevBest ? `SECTOR ${o.sector} BEST: ${o.prevBest}` : ''}</div>
           </div>

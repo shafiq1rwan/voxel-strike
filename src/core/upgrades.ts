@@ -32,6 +32,17 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'scanner', name: 'Scanner', tiers: ['The keycard shows on the map', 'The secret wall shows on the map', 'The Power Link node shows on the map'] },
 ];
 
+/** the cheapest tier not yet owned, and how close the bank is to it */
+export interface UpgradeGoal {
+  id: UpgradeId;
+  name: string;
+  /** the tier it would buy, 1–3 */
+  tier: number;
+  cost: number;
+  have: number;
+  ready: boolean;
+}
+
 /** scrap per kill (anything not listed: 1) */
 export const SCRAP_FOR_KILL: Partial<Record<EnemyKind, number>> = {
   husk: 1, ticker: 1, ventStalker: 1, sentryBud: 1,
@@ -94,6 +105,25 @@ export class UpgradeBook {
     this.scrap -= n;
     this.save();
     return true;
+  }
+
+  /**
+   * What to save up for, shown on the death and sector-clear screens (only
+   * ~3% of Player Fit Test players ever bought one): the cheapest next tier,
+   * the first in UPGRADES order on a tie; null once everything is maxed.
+   */
+  nextGoal(): UpgradeGoal | null {
+    let best: UpgradeDef | null = null;
+    let bestCost = Infinity;
+    for (const u of UPGRADES) {
+      const c = this.cost(u.id);
+      if (c !== null && c < bestCost) { best = u; bestCost = c; }
+    }
+    if (!best) return null;
+    return {
+      id: best.id, name: best.name, tier: this.level(best.id) + 1,
+      cost: bestCost, have: this.scrap, ready: this.scrap >= bestCost,
+    };
   }
 
   /** buy the next tier: false when maxed or short of scrap */

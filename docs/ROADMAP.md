@@ -122,6 +122,10 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-10-28 — Juice, as a test build on top of 0.3.10 (branch `juice`,
+  0.3.11): hit-stop on kills, bullet marks, ROOM CLEAR (stamp + chime +
+  objective pulse), the next upgrade on the death / clear screens. Run it
+  beside 0.3.10 in the same Player Fit Test window to read its effect.
 - 2026-10-28 — Facility per-sector monsters back ON (owner: "we need them to
   stay longer"): `FACILITY_ROSTERS` true, as in the tested 0.3.7. The
   0.3.9 bolt (7) and the 180p default stay; to re-test against 0.3.7.

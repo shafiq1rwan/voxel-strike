@@ -1334,6 +1334,7 @@ export class WeaponSystem {
       const hz = origin.z + dir.z * wHit.t;
       game.tracers.fire(muzzle.x, muzzle.y, muzzle.z, hx, hy, hz);
       game.particles.impact(hx, hy, hz, wHit.nx, wHit.ny, wHit.nz);
+      game.decals.add(hx, hy, hz, wHit.nx, wHit.ny, wHit.nz, wHit.x, wHit.y, wHit.z, wHit.block);
       game.dynLights.flash(hx + wHit.nx * 0.2, hy + wHit.ny * 0.2, hz + wHit.nz * 0.2, 1, 0.7, 0.35, 0.5, 3, 0.07);
       if (Math.random() < 0.4) game.audio.play('impact', { x: hx, y: hy, z: hz });
       // destructible voxels (host-authoritative in co-op)
