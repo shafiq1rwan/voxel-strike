@@ -1,5 +1,11 @@
 # Facility prop implementation review
 
+> **Superseded (owner, 2026-10-28):** the corrections below were tried and
+> reverted; the owner preferred the earlier implementation (normal room
+> heights, the textured prop batch, the ceiling lamps kept), which was then
+> made denser instead. Kept as a record of what was tried. See CLAUDE.md,
+> "Build 2: Facility sector looks", for what the game does.
+
 2026-10-28, after comparing the generated game with the sheets.
 
 The implementation followed many of the box recipes, but the surrounding
