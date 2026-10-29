@@ -666,7 +666,8 @@ export class WeaponSystem {
 
   /**
    * The operative's gloves and forearm guards on every gun — on every build
-   * since the owner's call of 2026-10-28 (it began as the `?play=operative`
+   * from the owner's call of 2026-10-28 while `OPERATIVE_ARMS` is on (game.ts;
+   * off for 0.3.14), and always in `?play=operative` (it began as that
    * preview; the gun-only view model came before). The arms ride the gun
    * group, so they take its kick, sway and bob; the left hand rides the
    * shotgun's pump so it racks with it. The forearms run back and down out of

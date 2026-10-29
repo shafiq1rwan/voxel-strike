@@ -3,7 +3,7 @@ import { generateSectorLayout, type SectorArchitecture } from './sector-layouts'
 import { dressEnvironment, isNewTheme, ENVIRONMENTS } from './environments';
 import { Block } from './blocks';
 import { RNG } from '../core/rng';
-import { dressFacilityRooms, type FacilityLook, type RoomPurpose } from './facility-rooms';
+import { dressFacilityRooms, FACILITY_LOOKS, type FacilityLook, type RoomPurpose } from './facility-rooms';
 import { applyFacilityRoster, facilityBand, FACILITY_RESPONSE, FACILITY_ROSTERS, applyBioRoster, bioBand, BIO_RESPONSE, applyGeoRoster, geoBand, GEO_RESPONSE } from './rosters';
 import { ExitSignSpec, LedgeRailSpec,
   DoorSpec, ElevatorSpec, EnemySpec, PickupSpec, Rect, RoomDef,
@@ -169,8 +169,9 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
   const rng = new RNG(seed);
   const isBio = theme === 'biofoundry';
   const isGeo = theme === 'geothermal';
-  // Build 2: a Facility sector's look (1 Entry, 2 Security, 3 Reactor; endless by depth)
-  const look: FacilityLook | null = theme === 'facility' ? (['entry', 'security', 'reactor'] as const)[facilityBand(difficulty) - 1] : null;
+  // Build 2: a Facility sector's look (1 Entry, 2 Security, 3 Reactor; endless
+  // by depth) — none while FACILITY_LOOKS is off
+  const look: FacilityLook | null = theme === 'facility' && FACILITY_LOOKS ?(['entry', 'security', 'reactor'] as const)[facilityBand(difficulty) - 1] : null;
   const world = new VoxelWorld(WORLD_X, WORLD_Y, WORLD_Z);
   const pickups: PickupSpec[] = [];
   const enemies: EnemySpec[] = [];

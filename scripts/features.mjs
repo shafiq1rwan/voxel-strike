@@ -802,7 +802,7 @@ try {
     await new Promise((r) => setTimeout(r, 300));
     check(await ph.evaluate(() => !!document.querySelector('#title-screen') && !document.querySelector('#settings-screen')),
       'phone settings: tapping Back returns to the title');
-    check(await ph.evaluate(() => window.__voxelstrike.settings.resolution === 180), 'touch devices default to 180-line pixelation');
+    check(await ph.evaluate(() => window.__voxelstrike.settings.resolution === 320), 'touch devices default to 320-line pixelation');
     await ph.close();
   }
 
@@ -1868,7 +1868,7 @@ try {
 
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
-  // Every device defaults to 180 lines (touch above), still cycled in
+  // Desktop defaults to 480 lines, touch to 320 (above), still cycled in
   // Settings; a 240 saved by the old one-size default moves to the device
   // default once, while a 240 picked under the new settings stays.
   {
@@ -1919,8 +1919,8 @@ try {
       `a returning player sees the NEW SECTOR banner ("${banner.text ?? ''}")`);
     check(banner.shown && banner.aboveMenu && banner.inside, 'the banner sits above the menu, inside the screen');
     await pc.screenshot({ path: 'scripts/shots/features-title-banner.png' });
-    check(fresh.res === 180, `desktop defaults to 180-line pixelation (${fresh.res})`);
-    check(fresh.lines >= 170 && fresh.lines <= 190, `the renderer really draws ~180 lines (${fresh.lines})`);
+    check(fresh.res === 480, `desktop defaults to 480-line pixelation (${fresh.res})`);
+    check(fresh.lines >= 470 && fresh.lines <= 490, `the renderer really draws ~480 lines (${fresh.lines})`);
     // still adjustable: one press on Pixelation cycles to the next step and saves it
     await pc.click('#title-settings-btn');
     await pc.waitForSelector('#settings-back');
@@ -1931,12 +1931,12 @@ try {
         saved: JSON.parse(localStorage.getItem('voxelstrike-settings') || 'null'),
       };
     });
-    check(cycled.res !== 180 && cycled.saved?.resolution === cycled.res, `pixelation is still adjustable and saved (180 → ${cycled.res})`);
+    check(cycled.res !== 480 && cycled.saved?.resolution === cycled.res, `pixelation is still adjustable and saved (480 → ${cycled.res})`);
     // a 240 left by the old default migrates once; a deliberate 240 stays
     await pc.evaluate(() => localStorage.setItem('voxelstrike-settings', JSON.stringify({ resolution: 240, fov: 80 })));
     await pc.reload({ waitUntil: 'networkidle0' });
     const migrated = await pc.evaluate(() => ({ res: window.__voxelstrike.settings.resolution, fov: window.__voxelstrike.settings.fov }));
-    check(migrated.res === 180 && migrated.fov === 80, `old-default 240 moves to 180, other settings kept (res ${migrated.res}, fov ${migrated.fov})`);
+    check(migrated.res === 480 && migrated.fov === 80, `old-default 240 moves to 480, other settings kept (res ${migrated.res}, fov ${migrated.fov})`);
     await pc.evaluate(() => localStorage.setItem('voxelstrike-settings', JSON.stringify({ resolution: 240, v: 2 })));
     await pc.reload({ waitUntil: 'networkidle0' });
     check(await pc.evaluate(() => window.__voxelstrike.settings.resolution === 240), 'a 240 chosen under the new settings stays 240');

@@ -19,12 +19,14 @@ export interface GameSettings {
 export const RESOLUTIONS = [180, 240, 320, 480];
 
 /**
- * Default pixelation: 180 lines on every device (owner's call, 2026-10-28;
- * it was 480 on desktop and 320 on touch). Still cycled in Settings, and a
- * saved choice is kept.
+ * Default pixelation by device: 480 lines on desktop, 320 on touch devices
+ * (phones keep a lighter render). Still cycled in Settings, and a saved
+ * choice is kept. 0.3.10 defaulted to 180 everywhere: sector 1 cleared 36%
+ * against 0.3.9's 48% with the same monsters, and Husk deaths there went
+ * 27 → 42 — a Husk at 180 lines is a blur until it's close.
  */
-export function defaultResolution(_touch: boolean): number {
-  return 180;
+export function defaultResolution(touch: boolean): number {
+  return touch ? 320 : 480;
 }
 
 export function defaultSettings(touch: boolean): GameSettings {

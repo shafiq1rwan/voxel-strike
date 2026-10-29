@@ -106,6 +106,14 @@ const OBJECTIVES: Record<ObjectiveStage, { text: string; color: string; icon: 'k
 /** the optional Overload room: hidden from players; web builds show it with ?overload */
 const OVERLOAD_ENABLED = !POKI && typeof location !== 'undefined' && new URLSearchParams(location.search).has('overload');
 
+/**
+ * The operative's hands on every gun (owner's call 2026-10-28). OFF for
+ * 0.3.14: they came in with 0.3.8, and every build since played ~40–50 s
+ * shorter than the re-tested 0.3.7 — tested off to find out whether they
+ * cost playtime. `?play=operative` keeps them either way.
+ */
+const OPERATIVE_ARMS = false;
+
 /** localStorage flag: the first-run control hints have been shown */
 const TUTORIAL_KEY = 'voxelstrike-tutorial-done';
 
@@ -313,7 +321,8 @@ export class Game {
     // the gun renders in its own depth-cleared pass (see Renderer.overlay)
     this.rendererSys.overlay.add(this.weapons.viewModel);
     // the operative's gloves on every gun, web and Poki (owner's call 2026-10-28)
-    this.weapons.useOperativeArms();
+    // while OPERATIVE_ARMS is on; off, the gun-only view model of 0.3.7
+    if (OPERATIVE_ARMS) this.weapons.useOperativeArms();
     for (const w of WEAPON_ORDER) this.weapons.setSkin(w, this.skins.skinFor(w));
     scene.add(this.camera);
     // menu shows the bare facility; the gun raises when the run starts

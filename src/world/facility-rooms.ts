@@ -294,6 +294,14 @@ const ROOMS: Record<RoomPurpose, { centre?: PropId; floor: PropId[]; wall: PropI
   service: { floor: ['pipes', 'vent', 'valve', 'exchanger'], wall: ['trunk', 'trunk'], light: 'workLight' },
 };
 
+/**
+ * OFF for 0.3.14: the Facility looks (these props + each look's lamp tint)
+ * came in with 0.3.8, and every build since played ~40–50 s shorter than the
+ * re-tested 0.3.7 (5:28, then ~5:20 again) — tested off to find out whether
+ * they cost playtime. true = Build 2's looks.
+ */
+export const FACILITY_LOOKS = false;
+
 /** each look's rooms, as cumulative weights; the spawn room takes the first */
 const MIX: Record<FacilityLook, Array<[RoomPurpose, number]>> = {
   entry: [['office', 0.5], ['storage', 0.75], ['server', 1]],

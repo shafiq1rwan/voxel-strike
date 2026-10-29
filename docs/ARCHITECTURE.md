@@ -29,7 +29,7 @@ off the core. The per-file rules and known gotchas live in
 | Geothermal scenery | `preview/geothermal-gen.ts` | The generated Geothermal Core's (sectors 6–7) steam, spawn-room sign and optional POWER LINK puzzle (`decorateGeothermal`, driven by `level.geo` from levelgen `placePowerLink`): amber cable from a wall node to a sealed supply cage; shooting the node (`voxelHit`) sinks the gate, clears the PowerBarrier grille and unseals the pickups. `preview/geothermal.ts` is Codex's hand-built `?sector6` map |
 | Orchestration | `game.ts` | State machine, frame loop, sector lifecycle + checkpoints, explosions queue, score/combo, objective tracker, co-op routing |
 | Shared types | `types.ts` | Plain-data types (no Three.js imports) |
-| Rendering | `core/renderer.ts` | WebGL renderer at a low internal resolution (Settings → Pixelation: 180 lines by default on every device), fog, the world pass + the weapon overlay pass |
+| Rendering | `core/renderer.ts` | WebGL renderer at a low internal resolution (Settings → Pixelation: 480 lines by default on desktop, 320 on touch), fog, the world pass + the weapon overlay pass |
 | Input | `core/input.ts`, `core/touch.ts` | Keyboard + pointer-lock mouse; touch joystick/look/buttons/weapon wheel feeding the same `Input` |
 | Physics | `core/physics.ts` | Axis-by-axis AABB vs voxels + dynamic boxes (doors, lift), ray/box tests |
 | Audio | `core/audio.ts`, `core/music.ts` | Every sound synthesized with WebAudio; optional crossfading music loops |

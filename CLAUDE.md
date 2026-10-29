@@ -55,7 +55,7 @@ node scripts/husk.mjs       # Husk gait, floor contact, 30/60/120 Hz chase consi
 node scripts/firing.mjs     # spam-click / hold-to-fire / click-buffer semantics
 node scripts/overload.mjs <url> # optional solo two-wave encounter (HIDDEN from players: only built with ?overload on web builds, never Poki — `OVERLOAD_ENABLED` in game.ts), reward/firing/cap/save checks and touch UI
 node scripts/aimassist.mjs  # touch profile: magnetism snaps a 3° miss, 9° stays a miss, sticky-aim ratio ~0.55, held fire pulls a 7° miss on, no idle drift; desktop unaffected
-node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation default 180 on every device + adjustable + one-time migration, sector 1 opener + sector 2 as in 0.3.4 (11–13 rooms, no empty rooms), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch: no BASH, a second FIRE above the move stick (either holds the trigger), weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), scrap + upgrades (kills DROP scrap pickups that bank when walked over + HUD counter, clears earn scrap, death screen shows it + Upgrades, buys cost and save, Suit/Plates/Medic/Hands/Head Start work, survives a reload, Armory entry, phone fit), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
+node scripts/features.mjs   # ticker suicide/corpse-chain, key ambush, powerups, score + combo, arena/brute/arc-caster, headshots, automap, walk-on elevator ride, lift call-down + strafing rider held + ledge rail, touch map + weapon button/wheel, phone settings fit, no co-op on the title (?coop shows it), first-visit title = goal + 3 steps + PLAY + gear only, NEW SECTOR banner for returning players, pixelation default 480 desktop / 320 touch + adjustable + one-time migration, sector 1 opener + sector 2 as in 0.3.4 (11–13 rooms, no empty rooms), Broodkeeper (wake on entry, cycle, acid + summons, armor/body/core damage, quad ×2 cap, enrage below half, boss bar, key drop, every weapon hurts it + killed by real Ripper fire in 20–50s of game time), reward fill-ins, quick melee (damage/shove/cooldown/stagger ×2/reach/ticker) + secret-wall hint + SECRET FOUND + touch: no BASH, a second FIRE above the move stick (either holds the trigger), weapon skins (goal on title, unlock by kills, stamp + repaint + save, Armory equip, phone fit), safe area (notch + home bar clear in landscape, 844×390 and held upright; crosshair centred), thrown guns (an empty gun is thrown, hits for 45, lands as a pickup that gives it back empty, sidearm never thrown, dry click with nothing loaded), scrap + upgrades (kills DROP scrap pickups that bank when walked over + HUD counter, clears earn scrap, death screen shows it + Upgrades, buys cost and save, Suit/Plates/Medic/Hands/Head Start work, survives a reload, Armory entry, phone fit), the POWER LINK (cage in every core and facility sector-2+ layout, none in sector 1 or the Biofoundry, grille holds, a pistol shot at the node opens it, supplies collected)
 node scripts/facility-monsters.mjs # Facility sector rosters (1 Husk+Ticker, 2 Clamp Guard+Arc Sentinel, 3 Brute+Wire Leech, no Tickers past sector 1, rooms populated, keycard alarm) + Sentry Bud bolt/lids/cadence/dodge, Clamp Guard pinch/side-step/turn rate/recovery, Wire Leech tether link/slow/stings/coil break/range/rebuild, rig budgets
 node scripts/facility-rigs.mjs # Facility rig draws (5/12/7), source boxes, floor contact, 4,374 rays against rendered Leech triangles (including detached rigs), real coil shots/door blocking, six visible awake rigs in a complete scene and stable shaders
 node scripts/bio-monsters.mjs # Biofoundry rosters (4 Vatborn+Spitter, 5 Carapace), Spitter mark/glob 10/acid patch 3 per 0.5s/expiry/dodge/patch cap, Carapace front ×0.25 back ×1 core ×2 + real-hitscan core / beside-core / closed plate + seam / leg, 9 draws each / 3-spike fan 8 each / no mid-attack flinch, Vatborn 95 hp, Broodkeeper adds = Carapaces ≤2 alive ≤4 per attempt, rig budgets
@@ -478,8 +478,9 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   pump; view model raised to `vmY = -0.25` so the arms read), his body
   (belt down, CPU-tinted, `jumpLift: false`) stands a step behind the eye
   for looking down, and a faint visor frame (`#fp-visor`) shows with the
-  helmet on. THE HANDS ARE ON EVERY BUILD, web and Poki (owner's call
-  2026-10-28): `Game` calls `useOperativeArms()` at startup, which builds
+  helmet on. THE HANDS WERE ON EVERY BUILD, web and Poki (owner's call
+  2026-10-28), and are OFF in 0.3.14 (`OPERATIVE_ARMS` in game.ts): every build that had them (0.3.8–0.3.10) played ~40–50 s shorter than
+  0.3.7, re-tested at ~5:20. With it on, `Game` calls `useOperativeArms()` at startup, which builds
   them AFTER loading, one gun per idle slot (`queueArms`; a gun raised first
   gets them in `showModel`) — all five at boot made 0.3.8 load ~0.6 s slower
   than 0.3.7 —, with a hidden `firstPersonPrimer` compiling their shader in
@@ -587,9 +588,10 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   background throttling). URL auto-join: `?role=host|join&room=CODE[&mp=local]`.
 - `src/core/settings.ts` — persisted options (sensitivity, master + music
   volume, FOV, resolution, shake, aim assist); `Game.applySettings()` pushes
-  them into systems. Pixelation defaults to 180 lines on every device
-  (owner's call, 2026-10-28; it was 480 desktop / 320 touch), still cycled
-  in Settings; a saved choice is kept.
+  them into systems. Pixelation defaults to 480 lines on desktop, 320 on
+  touch, still cycled in Settings; a saved choice is kept. 0.3.10 tried 180
+  everywhere: sector 1 cleared 36% vs 0.3.9's 48% with the same monsters
+  (Husk deaths 27 → 42) — back to the device defaults on 2026-10-29.
   Saved settings carry `v: 2`; an unversioned save holding the old one-size
   default (240) is moved to the device default once.
 - Title screen: identical on web and Poki — no Co-op button anywhere.
@@ -842,6 +844,11 @@ only its own pair.
   and the first-run tips add "Crates and barrels break — shoot them".
 
 ## Build 2: Facility sector looks (2026-10-28)
+
+**OFF in 0.3.14** (`FACILITY_LOOKS` in facility-rooms.ts — no props, no
+lamp re-tint): every build that had them (0.3.8–0.3.10) played ~40–50 s shorter than
+0.3.7, re-tested at ~5:20. Tested off
+to see whether they cost playtime; `true` brings everything below back.
 
 Each Facility sector has its own look, its rooms a purpose, built to Codex's
 reference `reference/facility-props-v1/` (three sheets + PROPS.md: 24 props,
