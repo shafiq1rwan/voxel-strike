@@ -310,7 +310,8 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   since 2026-10-28, so this is dormant), sector 1's Sentinels become
   Tickers, and in sectors 2–3 every other Sentinel in a room becomes a Husk
   (a room keeps its first; no RNG) — ~12 instead of ~18 per sector, the same
-  total health. Its bolt does 7 (was 10). The 0.3.7 Player Fit Test had 70
+  total health. Its bolt does 10 again from 0.3.15 (7 in 0.3.9–0.3.14,
+  which played shorter). The 0.3.7 Player Fit Test had 70
   of the 171 players who reached sector 2 die to an Arc Sentinel; in 0.3.8
   (Sentinels back in sector 1) it was 148 of ~250 deaths across sectors 1–3.
   `generateLevel(seed, n, theme, withBoss)`: with a boss, `placeBoss` puts
@@ -734,8 +735,9 @@ ROSTERS (`src/world/rosters.ts`, owner's call "same pressure"): levelgen
 still places the 0.3.4 generic slots, then `applyFacilityRoster` re-casts a
 Facility sector's room by room — 1: husks stay, each sentinel slot → a
 Ticker (sector 1 places no ticker nests itself);
-2: sentinels stay, husk / ticker / brute slots → a Clamp Guard per two
-husks' worth; 3: a Brute per three husks' worth, Wire Leeches for the rest
+2: every sentinel stays, husk / ticker / brute slots → a Clamp Guard per
+two husks' worth (0.3.8–0.3.14 kept only half the Sentinels and played
+shorter: the committed players who retry left sooner — back in 0.3.15); 3: a Brute per three husks' worth, Wire Leeches for the rest
 and ~60% of the sentinels. Every occupied room keeps ≥ 1, no Tickers in
 sectors 2–3, no RNG used. `facilityBand(n)` picks the roster for endless
 Facility depths; `FACILITY_RESPONSE` → `LevelData.responseKinds/Count`
@@ -778,11 +780,11 @@ Both rigs are BAKED (`RigKit.bake`: one draw per pivot + its glows, 9
   swell). The Wire Leech uses the same `HitBoxes` for its coil.
 Rosters (`applyBioRoster`, `bioBand`): sector 4 — a Vatborn per two
 husks' worth of close-range slots, Spitters for ~60% of the sentinels;
-sector 5 — a Carapace per three husks' worth of everything (~21 per
-sector; 2.2 / ~28 for one test build, when all 12 players who failed sector
-5 in the 0.3.7 Player Fit Test died to a Carapace). Its step up from sector
-4 is the Broodkeeper and the extra tanks: e2e keeps its other enemies at
-80–115% of sector 4's raw health (raw hp undercounts the armoured fronts). Endless
+sector 5 — a Carapace per 2.2 husks' worth of everything (~28 per sector),
+as in 0.3.7; 0.3.8–0.3.14 used one per three (~21) after all 12 players who
+failed sector 5 in the 0.3.7 Player Fit Test died to a Carapace, and played
+shorter — back in 0.3.15. With the Broodkeeper and the extra tanks, e2e
+checks sector 5 fields more enemy health than sector 4. Endless
 Biofoundry depths alternate, boss depths are sector 5; `BIO_RESPONSE` is the
 keycard alarm. `bio-monsters.mjs` tests it.
 

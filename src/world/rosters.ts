@@ -77,16 +77,14 @@ export function applyFacilityRoster(enemies: EnemySpec[], band: FacilityBand): E
     const slots = [...melee].sort((a, b) => meleeUnits(b.kind, band) - meleeUnits(a.kind, band));
     const units = melee.reduce((s, e) => s + meleeUnits(e.kind, band), 0);
     if (band === 2) {
-      // Security: a Clamp Guard (85 hp) for every two husks' worth. Only about
-      // half the Sentinel slots stay Sentinels (0.3.7 Player Fit Test: 70 of
-      // 171 players in sector 2 died to one; ~18 per sector outnumbered the
-      // Guards); every two dropped (40 hp each) come back as one more Guard.
-      const keep = ranged.length ? Math.max(1, Math.round(ranged.length * 0.5)) : 0;
-      const dropped = ranged.slice(keep);
-      const guards = (units > 0 ? Math.max(1, Math.round(units / 2)) : 0) + Math.round(dropped.length * 40 / 85);
-      const spots = [...slots, ...dropped];
-      for (let i = 0; i < guards && i < spots.length; i++) out.push(at(spots[i], 'clampGuard'));
-      for (const e of ranged.slice(0, keep)) out.push(e);
+      // Security: a Clamp Guard (85 hp) for every two husks' worth; every
+      // Sentinel stays, as in 0.3.7 (5:28 / 5:34). 0.3.8–0.3.14 kept only
+      // half (70 of 171 players in 0.3.7's sector 2 died to one) and their
+      // committed players left sooner: 0.3.14 had 6 players past 30 min to
+      // 0.3.7's 12. A hard sector is retried, not quit, by those who stay.
+      const guards = units > 0 ? Math.max(1, Math.round(units / 2)) : 0;
+      for (let i = 0; i < guards && i < slots.length; i++) out.push(at(slots[i], 'clampGuard'));
+      for (const e of ranged) out.push(e);
       continue;
     }
     // Reactor: a Brute for every three husks' worth, Wire Leeches for the rest
@@ -125,11 +123,11 @@ export const BIO_RESPONSE: Record<BioBand, { kinds: EnemyKind[]; count: number }
  * Re-cast a Biofoundry sector's generic placements, room by room, in order
  * (no RNG). Sector 4: a Vatborn (95 hp) per two husks' worth of close-range
  * slots, Spitters for ~60% of the sentinels. Sector 5: one Carapace (120 hp,
- * armoured front) per three husks' worth of everything (it was 2.2 for one
- * test build: all 12 players who failed sector 5 in the 0.3.7 Player Fit
- * Test died to a Carapace; the boss and the extra tanks keep sector 5 a step
- * up from 4). Every occupied room
- * keeps at least one.
+ * armoured front) per 2.2 husks' worth of everything, as in 0.3.7 (sector 5
+ * fields more enemy health than sector 4). 0.3.8–0.3.14 used one per three
+ * after all 12 players who failed sector 5 in the 0.3.7 Player Fit Test died
+ * to a Carapace, and played shorter: the players who get this far retry.
+ * Every occupied room keeps at least one.
  */
 export function applyBioRoster(enemies: EnemySpec[], band: BioBand): EnemySpec[] {
   const rooms = new Map<number, EnemySpec[]>();
@@ -156,7 +154,7 @@ export function applyBioRoster(enemies: EnemySpec[], band: BioBand): EnemySpec[]
       continue;
     }
     const total = generic.reduce((s, e) => s + units(e.kind), 0);
-    const cara = total > 0 ? Math.max(1, Math.round(total / 3)) : 0;
+    const cara = total > 0 ? Math.max(1, Math.round(total / 2.2)) : 0;
     for (let i = 0; i < cara && i < heavyFirst.length; i++) out.push(at(heavyFirst[i], 'carapace'));
   }
   return out;
