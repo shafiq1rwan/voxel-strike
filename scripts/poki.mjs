@@ -101,32 +101,20 @@ try {
   });
   check(scrollBlocked, 'arrow keys + wheel cannot scroll the host page');
 
-  // start → ad break (audio muted while it plays) → gameplay
+  // the FIRST run of a page load starts at once: no ad, so no READY click
+  // either (desktop lost players between PLAY and the first shot)
   await page.click('#start-btn');
-  await sleep(150);
-  const mid = await page.evaluate(() => ({
-    ad: window.__adPlaying,
-    state: window.__voxelstrike.state,
-    gain: window.__voxelstrike.audio.masterBus?.gain.value,
-  }));
-  check(mid.ad && mid.state === 'title', `game waits on the ad (state=${mid.state})`);
-  check(mid.gain === 0, `audio muted during the ad (gain=${mid.gain})`);
-  await sleep(600);
-  const after = await page.evaluate(() => window.__voxelstrike.audio.masterBus?.gain.value);
-  check(after > 0, `audio restored after the ad (gain=${after})`);
-  // an ad spends the click gesture: desktop asks for one more click to
-  // re-capture the mouse before play starts
-  const ready = await page.evaluate(() => ({
+  await sleep(400);
+  const first = await page.evaluate(() => ({
+    ad: !!window.__adPlaying,
     state: window.__voxelstrike.state,
     ready: document.body.textContent.includes('CLICK TO CONTINUE'),
+    gain: window.__voxelstrike.audio.masterBus?.gain.value,
   }));
-  check(ready.state === 'paused' && ready.ready, `after an ad: READY / click to continue (state=${ready.state})`);
-  await page.mouse.click(640, 360);
-  await sleep(400);
-  check((await state(page)) === 'playing', 'playing after the ad + click');
+  check(!first.ad && first.state === 'playing' && !first.ready, `the first PLAY starts at once: no ad, no READY screen (state=${first.state})`);
+  check(first.gain > 0, `audio on from the first frame (gain=${first.gain})`);
   c = await calls(page);
-  check(c.includes('commercialBreak'), 'commercialBreak before the run');
-  check(c.indexOf('commercialBreak') < c.indexOf('gameplayStart'), 'ad comes before gameplayStart');
+  check(!c.includes('commercialBreak') && c.includes('gameplayStart'), 'no commercialBreak before the first run');
   const builds = c.filter((x) => x.startsWith('measure build'));
   // one run of digits (v00307 = 0.3.7): the real SDK drops an event with more
   // than two across its three values, and "build 0.3.7 load" had three
@@ -151,6 +139,12 @@ try {
   // side objectives are not measured
   await page.evaluate(() => window.__voxelstrike.onKeyPickup());
   check(prog(await calls(page)).length === 2, 'keycard pickup sends no game event');
+
+  // the route: taking the red key moves the objective on → route 1 key, once
+  await page.evaluate(() => window.__voxelstrike.player.keys.add('red'));
+  await sleep(250);
+  const route = (await calls(page)).filter((x) => x.startsWith('measure route'));
+  check(route.join() === 'measure route 1 key', `the keycard step sends route 1 key once (${route.join(', ')})`);
 
   // clear sector 1 → intermission → ad → sector 2
   await page.evaluate(() => window.__voxelstrike.win());

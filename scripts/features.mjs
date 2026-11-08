@@ -1866,6 +1866,72 @@ try {
     await up.close();
   }
 
+  // --- 27. keeping players after a death: own blasts never kill, KILLED BY card ----
+  {
+    const kp = await browser.newPage();
+    kp.on('pageerror', (err) => errors.push(`[killed-by pageerror] ${err.message}`));
+    await kp.setViewport({ width: 1280, height: 720 });
+    await kp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await kp.waitForSelector('#start-btn');
+    await kp.click('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    const blasts = await kp.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.input.locked = true;
+      for (const e of g.enemies.list) { e.update = () => {}; e.pos.y = -50; }
+      const p = g.player;
+      const out = {};
+      // your own rocket / barrel at your feet, 10 hp left: you stay up on 1
+      for (const by of ['rocket', 'barrel']) {
+        p.health = 10; p.armor = 0; p.dead = false; p.buffs.shield = 0;
+        g.explode(p.pos.x, p.pos.y, p.pos.z, 400, 4, false, by);
+        out[by] = { hp: p.health, dead: p.dead };
+      }
+      // an enemy blast still kills
+      p.health = 10; p.armor = 0; p.dead = false;
+      g.explode(p.pos.x, p.pos.y, p.pos.z, 400, 4, false, 'explosion');
+      out.enemy = { hp: p.health, dead: p.dead, by: p.lastHitBy };
+      return out;
+    });
+    check(blasts.rocket.hp === 1 && !blasts.rocket.dead && blasts.barrel.hp === 1 && !blasts.barrel.dead,
+      `your own rocket and barrel blasts leave you on 1 hp (rocket ${blasts.rocket.hp}, barrel ${blasts.barrel.hp})`);
+    check(blasts.enemy.dead, `an enemy blast still kills (${blasts.enemy.by})`);
+    // that death opens the death screen: KILLED BY names it with a counter tip
+    await kp.evaluate(() => { const g = window.__voxelstrike; g.player.lastHitBy = 'sentinel'; });
+    await new Promise((r) => setTimeout(r, 2200));
+    const card = await kp.evaluate(() => {
+      const c = document.querySelector('#killed-by');
+      const retry = document.querySelector('#retry-btn');
+      return { text: c?.textContent.replace(/\s+/g, ' ').trim() ?? '', retry: !!retry, above: !!c && !!retry && c.getBoundingClientRect().bottom <= retry.getBoundingClientRect().top };
+    });
+    check(/KILLED BY/.test(card.text) && /Arc Sentinel/i.test(card.text) && /strafe/i.test(card.text) && card.retry && card.above,
+      `the death screen says what killed you and how to beat it, above Retry ("${card.text}")`);
+    await kp.screenshot({ path: 'scripts/shots/features-killed-by.png' });
+    await kp.close();
+    // phone: the card fits with Retry still on screen
+    const kph = await browser.newPage();
+    await kph.setViewport({ width: 667, height: 375, hasTouch: true, isMobile: true });
+    await kph.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await kph.waitForSelector('#start-btn');
+    await kph.evaluate(() => document.querySelector('#start-btn').click());
+    await new Promise((r) => setTimeout(r, 900));
+    await kph.evaluate(() => {
+      const g = window.__voxelstrike;
+      for (const e of g.enemies.list) { e.update = () => {}; e.pos.y = -50; }
+      g.player.health = 5; g.player.armor = 0; g.player.buffs.shield = 0;
+      g.player.damage(50, g, { x: g.player.pos.x + 3, z: g.player.pos.z, by: 'carapace' });
+    });
+    await new Promise((r) => setTimeout(r, 2200));
+    const fit = await kph.evaluate(() => {
+      const c = document.querySelector('#killed-by')?.getBoundingClientRect();
+      const r = document.querySelector('#retry-btn')?.getBoundingClientRect();
+      return { card: !!c, retryOnScreen: !!r && r.bottom <= innerHeight && r.top >= 0, inside: !!c && c.left >= 0 && c.right <= innerWidth };
+    });
+    await kph.screenshot({ path: 'scripts/shots/features-killed-by-phone.png' });
+    check(fit.card && fit.inside && fit.retryOnScreen, 'phone: the KILLED BY card fits and Retry stays on screen');
+    await kph.close();
+  }
+
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
   // Desktop defaults to 480 lines, touch to 320 (above), still cycled in

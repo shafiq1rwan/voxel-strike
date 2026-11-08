@@ -90,7 +90,7 @@ export interface PlayerTarget {
   shake: number;
   dead: boolean;
   eyeY(): number;
-  damage(amount: number, game: Game, source?: { x: number; z: number; by?: string }): void;
+  damage(amount: number, game: Game, source?: { x: number; z: number; by?: string; nonLethal?: boolean }): void;
 }
 
 /** the sector's critical path, as shown by the HUD objective tracker */
@@ -923,6 +923,26 @@ export class Game {
   private embedTime = 0;
   private tipTimer = 0;
 
+  /** a game has been started this page load (the first one skips the ad) */
+  private firstRunStarted = false;
+
+  /**
+   * Title PLAY / Continue: NO ad before the first game of a page load. On
+   * desktop that ad also spent the click pointer lock needs, so the player
+   * met an ad, then a READY "click to continue" screen before the first shot:
+   * in the 2026-11-08 Web Fit Test about 1 in 10 desktop players who pressed
+   * PLAY never reached a minute of play, against ~0 on phones, and 30% were
+   * gone by minute 2 (17% on phones). Every later break is unchanged.
+   */
+  private titleBreak(then: (adShown: boolean) => void): void {
+    if (!this.firstRunStarted) {
+      this.firstRunStarted = true;
+      then(false);
+      return;
+    }
+    this.afterBreak(then);
+  }
+
   /**
    * Poki: offer a video ad at a natural break (run start, retry, between
    * sectors, unpause), then continue. `then(adShown)` — when an ad actually
@@ -931,6 +951,7 @@ export class Game {
    * initialised now, inside the gesture. Plain builds continue immediately.
    */
   private afterBreak(then: (adShown: boolean) => void): void {
+    this.firstRunStarted = true; // any break point means play has begun this load
     if (!POKI) {
       then(false);
       return;
@@ -1370,6 +1391,7 @@ export class Game {
         (this.endless ? ` &nbsp;·&nbsp; Deepest: depth ${Math.max(this.levelIndex, Number(storageGet(BEST_DEPTH_KEY) ?? 0))}` : ''),
       sector: this.levelIndex,
       unit: this.endless ? 'depth' : 'sector',
+      killer: this.player.lastHitBy,
       keycard: this.keyCheckpoint !== null,
       revive,
       scrap: this.preview ? undefined : { gained: this.attemptScrap, total: this.upgrades.scrap },
@@ -1780,9 +1802,9 @@ export class Game {
       bestDepth: Number(storageGet(BEST_DEPTH_KEY) ?? 0) || 0,
       onStart: () => {
         storageSet(RUN_KEY, null); // a new run replaces any saved one
-        this.afterBreak((ad) => this.startGame(ad));
+        this.titleBreak((ad) => this.startGame(ad));
       },
-      onContinue: () => this.afterBreak((ad) => this.continueRun(ad)),
+      onContinue: () => this.titleBreak((ad) => this.continueRun(ad)),
       // co-op is hidden from players on every build, like Poki; web builds
       // keep it behind ?coop for development (URL auto-join still works)
       onCoop: !POKI && new URLSearchParams(location.search).has('coop') ? () => this.openCoop() : undefined,
@@ -2049,7 +2071,8 @@ export class Game {
         // the player's own rockets and barrels hurt them half as much as an
         // enemy blast (~65 self-inflicted deaths in the Player Fit Test events)
         const share = by === 'rocket' || by === 'barrel' ? 0.275 : 0.55;
-        t.damage(Math.round(damage * share * f), this, { x, z, by });
+        // ...and never kill: they leave the player on 1 hp at worst
+        t.damage(Math.round(damage * share * f), this, { x, z, by, nonLethal: by === 'rocket' || by === 'barrel' });
         // rocket-jump style push (the partner's push is applied on their side)
         if (t === (this.player as PlayerTarget)) {
           t.vel.x += ((t.pos.x - x) / Math.max(0.3, pd)) * 9 * f;
@@ -2325,6 +2348,10 @@ export class Game {
     const stage = this.objectiveStage();
     if (stage !== this.objStage) {
       const changed = this.objStage !== null;
+      // a step of the route finished (boss / key / door / lift): where in a
+      // sector players stop — about 44% left sector 1 alive in the 2026-11-08
+      // Web Fit Test and the level events can't say whether before the key
+      if (changed && !this.net && !this.preview) poki.measure('route', Math.min(20, this.levelIndex), this.objStage!);
       this.objStage = stage;
       const o = OBJECTIVES[stage];
       this.hud.setObjective(this.levelIndex, this.totalSectors, o.text, o.color, changed, o.icon, !!this.preview);

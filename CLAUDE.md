@@ -627,6 +627,10 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   (ad blockers). Gameplay start/stop is NOT called at each transition: `Game.frame()` calls
   `poki.setPlaying(state === 'playing')` every frame and the wrapper only
   forwards changes — keep it that way rather than sprinkling start/stop.
+  The FIRST game of a page load (title PLAY / Continue) has NO ad
+  (`titleBreak`; any later `afterBreak` counts as started): on desktop the
+  ad + READY click before the first shot lost ~1 in 10 players before a
+  minute of play in the 2026-11-08 Web Fit Test, against ~0 on phones.
   New ad points go through `Game.afterBreak(then(adShown))` (mutes audio,
   releases held keys, eats double clicks); when an ad really played, desktop
   needs a READY "click to continue" before pointer lock (the gesture is
@@ -835,7 +839,24 @@ only its own pair.
 - Touch look is ~30% slower (`LOOK_SENS` 1.8, was 2.6); the slider reads
   "Look sensitivity" on touch.
 - The player's own rockets and barrels hurt them at 27.5% of the blast
-  (enemy blasts and tickers stay 55%).
+  (enemy blasts and tickers stay 55%) and NEVER kill: `explode` passes
+  `nonLethal` for `by` rocket / barrel and `Player.damage` leaves 1 hp
+  (~2,000 self-inflicted deaths in the 2026-11-08 Web Fit Test export).
+
+## Keeping players after a death (2026-11-08 Web Fit Test: 6:37 vs ~6:46)
+
+- KILLED BY card on the death screen (`killedByHtml` in hud.ts, data in
+  `src/ui/killers.ts`, keyed by `Player.lastHitBy` — the same ids as the Poki
+  `death` event): the enemy's name + one counter tip, above Retry. Tips name
+  tells, never keys (touch has no bash). Most players who died in sector 2
+  never came back (11,586 of 12,654 killed by an Arc Sentinel), and builds
+  that thinned the fights played shorter, so the screen teaches instead.
+  A new killer id needs a row in `KILLERS` or it gets no card.
+- `route N <step>` Poki event when the HUD objective moves on (solo, not
+  previews): `boss` / `key` / `door` / `lift` DONE, sector capped at 20,
+  once per step per attempt — sent from `updateObjective` on a stage change
+  (never on the first stage of a build, `objStage` is null then). About 44%
+  of players left sector 1 alive; this says whether before the keycard.
 - Sector clear: a quiet *Upgrades · N scrap* button under the perk cards
   (Back re-shows the screen `instant`, no second tally).
 - Breakables: amber corner brackets on the crosshair (`hud.setAimHint`,

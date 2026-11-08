@@ -8,9 +8,17 @@ import { typeLines, type TerminalLine, type TerminalRun } from './terminal';
 import type { OfferId } from '../core/perks';
 import { SKINS, WEAPON_LABEL, needText, swatchHtml, STANDARD_SWATCH, type SkinDef } from '../core/skins';
 import { startArmoryPreview } from './armory-preview';
+import { killerInfo } from './killers';
 import type { UpgradeGoal } from '../core/upgrades';
 
 /** "NEXT UPGRADE · Reinforced Suit I · ▮▮▯ 34 / 50" (or UPGRADE READY) */
+/** the death screen's KILLED BY card (nothing for an unknown killer) */
+function killedByHtml(by: string | undefined): string {
+  const k = killerInfo(by);
+  if (!k) return '';
+  return `<div class="killed-by" id="killed-by"><div class="kb-head"><span class="kb-label">KILLED BY</span><b>${k.name}</b></div><div class="kb-tip">${k.tip}</div></div>`;
+}
+
 function upgradeGoalHtml(g: UpgradeGoal | null | undefined): string {
   if (!g) return '';
   const pct = Math.min(100, Math.round((g.have / g.cost) * 100));
@@ -566,6 +574,15 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 #armory-screen .arm-upg { font-size: 12px; padding: 8px 14px; color: #ffd028; border-color: #ffd028; }
 #armory-screen .arm-upg:hover { background: #ffd028; color: #0a0c12; }
 .death-scrap { margin: -4px 0 4px; font-size: 13px; letter-spacing: .14em; color: #ffd028; }
+/* KILLED BY: the enemy that got you + one counter tip (teach, then Retry) */
+.killed-by {
+  margin: 0 auto 10px; max-width: 520px; padding: 8px 14px; text-align: left;
+  background: rgba(8,10,16,.8); border: 1px solid #39404f; border-left: 3px solid #ff8a3c;
+}
+.killed-by .kb-head { display: flex; align-items: baseline; gap: 10px; }
+.killed-by .kb-label { font-size: 10px; letter-spacing: .2em; color: #ff8a3c; font-weight: bold; }
+.killed-by b { font-size: 15px; letter-spacing: .14em; color: #f0f2f6; text-transform: uppercase; }
+.killed-by .kb-tip { margin-top: 4px; font-size: 12.5px; line-height: 1.4; color: #cfd6e4; letter-spacing: .02em; }
 .sc-scrap { margin-top: 8px; font-size: 12px; letter-spacing: .14em; color: #ffd028; text-align: center; }
 .sc-upg-row { margin-top: 12px; display: flex; justify-content: center; }
 /* the next upgrade to save for, under the scrap line (death + sector clear) */
@@ -586,6 +603,9 @@ body.touch-mode .skin-unlocked span { font-size: 12px; }
 #sector-clear .sc-upg { font-size: 12px; padding: 8px 16px; color: #ffd028; border-color: #ffd028; }
 #sector-clear .sc-upg:hover:not(:disabled) { background: #ffd028; color: #0a0c12; }
 @media (max-height: 560px), (orientation: portrait) and (pointer: coarse) and (max-width: 560px) {
+  .killed-by { margin-bottom: 6px; padding: 5px 10px; max-width: 460px; }
+  .killed-by b { font-size: 12px; }
+  .killed-by .kb-tip { margin-top: 2px; font-size: 10.5px; line-height: 1.3; }
   .upg-wrap { gap: 5px; }
   .upg-row { padding: 5px 8px; gap: 8px; }
   .upg-name { font-size: 12px; }
@@ -2130,6 +2150,8 @@ export class HUD {
     sector: number;
     /** 'depth' past the campaign */
     unit?: 'sector' | 'depth';
+    /** what landed the killing hit (`Player.lastHitBy`): the KILLED BY card */
+    killer?: string;
     keycard: boolean;
     revive: 'ad' | 'free' | null;
     /** scrap from this attempt and the total to spend */
@@ -2154,6 +2176,7 @@ export class HUD {
     this.showButtonScreen(`
       <h1>YOU DIED</h1>
       <p>${o.stats}</p>
+      ${killedByHtml(o.killer)}
       ${o.scrap ? `<div class="death-scrap">+${o.scrap.gained} SCRAP &middot; ${o.scrap.total} to spend</div>` : ''}
       ${upgradeGoalHtml(o.goal)}
       <div class="screen-btns">

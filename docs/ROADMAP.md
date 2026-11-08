@@ -125,6 +125,17 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-11-08 — No ad before the first game of a page load (Poki). The
+  device split of the third Web Fit Test: phones played ~1 min LONGER than
+  desktop; desktop lost 30% by minute 2 (phones 17%) and ~1 in 10 never
+  reached a minute of play — the ad + READY click before the first shot.
+
+- 2026-11-08 — After the third Web Fit Test (73.8% / 6:37 vs ~6:46 / 1.05%):
+  the death screen's KILLED BY card (name + counter tip), own rockets and
+  barrels never kill (1 hp floor), and `route N boss|key|door|lift` Poki
+  events to see where sector-1 players stop. Difficulty untouched (builds
+  that thinned the fights played shorter). Thumbnail still to replace.
+
 - 2026-10-28 — Juice, as a test build on top of 0.3.10 (branch `juice`,
   0.3.11): hit-stop on kills, bullet marks, ROOM CLEAR (stamp + chime +
   objective pulse), the next upgrade on the death / clear screens. Run it

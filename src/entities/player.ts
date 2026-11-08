@@ -91,7 +91,7 @@ export class Player {
   /** what landed the last hit that got through the overshield (the Poki "killed by" event) */
   lastHitBy = '';
 
-  damage(amount: number, game: Game, source?: { x: number; z: number; by?: string }): void {
+  damage(amount: number, game: Game, source?: { x: number; z: number; by?: string; nonLethal?: boolean }): void {
     if (this.dead) return;
     // overshield: absorbs the hit entirely (direction indicator still shows)
     if (this.buffs.shield > 0) {
@@ -106,6 +106,9 @@ export class Player {
     const soak = Math.min(this.armor, Math.ceil(amount / 3));
     this.armor -= soak;
     this.health -= amount - soak;
+    // the player's own rockets and barrel blasts can't finish them (~2,000
+    // self-inflicted deaths in the 2026-11-08 Web Fit Test export): 1 hp left
+    if (this.health <= 0 && source?.nonLethal) this.health = 1;
     this.sinceHurt = 0;
     game.hud.damageFlash();
     if (source) this.hitIndicator(source, game);
