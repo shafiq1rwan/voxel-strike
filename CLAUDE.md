@@ -203,7 +203,9 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   streak popups at 2/3/4 kills), per-seed best score in localStorage
   (`voxelstrike-best-<seedHex>`), and `onKeyPickup()` — grabbing the red
   keycard spawns an awake ambush in the key room (and bumps
-  `level.totalEnemies` so intermission ratios stay honest). The secret
+  `level.totalEnemies` so intermission ratios stay honest) — except the
+  SOLO opener, sector 1, which has no ambush (0.3.17 Player Fit Test: a
+  quarter lost between key and door there, few dying). The secret
   room's cracked wall (`LevelData.secretWall`) glints: `secretGlint()` spits
   amber sparks + a 'secretHint' shimmer every ~2s while a player within 9u
   can see it, with one "looks weak" line per sector; entering the room calls
@@ -293,6 +295,10 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   never reshuffles rooms/enemies/pickups for a given seed. Hanging fixtures
   only spawn in rooms h>=5 and never in the exit room (a lamp block over the
   ledge walkway would block the path to the pad).
+  KEY ROOM: the deepest room from the spawn (graph distance); in sectors
+  1–2, of the rooms that deep or one step short, the one nearest the exit
+  room (no RNG) — the walk back to the red door averages 28 steps instead
+  of 57 in sector 1 and 36 instead of 87 in sector 2 (40 layouts each).
   Difficulty = sector/depth number. Sector 1 is a short OPENER (6–7 rooms,
   shotgun in the spawn room, no ticker nests, no brute — 1 brute at 2, 2
   from 3 — plus a hashed barrel pair in the first room; e2e needs a barrel).
@@ -432,7 +438,10 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   still clears it) and keeps holding the two OPEN sides for 0.4s after it
   reaches the top (`settle`) so a strafe/thumb drift doesn't walk straight
   off the edge — the boarding axis is released on arrival so stepping onto
-  the ledge is never delayed; `isWaitingBelow()` makes a player on the lower floor
+  the ledge is never delayed; once it has carried someone up the deck STAYS
+  at the top (no dwell-and-drop: that left an open shaft in the ledge edge,
+  and in the 0.3.17 Player Fit Test 1 in 5 who rode up in sector 1 ended
+  back below the ledge); `isWaitingBelow()` makes a player on the lower floor
   call the deck straight back — mid-climb if the rider fell — and levelgen
   tops the ledge's open edge with a hazard `Trim` rail, gap at the lift.
   The co-op client smooths the lift at `LIFT_SPEED` from door.ts; keep the

@@ -420,7 +420,6 @@ export const LIFT_SPEED = 3.0;
 /** dwell after a rider steps on before the deck leaves the bottom */
 const LIFT_START_DELAY = 0.25;
 /** how long the deck waits at the top with nobody calling it */
-const LIFT_TOP_DWELL = 3.5;
 /** a rider off the deck for longer than this mid-ride has fallen, not hopped */
 const LIFT_LOST_GRACE = 0.3;
 
@@ -706,7 +705,12 @@ export class Elevator {
         break;
       case 'top':
         this.timer += dt;
-        if (!playerOn && (this.timer > LIFT_TOP_DWELL || (callDown && this.timer > LIFT_LOST_GRACE))) {
+        // parked up: only a player waiting below calls it back. It used to
+        // drop after a 3.5 s dwell, leaving an open shaft in the ledge edge
+        // (the rail has a gap for the deck) — in the 0.3.17 Player Fit Test
+        // about 1 in 5 players who rode up in sector 1 (46 of 243) ended up
+        // below the ledge again, a step from the exit pad
+        if (!playerOn && callDown && this.timer > LIFT_LOST_GRACE) {
           this.state = 'down';
           audio.play('elevator', here);
         }

@@ -314,6 +314,30 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     if (r.kind !== 'normal') continue;
     if (r.dist > keyRoom.dist) keyRoom = r;
   }
+  // Sectors 1–2: of the rooms that deep (the farthest, or one step short of
+  // it), the one nearest the exit room. The search still goes deep, but the
+  // walk back to the red door is short — the 0.3.17 Player Fit Test lost
+  // about a quarter of players between taking the keycard and opening the
+  // door in sectors 1 (348 → 265) and 2 (82 → 59), against almost none in
+  // 3–4. No RNG: the layout stream is untouched.
+  if (difficulty <= 2) {
+    const toExit = new Map<number, number>([[exitRoom.id, 0]]);
+    const q = [exitRoom.id];
+    while (q.length) {
+      const cur = q.shift()!;
+      for (const nb of adjacency.get(cur)!) {
+        if (toExit.has(nb)) continue;
+        toExit.set(nb, toExit.get(cur)! + 1);
+        q.push(nb);
+      }
+    }
+    const deepest = keyRoom.dist;
+    for (const r of rooms) {
+      if (r.kind !== 'normal' || r.dist < deepest - 1) continue;
+      const a = toExit.get(r.id) ?? 99, b = toExit.get(keyRoom.id) ?? 99;
+      if (a < b || (a === b && r.dist > keyRoom.dist)) keyRoom = r;
+    }
+  }
   keyRoom.kind = 'key';
 
   // -- carve rooms ----------------------------------------------------------

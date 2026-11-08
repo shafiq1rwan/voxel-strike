@@ -1932,6 +1932,58 @@ try {
     await kph.close();
   }
 
+  // --- 28. after the keycard (0.3.17 Player Fit Test: a quarter lost between
+  // key and door in sectors 1–2, 1 in 5 back below the ledge after the lift) ---
+  {
+    const rp = await browser.newPage();
+    rp.on('pageerror', (err) => errors.push(`[route pageerror] ${err.message}`));
+    await rp.setViewport({ width: 1280, height: 720 });
+    await rp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await rp.waitForSelector('#start-btn');
+    await rp.click('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    const route = await rp.evaluate(async () => {
+      const g = window.__voxelstrike;
+      g.input.locked = true;
+      for (const e of g.enemies.list) { e.update = () => {}; e.pos.y = -50; }
+      const out = {};
+      // the solo opener: taking the keycard spawns no ambush
+      const before = g.enemies.list.length;
+      g.player.keys.add('red');
+      g.onKeyPickup();
+      out.ambush = g.enemies.list.length - before;
+      // the lift, once it has carried someone, stays up while nobody below calls it
+      const el = g.elevator;
+      const sp = g.level.elevator;
+      const ride = () => { g.player.pos.set(sp.x + 1, el.topY + 0.89, sp.z + 1); g.player.vel.set(0, 0, 0); };
+      ride();
+      const t0 = performance.now();
+      while (performance.now() - t0 < 6000 && el.topY < sp.highY - 0.01) { ride(); await new Promise((r) => setTimeout(r, 50)); }
+      out.reachedTop = el.topY >= sp.highY - 0.01;
+      // step off and walk away (back at the spawn, far from the lift): 6 s, more than the old 3.5 s dwell
+      const s = g.level.spawn;
+      g.player.spawnAt(s.x, s.y, s.z);
+      await new Promise((r) => setTimeout(r, 6000));
+      out.stayedUp = el.topY >= sp.highY - 0.01;
+      // the key room in sectors 1–2 is still one of the deepest rooms
+      const { generateLevel } = await import('/src/world/levelgen.ts');
+      out.deep = true;
+      for (const n of [1, 2]) {
+        for (const seed of [12345, 42, 777, 90210, 31337, 2024]) {
+          const l = generateLevel(seed, n, 'facility');
+          const key = l.rooms.find((r) => r.kind === 'key');
+          const deepest = Math.max(...l.rooms.filter((r) => r.kind === 'normal' || r.kind === 'key').map((r) => r.dist));
+          if (key.dist < deepest - 1) out.deep = false;
+        }
+      }
+      return out;
+    });
+    check(route.ambush === 0, `the solo opener's keycard spawns no ambush (${route.ambush} spawned)`);
+    check(route.reachedTop && route.stayedUp, 'after a ride the lift stays up while nobody waits below (no open shaft in the ledge)');
+    check(route.deep, 'sectors 1–2 keep the keycard in one of the deepest rooms (the one nearest the exit)');
+    await rp.close();
+  }
+
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
   // Desktop defaults to 480 lines, touch to 320 (above), still cycled in

@@ -2273,6 +2273,10 @@ export class Game {
     }
     // a boss sector's key came off the boss: that fight was the response
     if (this.level.boss) return;
+    // the solo opener has no keycard ambush: a quarter of 0.3.17's Player
+    // Fit Test players were lost between the keycard and the red door in
+    // sector 1, few of them dying (co-op keeps it: coop.mjs plays sector 1)
+    if (this.levelIndex === 1 && !this.net) return;
     const keyRoom = this.level.rooms.find((r) => r.kind === 'key');
     if (!keyRoom) return;
     const specs: EnemySpec[] = [];

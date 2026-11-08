@@ -125,6 +125,13 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-11-08 — From the 0.3.17 Player Fit Test's route events (4:47):
+  the lift stays up after a ride (1 in 5 who rode it in sector 1 ended back
+  below the ledge — the deck dropped after 3.5 s and left an open shaft);
+  sectors 1–2 put the keycard in the deepest room nearest the exit (walk
+  back 57 → 28 steps in sector 1, 87 → 36 in sector 2); no keycard ambush
+  in the solo opener (a quarter lost between key and door in sectors 1–2).
+
 - 2026-11-08 — No ad before the first game of a page load (Poki). The
   device split of the third Web Fit Test: phones played ~1 min LONGER than
   desktop; desktop lost 30% by minute 2 (phones 17%) and ~1 in 10 never
