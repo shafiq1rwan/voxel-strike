@@ -712,8 +712,8 @@ export class Game {
     if (this.level.theme === 'biofoundry' && !this.preview) storageSet(BIOFOUNDRY_SEEN_KEY, '1');
     if (this.level.theme === 'geothermal' && !this.preview) storageSet(GEOTHERMAL_SEEN_KEY, '1');
     if (!this.preview) this.skinStat('reached', this.levelIndex);
-    // a fresh attempt at a sector: no keycard checkpoint yet, revive available
-    this.keyCheckpoint = null;
+    // a fresh attempt at a sector: no midway / keycard checkpoint yet, revive available
+    this.retryPoint = null;
     this.revivesUsed = 0;
     this.player.spawnAt(this.level.spawn.x, this.level.spawn.y, this.level.spawn.z);
     this.safePos.set(0, 0, 0);
@@ -848,13 +848,14 @@ export class Game {
   /** run state at the current sector's start (retry restores it) */
   private checkpoint: Checkpoint | null = null;
   /**
-   * Mid-sector checkpoint taken when the red keycard is grabbed (solo only).
-   * Retrying from it is IN PLACE: the world stays as you left it (kills,
-   * opened doors, taken pickups), you stand where you took the key, still
-   * holding it, with gear no worse than you had then. Never persisted —
-   * Continue resumes at the sector start.
+   * Mid-sector retry point (solo only): the MIDWAY room (`LevelData.midRoom`,
+   * sector 2 on, the first time you walk into it) or, later, the red keycard,
+   * which replaces it. Retrying from it is IN PLACE: the world stays as you
+   * left it (kills, opened doors, taken pickups), you stand where it was
+   * taken (still holding the key for a keycard one), with gear no worse than
+   * you had then. Never persisted — Continue resumes at the sector start.
    */
-  private keyCheckpoint: { cp: Checkpoint; x: number; y: number; z: number; yaw: number } | null = null;
+  private retryPoint: { kind: 'mid' | 'key'; cp: Checkpoint; x: number; y: number; z: number; yaw: number } | null = null;
   /** revives spent on this sector attempt (1 allowed, 2 with Second Wind; a retry gives them back) */
   private revivesUsed = 0;
   /** perks picked this run (sector-clear screen); kept by retry / save / Continue */
@@ -1392,7 +1393,7 @@ export class Game {
       sector: this.levelIndex,
       unit: this.endless ? 'depth' : 'sector',
       killer: this.player.lastHitBy,
-      keycard: this.keyCheckpoint !== null,
+      checkpoint: this.retryPoint?.kind ?? null,
       revive,
       scrap: this.preview ? undefined : { gained: this.attemptScrap, total: this.upgrades.scrap },
       goal: this.preview ? undefined : this.upgrades.nextGoal(),
@@ -1401,7 +1402,7 @@ export class Game {
       },
       onRetry: () => {
         if (this.state !== 'dead') return;
-        if (this.keyCheckpoint) this.afterBreak((ad) => this.retryFromKeycard(ad));
+        if (this.retryPoint) this.afterBreak((ad) => this.retryFromPoint(ad));
         else this.afterBreak((ad) => this.retrySector(ad));
       },
       onRestart: () => {
@@ -1451,11 +1452,12 @@ export class Game {
   }
 
   /**
-   * Retry from the keycard, in place: the world is untouched, you stand where
-   * you took the key (still holding it) with gear no worse than you had then.
+   * Retry from the midway room or the keycard, in place: the world is
+   * untouched, you stand where the checkpoint was taken (still holding the key
+   * for a keycard one) with gear no worse than you had then.
    */
-  private retryFromKeycard(adShown: boolean): void {
-    const k = this.keyCheckpoint;
+  private retryFromPoint(adShown: boolean): void {
+    const k = this.retryPoint;
     if (!k) {
       this.retrySector(adShown);
       return;
@@ -1465,12 +1467,13 @@ export class Game {
     for (const key of Object.keys(pl.ammo) as (keyof typeof pl.ammo)[]) {
       pl.ammo[key] = Math.min(pl.ammoMax[key], Math.max(pl.ammo[key], k.cp.ammo[key] ?? 0));
     }
-    pl.keys.add('red');
-    // a keycard retry is a fresh attempt at the rest of the sector: revive comes back
+    if (k.kind === 'key') pl.keys.add('red');
+    // a checkpoint retry is a fresh attempt at the rest of the sector: revive comes back
     this.revivesUsed = 0;
     this.measureStart();
     this.attemptScrap = 0;
-    this.bringBack(k.x, k.y, k.z, k.yaw, Math.max(60, k.cp.health), 'Back at the keycard. The red door is still waiting.', adShown);
+    this.bringBack(k.x, k.y, k.z, k.yaw, Math.max(60, k.cp.health),
+      k.kind === 'key' ? 'Back at the keycard. The red door is still waiting.' : 'Back at the checkpoint. The keycard is further in — follow the arrow.', adShown);
   }
 
   /** shared by revive and keycard retry: alive again at (x, y, z) without rebuilding the level */
@@ -2268,7 +2271,7 @@ export class Game {
     // solo: the keycard is a checkpoint (co-op has no death screen to use it)
     if (!this.net) {
       const p = this.player.pos;
-      this.keyCheckpoint = { cp: this.makeCheckpoint(this.levelIndex), x: p.x, y: p.y, z: p.z, yaw: this.player.yaw };
+      this.retryPoint = { kind: 'key', cp: this.makeCheckpoint(this.levelIndex), x: p.x, y: p.y, z: p.z, yaw: this.player.yaw };
       this.hud.message('Checkpoint — you will retry from the keycard.');
     }
     // a boss sector's key came off the boss: that fight was the response
@@ -2319,9 +2322,40 @@ export class Game {
     if (this.bossEnemy?.alive && !this.player.hasKey('red')) return 'boss';
     const exitDoor = this.doors.find((d) => d.spec.locked === 'red');
     if (exitDoor && exitDoor.locked) return this.player.hasKey('red') ? 'door' : 'key';
-    // up on the exit ledge (the lift's top floor) → last step
+    // up on the exit ledge (the lift's top floor) → last step. Only STANDING
+    // up there in the exit room counts, and only landing below it again goes
+    // back: height alone flipped it on a jump off the 2-high crate stack at
+    // the ledge's foot (0.3.18 still sent route N pad — "back below the
+    // ledge" — for ~14% of lift rides, the lift no longer dropping).
     const ledgeY = this.level.elevator ? this.level.elevator.highY - 0.4 : 3.6;
-    return this.player.pos.y - this.player.half.y > ledgeY ? 'pad' : 'lift';
+    const pl = this.player;
+    const feet = pl.pos.y - pl.half.y;
+    if (this.objStage === 'pad') return pl.onGround && feet < ledgeY ? 'lift' : 'pad';
+    const room = this.level.rooms.find((r) => r.kind === 'exit');
+    const inRoom = !room || (pl.pos.x >= room.x && pl.pos.x <= room.x + room.w && pl.pos.z >= room.z && pl.pos.z <= room.z + room.d);
+    return pl.onGround && feet > ledgeY && inRoom ? 'pad' : 'lift';
+  }
+
+  /**
+   * Solo, sector 2 on, before the keycard: walking into the MIDWAY room
+   * (`LevelData.midRoom`, half way along the route to the keycard room) the
+   * first time sets an in-place retry point. 0.3.18's Player Fit Test lost
+   * ~6 in 10 who started sector 2 before its keycard, and a death there
+   * replayed the whole 11–13-room sector.
+   */
+  private checkMidway(): void {
+    if (this.retryPoint || this.net || this.preview || this.levelIndex < 2) return;
+    const id = this.level.midRoom;
+    if (id === null || id === undefined || this.player.dead || !this.player.onGround) return;
+    if (this.player.hasKey('red')) return;
+    const r = this.level.rooms[id];
+    const p = this.player.pos;
+    // a step inside, not on the threshold
+    if (!r || p.x < r.x + 1 || p.x > r.x + r.w - 1 || p.z < r.z + 1 || p.z > r.z + r.d - 1) return;
+    this.retryPoint = { kind: 'mid', cp: this.makeCheckpoint(this.levelIndex), x: p.x, y: p.y, z: p.z, yaw: this.player.yaw };
+    this.hud.message('Checkpoint — halfway to the keycard.');
+    this.hud.streak('CHECKPOINT');
+    this.audio.play('roomClear');
   }
 
   private objectiveTarget(stage: ObjectiveStage): { x: number; z: number } | null {
@@ -2933,6 +2967,8 @@ export class Game {
         this.secretGlint(dt);
       }
     }
+
+    if (this.state === 'playing') this.checkMidway();
 
     // exit pad check: standing on an ExitPad block (either player in co-op;
     // the host is the judge)

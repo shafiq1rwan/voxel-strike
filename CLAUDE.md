@@ -119,18 +119,25 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   changes are host-local and not replicated.
   Solo restarts NEVER reload the page: every sector start captures a
   `Checkpoint` (seed, score, health/armor/ammo, weapon loadout, run totals);
-  death (`showDeathScreen`) offers Retry — from the red keycard if it was
-  taken this attempt (`keyCheckpoint`, captured in `onKeyPickup`, solo only:
-  `retryFromKeycard` is IN PLACE, world untouched, back where the key was
-  taken, still holding it, gear never worse than then), else the sector
+  death (`showDeathScreen`) offers Retry — from the in-memory `retryPoint`
+  if one was taken this attempt (solo only): the red keycard (`kind: 'key'`,
+  captured in `onKeyPickup`) or, before it, the MIDWAY room (`kind: 'mid'`,
+  `checkMidway`, sector 2 on, not previews: the first step inside
+  `LevelData.midRoom` — levelgen's room half way along the spawn → keycard
+  room path, no RNG, only when that path is 3+ rooms; ~6 in 10 who started
+  sector 2 in the 0.3.18 Player Fit Test never reached its keycard). The
+  keycard replaces it. `retryFromPoint` is IN PLACE, world untouched, back
+  where it was taken (still holding the key for a keycard one), gear never
+  worse than then; the button reads *Retry from keycard* / *Retry from
+  checkpoint* — else the sector
   (`retrySector` restores the sector checkpoint, health floored at 60) —
-  plus Restart sector when a keycard checkpoint exists, New run, and a
+  plus Restart sector when a retry point exists, New run, and a
   Revive in place once per sector attempt (`reviveUsed`; a retry gives it
   back): free on web, a Poki `rewardedBreak` that pays out ONLY when the
   video played and is hidden when an ad blocker removed the SDK. Revive and
-  keycard retry share `bringBack()`: 60 hp floor, 2.5s overshield, nearby
+  checkpoint retry share `bringBack()`: 60 hp floor, 2.5s overshield, nearby
   enemies `repel()`-ed (woken, attack cancelled, shoved, dazed 0.7s; an
-  armed ticker is left to blow into the shield). The keycard checkpoint is
+  armed ticker is left to blow into the shield). The retry point is
   never persisted; from sector 2 on the sector checkpoint is also saved to localStorage
   (`voxelstrike-run`, same key as the old Poki build) so the title offers
   "Continue · Sector N" and the pause menu "Save & quit to menu"
@@ -212,7 +219,10 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   `hud.secretFound()` (gold SECRET FOUND stamp). The HUD
   objective tracker is driven by `updateObjective()` each frame:
   `objectiveStage()` derives key → door → lift → pad from game state (pad =
-  feet above the lift's highY − 0.4) and the arrow points at
+  STANDING in the exit room with the feet above the lift's highY − 0.4; back
+  to lift only on landing below that — height alone flipped it on a jump off
+  the 2-high crate stack at the ledge's foot, so `route N pad` over-counted
+  falls) and the arrow points at
   `objectiveTarget()` (pad position comes from `LevelData.exitPad`).
 - `src/world/world.ts` — flat `Uint8Array` voxel grid, DDA raycasts, baked RGB
   light grid (BFS from lamp blocks), per-voxel HP for destructibles.

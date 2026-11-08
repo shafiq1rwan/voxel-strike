@@ -2152,7 +2152,8 @@ export class HUD {
     unit?: 'sector' | 'depth';
     /** what landed the killing hit (`Player.lastHitBy`): the KILLED BY card */
     killer?: string;
-    keycard: boolean;
+    /** the retry point in hand: the midway room, the keycard, or none (the sector) */
+    checkpoint: 'mid' | 'key' | null;
     revive: 'ad' | 'free' | null;
     /** scrap from this attempt and the total to spend */
     scrap?: { gained: number; total: number };
@@ -2165,13 +2166,15 @@ export class HUD {
     onNewRun: () => void;
   }): void {
     const unit = o.unit ?? 'sector';
-    const retryLabel = (o.keycard ? 'Retry from keycard' : `Retry ${unit} ${o.sector}`);
+    const retryLabel = o.checkpoint === 'key' ? 'Retry from keycard' : o.checkpoint === 'mid' ? 'Retry from checkpoint' : `Retry ${unit} ${o.sector}`;
     const revive = o.revive
       ? `<button id="revive-btn" class="tbtn tbtn-revive">${o.revive === 'ad' ? `${ICONS.ad(15)}<span>Revive &middot; Watch ad</span>` : '<span>Revive here</span>'}</button>`
       : '';
     const hints: string[] = [];
     if (o.revive) hints.push(o.revive === 'ad' ? 'Revive: watch a video, get up where you fell (once per sector)' : 'Revive: get up where you fell (once per sector)');
-    hints.push(o.keycard ? 'Retry: back at the keycard with the gear you had' : 'Retry: the sector restarts with the gear you brought in');
+    hints.push(o.checkpoint === 'key' ? 'Retry: back at the keycard with the gear you had'
+      : o.checkpoint === 'mid' ? 'Retry: back at the halfway checkpoint with the gear you had'
+      : 'Retry: the sector restarts with the gear you brought in');
     hints.push('ENTER / SPACE to retry');
     this.showButtonScreen(`
       <h1>YOU DIED</h1>
@@ -2185,7 +2188,7 @@ export class HUD {
           <button id="retry-btn" class="tbtn tbtn-primary">${retryLabel}</button>
         </div>
         <div class="tbtn-row">
-          ${o.keycard ? `<button id="restart-btn" class="tbtn tbtn-quiet">Restart ${unit} ${o.sector}</button>` : ''}
+          ${o.checkpoint ? `<button id="restart-btn" class="tbtn tbtn-quiet">Restart ${unit} ${o.sector}</button>` : ''}
           ${o.onUpgrades ? `<button id="upgrades-btn" class="tbtn tbtn-quiet${o.goal?.ready ? ' upg-ready' : ''}">Upgrades</button>` : ''}
           <button id="newrun-btn" class="tbtn tbtn-quiet">New run</button>
         </div>

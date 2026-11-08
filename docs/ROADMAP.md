@@ -125,6 +125,14 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-11-08 — From the 0.3.18 Player Fit Test (5:03; route events show
+  more players through sectors 1–2 than 0.3.17 — sector 2 keycards 12 → 19
+  per 100 loads — but ~6 in 10 who started sector 2 never reached its
+  keycard): a MIDWAY checkpoint from sector 2 (the room half way to the
+  keycard room; a death after it retries in place there, like the keycard);
+  the pad objective stage now needs you standing on the ledge (a jump off
+  the crate stack at its foot counted as "back below the ledge").
+
 - 2026-11-08 — From the 0.3.17 Player Fit Test's route events (4:47):
   the lift stays up after a ride (1 in 5 who rode it in sector 1 ended back
   below the ledge — the deck dropped after 3.5 s and left an open shaft);

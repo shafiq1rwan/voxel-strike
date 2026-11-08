@@ -64,7 +64,7 @@ player on the boarding apron for visual review; ordinary spawns are unchanged.
  title ──► playing ◄──► paused (Esc, pause button, pointer lock lost, graphics lost)
             │  │
             │  └──► dead ──► Revive here ─────────► playing   (in place, once per attempt)
-            │               ├► Retry from keycard ─► playing   (in place, if the key was taken)
+            │               ├► Retry from keycard / checkpoint ─► playing (in place: the key, or the midway room)
             │               ├► Retry / Restart sector ► playing (sector rebuilt)
             │               └► New run ────────────► playing   (solo only; co-op respawns instead)
             │
@@ -140,8 +140,10 @@ Every sector entry goes through `Game.enterSector()`:
    texture, so nothing compiles on first use mid-fight.
 6. **Checkpoint**: score, health, armor, ammo and loadout at sector entry,
    so *Retry sector* can restore it; from sector 2 on it's also saved to
-   localStorage for *Continue*. A second, in-memory checkpoint is taken when
-   the red keycard is grabbed (solo): *Retry from keycard* and *Revive* don't
+   localStorage for *Continue*. A second, in-memory retry point is taken
+   (solo) on the first step into the MIDWAY room (sector 2 on,
+   `LevelData.midRoom`) and replaced when the red keycard is grabbed:
+   *Retry from checkpoint* / *Retry from keycard* and *Revive* don't
    rebuild anything — `bringBack()` stands the player up in the live world
    with a 60 hp floor, a 2.5 s overshield and nearby enemies repelled.
 

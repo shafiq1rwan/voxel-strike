@@ -95,6 +95,12 @@ export interface LevelData {
   responseCount?: number;
   /** sector 1: a free-standing crate by the spawn that always holds a supply (teaches "crates break") */
   starterCrate?: { x: number; y: number; z: number } | null;
+  /**
+   * The MIDWAY room: on the route from the spawn to the keycard room, about
+   * half way (only when that route is 3+ rooms long). Walking into it first
+   * (solo, sector 2 on) sets a retry point like the keycard's.
+   */
+  midRoom?: number | null;
   /** Build 2: what each dressed Facility room is (office / storage / server) */
   roomPurposes?: Array<{ roomId: number; purpose: RoomPurpose }>;
   elevator: ElevatorSpec | null;
@@ -339,6 +345,25 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     }
   }
   keyRoom.kind = 'key';
+
+  // the midway room: walk back from the keycard room toward the spawn (one
+  // step nearer each time, lowest id on ties) and take the room half way.
+  // Pure graph walk, no RNG. The 0.3.18 Player Fit Test lost ~6 in 10
+  // players who started sector 2 before its keycard, and a death there
+  // replayed the whole sector.
+  let midRoom: number | null = null;
+  if (keyRoom.dist >= 3) {
+    const path = [keyRoom.id];
+    while (rooms[path[path.length - 1]].dist > 0) {
+      const cur = rooms[path[path.length - 1]];
+      const back = adjacency.get(cur.id)!.filter((nb) => rooms[nb].dist === cur.dist - 1).sort((a, b) => a - b)[0];
+      if (back === undefined) break;
+      path.push(back);
+    }
+    const want = Math.ceil(keyRoom.dist / 2);
+    const mid = path.find((id) => rooms[id].dist === want);
+    if (mid !== undefined && rooms[mid].kind !== 'spawn' && rooms[mid].kind !== 'exit') midRoom = mid;
+  }
 
   // -- carve rooms ----------------------------------------------------------
   const carveAir = (x: number, y: number, z: number): void => {
@@ -1244,6 +1269,7 @@ function generateLevelOnce(seed: number, difficulty: number, theme: LevelTheme, 
     boss,
     ...(response ? { responseKinds: response.kinds, responseCount: response.count } : {}),
     starterCrate,
+    midRoom,
     ...(architecture ? { architecture, roomPurposes } : {}),
   };
 }

@@ -1984,6 +1984,85 @@ try {
     await rp.close();
   }
 
+  // --- 28b. the midway checkpoint + the ledge stage (0.3.18 Player Fit Test:
+  // ~6 in 10 who started sector 2 never reached its keycard; route N pad
+  // still fired for ~14% of lift rides) ---
+  {
+    const mp = await browser.newPage();
+    mp.on('pageerror', (err) => errors.push(`[midway pageerror] ${err.message}`));
+    await mp.setViewport({ width: 1280, height: 720 });
+    await mp.goto(URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    await mp.waitForSelector('#start-btn');
+    await mp.click('#start-btn');
+    await new Promise((r) => setTimeout(r, 900));
+    const setup = await mp.evaluate(async () => {
+      const g = window.__voxelstrike;
+      g.levelIndex = 2; g.buildLevel(); g.state = 'playing'; g.input.locked = true; g.hud.hideScreen();
+      for (const e of g.enemies.list) { e.update = () => {}; e.pos.y = -50; }
+      const out = { mid: g.level.midRoom };
+      const r = g.level.rooms[g.level.midRoom];
+      const key = g.level.rooms.find((q) => q.kind === 'key');
+      out.between = !!r && r.dist > 0 && r.dist < key.dist && r.kind !== 'exit';
+      // nothing at the spawn
+      await new Promise((res) => setTimeout(res, 300));
+      out.atSpawn = g.retryPoint?.kind ?? null;
+      // walk into the midway room
+      g.player.spawnAt(r.cx + 0.5, 2.05, r.cz + 0.5);
+      for (let i = 0; i < 40 && !g.retryPoint; i++) await new Promise((res) => setTimeout(res, 50));
+      out.kind = g.retryPoint?.kind ?? null;
+      out.x = g.player.pos.x; out.z = g.player.pos.z;
+      out.msg = document.querySelector('#message')?.textContent ?? '';
+      // wander back to the spawn and die
+      g.player.spawnAt(g.level.spawn.x, g.level.spawn.y, g.level.spawn.z);
+      g.player.health = 0; g.player.dead = true; g.onPlayerDeath();
+      return out;
+    });
+    check(setup.mid !== null && setup.mid !== undefined && setup.between, `sector 2 has a midway room between the spawn and the keycard (${setup.mid})`);
+    check(setup.atSpawn === null && setup.kind === 'mid', `walking into it (not the spawn) sets a checkpoint (${setup.atSpawn} → ${setup.kind}, "${setup.msg}")`);
+    let armed = false;
+    for (let i = 0; i < 40 && !armed; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      armed = await mp.evaluate(() => !!document.querySelector('#retry-btn') && !document.querySelector('.screen.arming'));
+    }
+    const ds = await mp.evaluate(() => ({ retry: document.querySelector('#retry-btn')?.textContent ?? '', restart: document.querySelector('#restart-btn')?.textContent ?? '' }));
+    check(armed && /checkpoint/i.test(ds.retry) && /restart sector 2/i.test(ds.restart), `death after it: "${ds.retry}" + "${ds.restart}"`);
+    await mp.evaluate(() => document.querySelector('#retry-btn').click());
+    await new Promise((r) => setTimeout(r, 500));
+    const back = await mp.evaluate(() => {
+      const g = window.__voxelstrike;
+      return { state: g.state, idx: g.levelIndex, x: g.player.pos.x, z: g.player.pos.z, hp: g.player.health, key: g.player.hasKey('red'), kind: g.retryPoint?.kind };
+    });
+    check(back.state === 'playing' && back.idx === 2 && Math.hypot(back.x - setup.x, back.z - setup.z) < 0.6 && back.hp >= 60 && !back.key,
+      `Retry from checkpoint → back in the midway room, no key, hp ${back.hp}`);
+    const stage = await mp.evaluate(() => {
+      const g = window.__voxelstrike;
+      const out = {};
+      // the keycard replaces it
+      g.player.keys.add('red'); g.onKeyPickup();
+      out.keyKind = g.retryPoint?.kind;
+      // the exit ledge stage: standing on the ledge, not just high up
+      const door = g.doors.find((d) => d.spec.locked === 'red'); door.locked = null;
+      const pl = g.player, h = pl.half.y, pad = g.level.exitPad;
+      const exitRoom = g.level.rooms.find((r) => r.kind === 'exit');
+      g.objStage = 'lift';
+      pl.pos.set(exitRoom.cx + 0.5, 3.6 + h + 0.6, exitRoom.cz + 0.5); pl.onGround = false;
+      out.jumpHigh = g.objectiveStage(); // a jump off the crate stack
+      pl.pos.set(pad.x, pad.y + h, pad.z); pl.onGround = true;
+      out.onLedge = g.objectiveStage();
+      g.objStage = 'pad';
+      pl.pos.set(pad.x, 3 + h, pad.z); pl.onGround = false;
+      out.airborne = g.objectiveStage(); // a hop on the ledge never counts as falling off
+      pl.pos.set(exitRoom.cx + 0.5, 1 + h, exitRoom.cz + 0.5); pl.onGround = true;
+      out.landedBelow = g.objectiveStage();
+      g.objStage = 'lift';
+      return out;
+    });
+    check(stage.keyKind === 'key', 'taking the keycard replaces the midway checkpoint');
+    check(stage.jumpHigh === 'lift' && stage.onLedge === 'pad' && stage.airborne === 'pad' && stage.landedBelow === 'lift',
+      `the pad stage means standing on the ledge (jump ${stage.jumpHigh}, ledge ${stage.onLedge}, hop ${stage.airborne}, below ${stage.landedBelow})`);
+    await mp.close();
+  }
+
   // --- 16. main screen + pixelation defaults ---------------------------------
   // Co-op is hidden on the title (like Poki; ?coop shows it for development).
   // Desktop defaults to 480 lines, touch to 320 (above), still cycled in
