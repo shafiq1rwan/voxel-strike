@@ -273,7 +273,8 @@ try {
   check(noVideo.disabled && /no video/i.test(noVideo.text), `the revive button says so and is disabled ("${noVideo.text}")`);
   const sentNow = prog(await calls(page));
   check(sentNow.every((x) => /^measure level [1-7] (fresh-start|start|complete|fail)$/.test(x)), 'revive adds no game events of its own');
-  // a later sector clear in the same load is an ordinary ad break
+  // a later sector clear in the same load is an ordinary ad break — left alone,
+  // the Continue countdown takes the highlighted perk (route N auto)
   {
     const before = (await calls(page)).filter((x) => x === 'commercialBreak').length;
     await page.evaluate(() => {
@@ -287,12 +288,16 @@ try {
       await sleep(100);
       if (await page.evaluate(() => { const b = document.querySelector('.sc-perk'); return !!b && !b.disabled; })) break;
     }
-    await page.evaluate(() => document.querySelector('.sc-perk').click());
-    await sleep(700);
+    const perksBefore = await page.evaluate(() => window.__voxelstrike.perks.size);
+    await sleep(10500); // nobody touches it: the 10 s countdown runs out
     await page.mouse.click(640, 360); // READY → click to continue
     await sleep(400);
-    const after = (await calls(page)).filter((x) => x === 'commercialBreak').length;
+    const all = await calls(page);
+    const after = all.filter((x) => x === 'commercialBreak').length;
     check(after === before + 1, `the second sector clear of a load is an ad break (${after - before})`);
+    check(all.includes('measure route 2 auto') && !all.includes('measure route 2 perk'), 'left alone, the countdown picks for the player: route 2 auto');
+    check((await page.evaluate(() => window.__voxelstrike.perks.size)) === perksBefore + 1 || (await page.evaluate(() => window.__voxelstrike.levelIndex)) === 3,
+      'the countdown took a perk and descended');
   }
 
   // endless descent (past sector 7): depths get their own `endless` bucket, capped at 20;

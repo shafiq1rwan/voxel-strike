@@ -2542,7 +2542,7 @@ export class Game {
         nextSector: this.levelIndex + 1,
         saved: true,
         perks: offer.map((id) => offerDef(id)),
-        onPick: (id) => this.pickPerk(id),
+        onPick: (id, auto) => this.pickPerk(id, auto),
         onContinue: () => this.descendFromClear(),
         upgrades: this.preview || this.net ? undefined : {
           label: `Upgrades &middot; ${this.upgrades.scrap} scrap`,
@@ -2605,11 +2605,12 @@ export class Game {
     this.hud.updateWeapon(this.weapons);
   }
 
-  private pickPerk(id: OfferId): void {
+  private pickPerk(id: OfferId, auto = false): void {
     if (this.state !== 'intermission') return;
     // got through the clear screen: with the next level's start, this says
-    // whether players leave on the screen or during the ad after it
-    if (!this.preview) poki.measure('route', Math.min(20, this.levelIndex), 'perk');
+    // whether players leave on the screen or during the ad after it (`auto`:
+    // the Continue countdown ran out and took the highlighted perk)
+    if (!this.preview) poki.measure('route', Math.min(20, this.levelIndex), auto ? 'auto' : 'perk');
     if (isReward(id)) {
       this.applyOffer(id);
       this.captureCheckpoint(this.levelIndex + 1);

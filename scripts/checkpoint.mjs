@@ -183,7 +183,9 @@ try {
   await g(() => window.__voxelstrike.win());
   await sleep(200);
   const inter = await g(() => ({ state: window.__voxelstrike.state, text: document.querySelector('.screen')?.textContent ?? '' }));
-  check(inter.state === 'intermission' && /next: sector 2/i.test(inter.text), 'the sector-clear screen points at sector 2');
+  check(inter.state === 'intermission' && /continue to sector 2/i.test(inter.text), 'the sector-clear screen has a Continue to sector 2');
+  check(await g(() => document.querySelectorAll('.sc-perk.sel').length === 1 && document.querySelector('.sc-perk').classList.contains('sel')),
+    'the first perk is highlighted for Continue');
   const sv2 = await save();
   check(sv2 && sv2.sector === 2 && sv2.seed === s1.seed, `save points at sector 2 (${sv2 && sv2.sector})`);
   // the sector-clear screen: a click skips the tally, then a perk card descends

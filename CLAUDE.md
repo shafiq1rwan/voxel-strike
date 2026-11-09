@@ -655,8 +655,14 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   about a quarter of the players who cleared a sector never started the
   next (265 → 207, 79 → 58, 34 → 26). `pickPerk` sends `route N perk`, so
   complete → perk → next start says whether they leave on the clear screen
-  or during the ad; the clear screen's note reads "Next: sector N" (it said
-  progress was saved and you could continue later — an invitation to stop).
+  or during the ad. ANSWER (0.3.20 Player Fit Test, no ad there): THE SCREEN
+  — 246 cleared sector 1, 176 picked a perk, ~3 in 10 left on it. So from
+  0.3.21 the perks and a primary *Continue to sector N* are live after the
+  usual 0.7 s (the tally runs beside them), the first card is highlighted
+  (pointing at a card highlights it and holds the clock), and a 10 s
+  countdown (`SC_AUTO_S` in hud.ts) takes the highlighted perk by itself —
+  sent as `route N auto` instead of `perk`. The "progress saved, continue
+  later" note is gone (an invitation to stop).
   New ad points go through `Game.afterBreak(then(adShown))` (mutes audio,
   releases held keys, eats double clicks); when an ad really played, desktop
   needs a READY "click to continue" before pointer lock (the gesture is

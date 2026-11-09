@@ -260,6 +260,12 @@ body.force-landscape .tscreen { touch-action: none; }
 .sc-perk.chosen .sc-perk-pick { background: #ffd028; color: #0a0c12; }
 .sc-perks.picked .sc-perk:not(.chosen) { opacity: .25; }
 .sc-note { margin-top: 10px; font-size: 11px; letter-spacing: .1em; color: #566076; }
+/* the way on: a primary Continue that takes the highlighted perk, counting down */
+.sc-go-row { margin-top: 14px; display: flex; justify-content: center; }
+#sc-continue { min-width: 300px; }
+#sc-continue .sc-count { display: inline-block; min-width: 2.6em; margin-left: 14px; padding: 1px 5px; border: 1px solid currentColor; border-radius: 2px; letter-spacing: .06em; opacity: .8; }
+.sc-perk.sel:not(.chosen) { border-color: #ffd028; }
+.sc-perk.sel:not(.chosen) .sc-perk-pick { background: rgba(255,208,40,.22); }
 .sc-skip { margin-top: 12px; font-size: 11px; letter-spacing: .24em; color: #566076; }
 .sc-totals { margin: 4px 0; font-size: 13px; color: #8a94a8; }
 .sc-record { color: #ffd028; }
@@ -285,10 +291,12 @@ body.force-landscape .tscreen { touch-action: none; }
   .sc-perk-short { font-size: 10.5px; }
   .sc-perk-pick { margin: 3px -8px 0; padding: 4px 0; font-size: 9.5px; }
   .sc-note, .sc-skip { font-size: 9.5px; margin-top: 6px; }
+  .sc-go-row { margin-top: 8px; }
+  #sc-continue { min-width: 0; width: 100%; padding: 8px 10px; font-size: 13px; }
 }
 /* landscape phone: tally on the left, the perks on the right */
 @media (max-height: 460px) and (min-width: 600px), (orientation: portrait) and (pointer: coarse) and (max-width: 460px) and (min-height: 600px) {
-  .sc-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .sc-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
   .sc-tally { width: 100%; }
   .sc-after { margin-top: 0; }
   .sc-perks { flex-direction: column; gap: 6px; }
@@ -303,6 +311,9 @@ body.force-landscape .tscreen { touch-action: none; }
     align-self: stretch; margin: -5px 0 -5px auto; padding: 0 10px; display: flex; align-items: center;
     border-top: none; border-left: 1px solid rgba(255,208,40,.35); letter-spacing: .14em;
   }
+  #sc-continue, #sc-upgrades-btn { white-space: nowrap; font-size: 10.5px; letter-spacing: .05em; padding: 7px 4px; min-width: 0; width: 100%; box-sizing: border-box; }
+  #sc-continue .sc-count { margin-left: 8px; }
+  .sc-upg-row { margin-top: 6px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sc-rank.stamp { animation: none; opacity: 1; transform: rotate(-6deg); }
@@ -1192,6 +1203,9 @@ input[type=range].tslider:focus-visible { outline: 2px solid #ffd028; outline-of
   .screen .prompt, #hp.low .value, #obj-main.flash, .ns-tag { animation: none; }
 }
 `;
+
+/** seconds before the sector-clear screen's Continue takes the highlighted perk by itself */
+export const SC_AUTO_S = 10;
 
 export class HUD {
   onOverloadAction: (() => void) | null = null;
@@ -2583,7 +2597,8 @@ export class HUD {
     upgrades?: { label: string; open: () => void };
     onTick: () => void;
     onStamp: () => void;
-    onPick?: (id: OfferId) => void;
+    /** auto: the countdown ran out and took the highlighted perk */
+    onPick?: (id: OfferId, auto?: boolean) => void;
     onContinue?: () => void;
     onAgain?: () => void;
     onMenu?: () => void;
@@ -2620,8 +2635,9 @@ export class HUD {
             <span class="sc-perk-pick">${o.touch ? 'PICK' : `PICK <kbd>${i + 1}</kbd>`}</span>
           </button>`).join('')}
         </div>
+        <div class="sc-go-row"><button id="sc-continue" class="tbtn tbtn-primary" disabled>Continue to sector ${o.nextSector}<span class="sc-count">${SC_AUTO_S}s</span></button></div>
         ${o.upgrades ? `<div class="sc-upg-row"><button id="sc-upgrades-btn" class="tbtn tbtn-quiet sc-upg${o.goal?.ready ? ' upg-ready' : ''}" disabled>${o.upgrades.label}</button></div>` : ''}
-        ${o.nextSector ? `<div class="sc-note">Next: sector ${o.nextSector} &mdash; your perk comes with you.</div>` : ''}`;
+        `;
     } else {
       after = `<div class="prompt sc-descend">${tap} TO DESCEND TO SECTOR ${o.nextSector}</div>`;
     }
@@ -2657,21 +2673,54 @@ export class HUD {
     const timer = (fn: () => void, ms: number): void => {
       this.screenTimers.push(window.setTimeout(fn, ms));
     };
+    // the tally's own timers (a skip cancels these, never the countdown)
+    const tally: number[] = [];
+    const ttimer = (fn: () => void, ms: number): void => {
+      const id = window.setTimeout(fn, ms);
+      tally.push(id);
+      this.screenTimers.push(id);
+    };
     let done = false;
     let armed = false;
     let picked = false;
+    // the highlighted perk: Continue (or the countdown) takes it
+    let sel = 0;
+    let hovering = false;
+    let counting = false;
+    let left = SC_AUTO_S;
+    const goBtn = el.querySelector('#sc-continue') as HTMLButtonElement | null;
+    const countEl = el.querySelector('.sc-count') as HTMLElement | null;
+    const select = (i: number): void => {
+      sel = i;
+      cards.forEach((c, k) => c.classList.toggle('sel', k === i));
+    };
+    if (cards.length) select(0);
+    const tick = (): void => {
+      if (picked || !this.screenEl || this.screenEl !== el) return;
+      if (!hovering) left--;
+      if (left <= 0) {
+        pick(sel, true);
+        return;
+      }
+      if (countEl) countEl.textContent = `${left}s`;
+      timer(tick, 1000);
+    };
 
     const arm = (): void => {
+      if (armed) return;
       armed = true;
       for (const c of cards) c.disabled = false;
       el.querySelector('.sc-perks')?.classList.add('armed');
-      for (const b of el.querySelectorAll<HTMLButtonElement>('#again-btn, #menu-btn, #descend-btn, #sc-upgrades-btn')) b.disabled = false;
+      for (const b of el.querySelectorAll<HTMLButtonElement>('#again-btn, #menu-btn, #descend-btn, #sc-upgrades-btn, #sc-continue')) b.disabled = false;
+      if (goBtn && !counting) {
+        counting = true;
+        timer(tick, 1000);
+      }
     };
     const finish = (): void => {
       if (done) return;
       done = true;
-      for (const t of this.screenTimers) window.clearTimeout(t);
-      this.screenTimers.length = 0;
+      for (const t of tally) window.clearTimeout(t);
       for (const r of rowEls) r.classList.add('on');
       scoreEl.textContent = fmt(o.scoreTo);
       rankEl.classList.add('stamp');
@@ -2686,7 +2735,7 @@ export class HUD {
 
     // the tally: rows land, then the score counts up, then the stamp
     const ROW_MS = 160;
-    o.rows.forEach((_, i) => timer(() => {
+    o.rows.forEach((_, i) => ttimer(() => {
       rowEls[i].classList.add('on');
       o.onTick();
     }, 250 + i * ROW_MS));
@@ -2694,32 +2743,53 @@ export class HUD {
     const COUNT_MS = 900;
     const STEPS = 22;
     for (let s = 1; s <= STEPS; s++) {
-      timer(() => {
+      ttimer(() => {
         const k = s / STEPS;
         const ease = 1 - (1 - k) * (1 - k);
         scoreEl.textContent = fmt(Math.round(o.scoreFrom + (o.scoreTo - o.scoreFrom) * ease));
         if (s % 2 === 0) o.onTick();
       }, countAt + (COUNT_MS * s) / STEPS);
     }
-    timer(finish, countAt + COUNT_MS + 120);
+    ttimer(finish, countAt + COUNT_MS + 120);
+    // 0.3.20 Player Fit Test: 246 cleared sector 1, 176 picked a perk — 3 in
+    // 10 left on this screen, with no ad after it. The perks and a Continue
+    // are there from the start (armed after the usual 0.7 s), the tally runs
+    // beside them, and a countdown takes the highlighted perk.
+    if (cards.length && !o.final) {
+      afterEl.classList.add('show');
+      timer(arm, o.instant ? 0 : 700);
+    }
     if (o.instant) finish();
     el.querySelector('#sc-upgrades-btn')?.addEventListener('click', (ev) => {
       ev.stopPropagation();
       if (armed && !picked) o.upgrades?.open();
     });
 
-    const pick = (i: number): void => {
+    const pick = (i: number, auto = false): void => {
       if (!armed || picked || !cards[i]) return;
       picked = true;
       cards[i].classList.add('chosen');
       el.querySelector('.sc-perks')?.classList.add('picked');
       for (const c of cards) c.disabled = true;
-      o.onPick?.(cards[i].dataset.id as OfferId);
+      if (goBtn) goBtn.disabled = true;
+      o.onPick?.(cards[i].dataset.id as OfferId, auto);
     };
-    cards.forEach((c, i) => c.addEventListener('click', (ev) => {
+    cards.forEach((c, i) => {
+      c.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        pick(i);
+      });
+      // pointing at a card makes it the one Continue takes, and holds the countdown
+      c.addEventListener('pointerenter', () => {
+        select(i);
+        hovering = true;
+      });
+      c.addEventListener('pointerleave', () => { hovering = false; });
+    });
+    goBtn?.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      pick(i);
-    }));
+      pick(sel);
+    });
     el.querySelector('#descend-btn')?.addEventListener('click', (ev) => {
       ev.stopPropagation();
       if (armed) o.onDescend?.();
@@ -2744,7 +2814,8 @@ export class HUD {
         return;
       }
       if (ev.code !== 'Enter' && ev.code !== 'NumpadEnter' && ev.code !== 'Space') return;
-      if (!done) finish();
+      if (armed && cards.length && !o.final) pick(sel);
+      else if (!done) finish();
       else if (armed && o.final) (o.onDescend ?? o.onAgain)?.();
       else if (armed && !cards.length) o.onContinue?.();
     };

@@ -125,6 +125,13 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-11-09 — From the 0.3.20 Player Fit Test (4:50; the first two minutes
+  were weaker than 0.3.19's before any change applies, everything from
+  minute 5 on held as well or better): with no ad after the first clear,
+  246 cleared sector 1 and only 176 picked a perk — the clear SCREEN is the
+  leak, not the ad. 0.3.21: perks + a primary Continue live from 0.7 s, the
+  first perk highlighted, a 10 s countdown takes it (`route N auto`).
+
 - 2026-11-09 — From the 0.3.19 Player Fit Test (5:03, 500 players, one
   build): players leave at ~20% a minute through the first six minutes,
   wherever they are, but about a quarter of those who clear a sector never
