@@ -146,7 +146,7 @@ try {
   const route = (await calls(page)).filter((x) => x.startsWith('measure route'));
   check(route.join() === 'measure route 1 key', `the keycard step sends route 1 key once (${route.join(', ')})`);
 
-  // clear sector 1 → intermission → ad → sector 2
+  // clear sector 1 → intermission → sector 2: the first clear of a load has no ad
   await page.evaluate(() => window.__voxelstrike.win());
   await sleep(150);
   c = await calls(page);
@@ -162,13 +162,12 @@ try {
   await page.evaluate(() => {
     const cards = document.querySelectorAll('.sc-perk');
     cards[0].click();
-    cards[1].click(); // impatient double pick during the ad
+    cards[1].click(); // impatient double pick
   });
   await sleep(700);
-  await page.mouse.click(640, 360); // READY → click to continue
-  await sleep(400);
   c = await calls(page);
-  check(c.filter((x) => x === 'commercialBreak').length === breaks + 1, 'one ad per break, even on double click');
+  check(c.filter((x) => x === 'commercialBreak').length === breaks, 'the first sector clear of a load goes on with no ad (and no READY click)');
+  check(c.filter((x) => x === 'measure route 1 perk').length === 1, 'picking the perk sends route 1 perk once');
   check(c.filter((x) => x === 'measure level 2 start').length === 1, 'entering sector 2 sends level 2 start once');
   check((await page.evaluate(() => window.__voxelstrike.levelIndex)) === 2, 'advanced exactly one sector');
   check((await page.evaluate(() => window.__voxelstrike.perks.size)) === 1, 'a double pick still takes exactly one perk');
@@ -274,6 +273,28 @@ try {
   check(noVideo.disabled && /no video/i.test(noVideo.text), `the revive button says so and is disabled ("${noVideo.text}")`);
   const sentNow = prog(await calls(page));
   check(sentNow.every((x) => /^measure level [1-7] (fresh-start|start|complete|fail)$/.test(x)), 'revive adds no game events of its own');
+  // a later sector clear in the same load is an ordinary ad break
+  {
+    const before = (await calls(page)).filter((x) => x === 'commercialBreak').length;
+    await page.evaluate(() => {
+      const g = window.__voxelstrike;
+      g.player.dead = false; g.player.health = 100; g.hud.hideScreen(); g.state = 'playing';
+      g.win();
+    });
+    await sleep(150);
+    await page.evaluate(() => document.querySelector('#sector-clear').click());
+    for (let i = 0; i < 30; i++) {
+      await sleep(100);
+      if (await page.evaluate(() => { const b = document.querySelector('.sc-perk'); return !!b && !b.disabled; })) break;
+    }
+    await page.evaluate(() => document.querySelector('.sc-perk').click());
+    await sleep(700);
+    await page.mouse.click(640, 360); // READY → click to continue
+    await sleep(400);
+    const after = (await calls(page)).filter((x) => x === 'commercialBreak').length;
+    check(after === before + 1, `the second sector clear of a load is an ad break (${after - before})`);
+  }
+
   // endless descent (past sector 7): depths get their own `endless` bucket, capped at 20;
   // sectors 6-7 (the Geothermal Core) are still campaign `level` events
   await page.evaluate(() => {

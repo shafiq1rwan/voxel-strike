@@ -183,7 +183,7 @@ try {
   await g(() => window.__voxelstrike.win());
   await sleep(200);
   const inter = await g(() => ({ state: window.__voxelstrike.state, text: document.querySelector('.screen')?.textContent ?? '' }));
-  check(inter.state === 'intermission' && inter.text.includes('Progress saved'), 'intermission says progress is saved');
+  check(inter.state === 'intermission' && /next: sector 2/i.test(inter.text), 'the sector-clear screen points at sector 2');
   const sv2 = await save();
   check(sv2 && sv2.sector === 2 && sv2.seed === s1.seed, `save points at sector 2 (${sv2 && sv2.sector})`);
   // the sector-clear screen: a click skips the tally, then a perk card descends

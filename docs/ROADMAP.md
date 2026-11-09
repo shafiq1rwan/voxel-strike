@@ -125,6 +125,14 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-11-09 — From the 0.3.19 Player Fit Test (5:03, 500 players, one
+  build): players leave at ~20% a minute through the first six minutes,
+  wherever they are, but about a quarter of those who clear a sector never
+  start the next (265 → 207, 79 → 58, 34 → 26). 0.3.20: the first sector
+  clear of a page load has no ad, a `route N perk` event splits the clear
+  screen from the ad, and the clear screen's "progress saved — continue
+  later" note now says "Next: sector N".
+
 - 2026-11-08 — From the 0.3.18 Player Fit Test (5:03; route events show
   more players through sectors 1–2 than 0.3.17 — sector 2 keycards 12 → 19
   per 100 loads — but ~6 in 10 who started sector 2 never reached its

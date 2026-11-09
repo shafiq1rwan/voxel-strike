@@ -2621,7 +2621,7 @@ export class HUD {
           </button>`).join('')}
         </div>
         ${o.upgrades ? `<div class="sc-upg-row"><button id="sc-upgrades-btn" class="tbtn tbtn-quiet sc-upg${o.goal?.ready ? ' upg-ready' : ''}" disabled>${o.upgrades.label}</button></div>` : ''}
-        ${o.saved ? `<div class="sc-note">Progress saved &mdash; you can continue from sector ${o.nextSector} later. The perk carries over.</div>` : ''}`;
+        ${o.nextSector ? `<div class="sc-note">Next: sector ${o.nextSector} &mdash; your perk comes with you.</div>` : ''}`;
     } else {
       after = `<div class="prompt sc-descend">${tap} TO DESCEND TO SECTOR ${o.nextSector}</div>`;
     }

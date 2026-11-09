@@ -926,6 +926,13 @@ export class Game {
 
   /** a game has been started this page load (the first one skips the ad) */
   private firstRunStarted = false;
+  /**
+   * The first sector clear of a page load goes on without an ad. In the
+   * 0.3.19 Player Fit Test about a quarter of the players who cleared a
+   * sector never started the next one (265 → 207, 79 → 58, 34 → 26) — more
+   * than the ~20%-a-minute everyone leaves at, over a screen and an ad.
+   */
+  private firstClearDone = false;
 
   /**
    * Title PLAY / Continue: NO ad before the first game of a page load. On
@@ -2600,6 +2607,9 @@ export class Game {
 
   private pickPerk(id: OfferId): void {
     if (this.state !== 'intermission') return;
+    // got through the clear screen: with the next level's start, this says
+    // whether players leave on the screen or during the ad after it
+    if (!this.preview) poki.measure('route', Math.min(20, this.levelIndex), 'perk');
     if (isReward(id)) {
       this.applyOffer(id);
       this.captureCheckpoint(this.levelIndex + 1);
@@ -2615,9 +2625,17 @@ export class Game {
 
   /** leave the sector-clear screen for the next sector (the terminal after sector 3) */
   private descendFromClear(): void {
-    if (this.state !== 'intermission') return;
-    if (this.levelIndex === FACILITY_SECTORS) this.afterBreak((ad) => this.descendToBiofoundry(ad));
-    else this.afterBreak((ad) => this.nextLevel(ad));
+    if (this.state !== 'intermission' || this.breakPending) return;
+    const go = (ad: boolean): void => {
+      if (this.levelIndex === FACILITY_SECTORS) this.descendToBiofoundry(ad);
+      else this.nextLevel(ad);
+    };
+    if (!this.firstClearDone) {
+      this.firstClearDone = true;
+      go(false);
+      return;
+    }
+    this.afterBreak(go);
   }
 
   private win(): void {

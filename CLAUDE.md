@@ -650,6 +650,13 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   (`titleBreak`; any later `afterBreak` counts as started): on desktop the
   ad + READY click before the first shot lost ~1 in 10 players before a
   minute of play in the 2026-11-08 Web Fit Test, against ~0 on phones.
+  The FIRST SECTOR CLEAR of a page load has no ad either
+  (`firstClearDone` in `descendFromClear`): in the 0.3.19 Player Fit Test
+  about a quarter of the players who cleared a sector never started the
+  next (265 → 207, 79 → 58, 34 → 26). `pickPerk` sends `route N perk`, so
+  complete → perk → next start says whether they leave on the clear screen
+  or during the ad; the clear screen's note reads "Next: sector N" (it said
+  progress was saved and you could continue later — an invitation to stop).
   New ad points go through `Game.afterBreak(then(adShown))` (mutes audio,
   releases held keys, eats double clicks); when an ad really played, desktop
   needs a READY "click to continue" before pointer lock (the gesture is
