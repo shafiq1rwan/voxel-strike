@@ -33,6 +33,7 @@ off the core. The per-file rules and known gotchas live in
 | Input | `core/input.ts`, `core/touch.ts` | Keyboard + pointer-lock mouse; touch joystick/look/buttons/weapon wheel feeding the same `Input` |
 | Physics | `core/physics.ts` | Axis-by-axis AABB vs voxels + dynamic boxes (doors, lift), ray/box tests |
 | Audio | `core/audio.ts`, `core/music.ts` | Every sound synthesized with WebAudio; optional crossfading music loops |
+| Route | `core/route.ts` | The objective arrow's walking route: a distance field flooded from the target over the floor columns (rebuilt on a target / lock change and every 2 s), read each frame for the next doorway or corner to aim at. `ROUTE_ARROW` in game.ts |
 | Settings | `core/settings.ts` | Persisted options (sensitivity, volumes, FOV, resolution, shake, aim assist) |
 | Geothermal monsters | `entities/geothermal-monsters.ts`, `entities/ash-weaver.ts`, `world/rosters.ts` | Sector 6 Vent Stalker + Kiln Drone, sector 7 Cinder Hulk (ground ring) + Ash Weaver (a three-spot heat line on the floor, its marks and spots in a world-space `fx`); `applyGeoRoster` re-casts the generic placements |
 | Biofoundry monsters | `entities/bio-monsters.ts`, `entities/monster-kit.ts` | Sector 4 Vatborn + Spitter (acid glob + floor patch, world-space `fx` beside the rig), sector 5 Carapace (positional plate armour, spike fan, bared core) + the Broodkeeper, whose adds are now Carapaces. `RigKit` is the shared box-rig builder |

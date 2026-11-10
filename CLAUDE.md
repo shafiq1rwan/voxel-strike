@@ -67,6 +67,7 @@ node scripts/perf.mjs       # 60fps guard: gun draws (baked), occlusion cull wit
 node scripts/checkpoint.mjs # run flow, all in place (no reload): retry restores sector-entry gear, free revive in place once per attempt, keycard checkpoint retry (world untouched) + Restart sector, save/Continue from sector 2, quit to menu, new run, GRAPHICS LOST overlay
 node scripts/sector4.mjs <url> [--poki]  # the hand-built ?sector4 preview: route, key gate, door, lift, completion, replay, retry, save isolation, mobile; --poki: the flag is ignored
 node scripts/breach.mjs     # sector 4 (`?sector4` opens it alone): dormant Vatborn in each occupied tank; shoot one → sealed during agitation, real collision gap, liquid gush, it walks out and hunts, releases once
+node scripts/route.mjs [url] # the objective arrow's walking route: sectors 1–7 on three seeds, a body that only steps toward the arrow reaches the keycard (boss on a boss sector), the red door, then the lift without touching a wall; the distance shown is the walk
 node scripts/poki.mjs       # POKI MODE ONLY (npm run dev:poki): stubbed SDK — init/loading order, ad breaks mute audio, gameplayStart/Stop dedupe, measure() events (level 1 fresh-start, level N start/complete/fail — start fills Poki's Started/Completed/Failed/Left columns — endless N start/complete/fail capped at 20, death N <killer> with every fail, playtime N reached at minute marks, upgrade <id> tier<N> on a buy), rewarded revive (ad icon, equal-size beside retry, muted, pays only on a watched video, once per attempt, hidden without the SDK), hidden co-op, boots with SDK blocked
 ```
 
@@ -222,8 +223,21 @@ node scripts/skin-sheets.mjs [outDir]             # render every weapon skin on 
   STANDING in the exit room with the feet above the lift's highY − 0.4; back
   to lift only on landing below that — height alone flipped it on a jump off
   the 2-high crate stack at the ledge's foot, so `route N pad` over-counted
-  falls) and the arrow points at
-  `objectiveTarget()` (pad position comes from `LevelData.exitPad`).
+  falls) and the arrow leads to
+  `objectiveTarget()` (pad position comes from `LevelData.exitPad`) ALONG
+  THE WALKING ROUTE (0.3.23, `ROUTE_ARROW` in game.ts, `src/core/route.ts`
+  `RouteGuide`): a walking-distance field flooded from the target over the
+  floor columns (levelgen's ground rule, 8 neighbours; still-locked doors
+  are walls; crates and barrels are open, the cracked secret wall is NOT —
+  the arrow must never give the secret away), rebuilt when the target or a
+  lock changes and every 2 s (~0.6 ms), and each frame the arrow aims at
+  the furthest cell down that field the body can walk straight to — the
+  next doorway or corner. The distance shown is the walk. The pad stage and
+  anywhere without a route (off the floor grid) keep the straight line. The
+  straight arrow pointed into a wall from the spawn in 20 of 21 layouts,
+  and in the 0.3.22 Player Fit Test 35–54% of the players who started a
+  sector left before its keycard, most alive. `Game.routeDebug` is for
+  tests (`route.mjs`).
 - `src/world/world.ts` — flat `Uint8Array` voxel grid, DDA raycasts, baked RGB
   light grid (BFS from lamp blocks), per-voxel HP for destructibles.
 - `src/world/mesher.ts` — greedy mesher, one mesh per 16×16 chunk column; faces

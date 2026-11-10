@@ -125,6 +125,22 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-11-10 — From the 0.3.22 Player Fit Test (5:14, 524 loads; half the
+  Sentinels in sector 2): it did what it was built for — sector 2 cleared
+  30% → 40% (90 of 223), sector 3 starts 64 → 86, Sentinel deaths 97 → 50 —
+  and the first minutes are the best of any build (76% / 41% / 18% of loads
+  at 1 / 4 / 8 min; 0.3.21: 72 / 36.5 / 17), but the long tail thinned: 11
+  past 20 min and 2 past 30 (0.3.21: 24 and 9). The same shape as 0.3.14,
+  the other soft sector 2 — retries are the committed players' playtime
+  (fails 252 → 170) — so the average stays in the 4:45–5:30 band. Kept as
+  the base. In EVERY sector most who leave do so alive and before the
+  keycard: reached it 65% / 50% / 65% / 46% of starters in sectors 1–4
+  (sector 1: 427 started, 279 reached it, 22 died). The objective arrow
+  pointed straight at the keycard through the walls — into a wall from the
+  spawn in 20 of 21 layouts. 0.3.23 = 0.3.22 with ONE change: the arrow
+  follows the walking route (`core/route.ts`, `ROUTE_ARROW`) and shows the
+  walking distance. Read it by `route N key` / level N starts.
+
 - 2026-11-10 — From the 0.3.21 Player Fit Test (5:02, 543 loads): the
   clear-screen leak is closed (225 cleared sector 1, 224 started sector 2;
   it was 265 → 207), and the curve is 0.3.7's (72% / 36.5% / 16.9% / 10.3%

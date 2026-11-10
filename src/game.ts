@@ -39,6 +39,7 @@ import { decorateEnvironment } from './preview/environments';
 import { decorateSectorLandmarks } from './preview/sector-landmarks';
 import { ENVIRONMENTS, isNewTheme } from './world/environments';
 import { ThrownGuns } from './weapons/thrown';
+import { RouteGuide } from './core/route';
 
 type GameState = 'title' | 'playing' | 'paused' | 'overload' | 'dead' | 'intermission' | 'won';
 
@@ -113,6 +114,12 @@ const OVERLOAD_ENABLED = !POKI && typeof location !== 'undefined' && new URLSear
  * cost playtime. `?play=operative` keeps them either way.
  */
 const OPERATIVE_ARMS = false;
+/**
+ * The objective arrow points along the walking route to the keycard / door /
+ * lift / boss (0.3.23, the only change in that build). false = the straight
+ * line to the target, as in every build before.
+ */
+const ROUTE_ARROW = true;
 
 /** localStorage flag: the first-run control hints have been shown */
 const TUTORIAL_KEY = 'voxelstrike-tutorial-done';
@@ -719,6 +726,7 @@ export class Game {
     this.safePos.set(0, 0, 0);
     this.embedTime = 0;
     this.objStage = null;
+    this.routeKey = ''; // a new world: the arrow's route is rebuilt
     this.player.pitch = 0;
     // face into the level: toward the nearest connected room
     const spawnRoom = this.level.rooms.find((r) => r.kind === 'spawn')!;
@@ -916,6 +924,15 @@ export class Game {
   private tipStep = -1;
   /** current objective step; null forces a refresh (new sector) */
   private objStage: ObjectiveStage | null = null;
+  /**
+   * The objective arrow follows the WALKING route (core/route.ts), not the
+   * straight line through the walls. `ROUTE_ARROW` off = the old arrow.
+   */
+  private readonly route = new RouteGuide();
+  private routeKey = '';
+  private routeAt = 0;
+  /** tests: the arrow's last aim point, and whether it came from the route */
+  routeDebug = { x: 0, z: 0, dist: 0, routed: false };
   /** the EXIT sign over the pad and the ledge railing (generated sectors) */
   private exitArt: ExitArt | null = null;
   private exitProps: ExitRoomProps | null = null;
@@ -2388,6 +2405,25 @@ export class Game {
     }
   }
 
+  /**
+   * Where the arrow aims on the way to `t`: the walking-distance field is
+   * rebuilt when the target or a lock changes and every 2 s (a broken crate,
+   * a wall the Brute smashed), then read every frame.
+   */
+  private routeStep(stage: ObjectiveStage, t: { x: number; z: number }, px: number, pz: number) {
+    let locked = 0;
+    for (const d of this.doors) if (d.locked) locked++;
+    const key = `${this.levelIndex}|${stage}|${Math.floor(t.x)}|${Math.floor(t.z)}|${locked}`;
+    const now = performance.now();
+    if (key !== this.routeKey || now - this.routeAt > 2000) {
+      this.routeKey = key;
+      this.routeAt = now;
+      const blocked = this.doors.filter((d) => d.locked).map((d) => d.spec);
+      this.route.build(this.world, t.x, t.z, blocked);
+    }
+    return this.route.next(px, pz, t.x, t.z);
+  }
+
   /** HUD objective tracker: step label (flashes on change) + arrow/distance */
   private updateObjective(): void {
     const stage = this.objectiveStage();
@@ -2405,13 +2441,26 @@ export class Game {
     if (!t) {
       this.hud.updateCompass(null, 0);
     } else {
+      // the next doorway / corner on the walk there; the pad (up on the
+      // ledge, in sight) and anywhere without a route keep the straight line
+      const px = this.player.pos.x;
+      const pz = this.player.pos.z;
+      const step = ROUTE_ARROW && stage !== 'pad' ? this.routeStep(stage, t, px, pz) : null;
+      const ax = step ? step.x : t.x;
+      const az = step ? step.z : t.z;
+      const dist = step ? step.dist : Math.hypot(t.x - px, t.z - pz);
+      const dbg = this.routeDebug;
+      dbg.x = ax;
+      dbg.z = az;
+      dbg.dist = dist;
+      dbg.routed = !!step;
       // target in view space: forward = (-sin yaw, -cos yaw), right = (cos yaw, -sin yaw)
-      const dx = t.x - this.player.pos.x;
-      const dz = t.z - this.player.pos.z;
+      const dx = ax - px;
+      const dz = az - pz;
       const yaw = this.player.yaw;
       const fwd = dx * -Math.sin(yaw) + dz * -Math.cos(yaw);
       const right = dx * Math.cos(yaw) + dz * -Math.sin(yaw);
-      this.hud.updateCompass((Math.atan2(right, fwd) * 180) / Math.PI, Math.hypot(dx, dz));
+      this.hud.updateCompass((Math.atan2(right, fwd) * 180) / Math.PI, dist);
     }
     this.hud.setKills(this.kills, this.level.totalEnemies);
   }
