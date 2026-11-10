@@ -771,9 +771,13 @@ ROSTERS (`src/world/rosters.ts`, owner's call "same pressure"): levelgen
 still places the 0.3.4 generic slots, then `applyFacilityRoster` re-casts a
 Facility sector's room by room — 1: husks stay, each sentinel slot → a
 Ticker (sector 1 places no ticker nests itself);
-2: every sentinel stays, husk / ticker / brute slots → a Clamp Guard per
-two husks' worth (0.3.8–0.3.14 kept only half the Sentinels and played
-shorter: the committed players who retry left sooner — back in 0.3.15); 3: a Brute per three husks' worth, Wire Leeches for the rest
+2: `SECURITY_SENTINELS` (0.5 in 0.3.22) of the sentinel slots stay, the
+rest come back as one Clamp Guard per two dropped in a room (~18 → ~12
+Sentinels a sector, Guards ~13 either way, ~12% less enemy health);
+husk / ticker / brute slots → a Clamp Guard per two husks' worth. It was 1
+(every Sentinel, as in 0.3.7) in 0.3.15–0.3.21: in the 0.3.21 Player Fit
+Test 224 started sector 2, 67 cleared it, 97 died to a Sentinel. 0.3.22
+changes ONLY this (0.3.8–0.3.14 had 0.5 too, never alone); 3: a Brute per three husks' worth, Wire Leeches for the rest
 and ~60% of the sentinels. Every occupied room keeps ≥ 1, no Tickers in
 sectors 2–3, no RNG used. `facilityBand(n)` picks the roster for endless
 Facility depths; `FACILITY_RESPONSE` → `LevelData.responseKinds/Count`

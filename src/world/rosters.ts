@@ -17,6 +17,19 @@ import type { EnemyKind, EnemySpec } from '../types';
 export type FacilityBand = 1 | 2 | 3;
 
 /**
+ * The share of sector 2's Arc Sentinel slots that stay Sentinels (the rest
+ * come back as one Clamp Guard per two dropped in a room). 1 = every one —
+ * ~18 Sentinels + ~13 Guards a sector —, as in 0.3.7
+ * and 0.3.15–0.3.21; 0.5 = ~12 + ~13, about 12% less enemy health (20
+ * layouts), in 0.3.22, the ONLY change in that build: in the
+ * 0.3.21 Player Fit Test 224 started sector 2, 67 cleared it and 97 died to
+ * a Sentinel — the fixes before it put ~50 more players into sector 2 and
+ * none more out of it. 0.3.8–0.3.14 also used 0.5, but with a 7-damage bolt,
+ * the hands, the Facility looks or 180p beside it, so it was never tested alone.
+ */
+export const SECURITY_SENTINELS = 0.5;
+
+/**
  * ON (owner's call 2026-10-28, "we need them to stay longer"): Facility
  * sectors and endless Facility depths use the per-sector pairs, as in the
  * tested 0.3.7 — the best Player Fit Test so far (5:28). It was switched off
@@ -77,14 +90,15 @@ export function applyFacilityRoster(enemies: EnemySpec[], band: FacilityBand): E
     const slots = [...melee].sort((a, b) => meleeUnits(b.kind, band) - meleeUnits(a.kind, band));
     const units = melee.reduce((s, e) => s + meleeUnits(e.kind, band), 0);
     if (band === 2) {
-      // Security: a Clamp Guard (85 hp) for every two husks' worth; every
-      // Sentinel stays, as in 0.3.7 (5:28 / 5:34). 0.3.8–0.3.14 kept only
-      // half (70 of 171 players in 0.3.7's sector 2 died to one) and their
-      // committed players left sooner: 0.3.14 had 6 players past 30 min to
-      // 0.3.7's 12. A hard sector is retried, not quit, by those who stay.
-      const guards = units > 0 ? Math.max(1, Math.round(units / 2)) : 0;
-      for (let i = 0; i < guards && i < slots.length; i++) out.push(at(slots[i], 'clampGuard'));
-      for (const e of ranged) out.push(e);
+      // Security: a Clamp Guard (85 hp) for every two husks' worth, and
+      // SECURITY_SENTINELS of the Sentinel slots stay Sentinels; every two
+      // dropped in a room (40 hp each) come back as one more Guard (85 hp).
+      const keep = ranged.length ? Math.max(1, Math.round(ranged.length * SECURITY_SENTINELS)) : 0;
+      const dropped = ranged.slice(keep);
+      const guards = (units > 0 ? Math.max(1, Math.round(units / 2)) : 0) + Math.round(dropped.length * 40 / 85);
+      const spots = [...slots, ...dropped];
+      for (let i = 0; i < guards && i < spots.length; i++) out.push(at(spots[i], 'clampGuard'));
+      for (const e of ranged.slice(0, keep)) out.push(e);
       continue;
     }
     // Reactor: a Brute for every three husks' worth, Wire Leeches for the rest

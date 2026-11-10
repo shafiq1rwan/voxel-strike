@@ -125,6 +125,21 @@ Carapace proposals in `reference/sector4-monsters.md` are still open.
 
 ## Done
 
+- 2026-11-10 — From the 0.3.21 Player Fit Test (5:02, 543 loads): the
+  clear-screen leak is closed (225 cleared sector 1, 224 started sector 2;
+  it was 265 → 207), and the curve is 0.3.7's (72% / 36.5% / 16.9% / 10.3%
+  of loads at 1 / 4 / 8 / 12 min; 24 past 20 min, 9 past 30 — 0.3.7 had 22
+  and 12, and those three players are the 26 s). But the ~50 extra players
+  now reaching sector 2 die there: 224 start, 94 reach the keycard, 67
+  clear (0.3.7: 171 → 65), 97 die to an Arc Sentinel; sector 3 starts 64
+  vs 61. Players leave at ~20% a minute for seven minutes, then ~10%.
+  Player Fit Tests read about a minute under the Web Fit Test (0.3.7: 5:28
+  / 5:34 vs 6:37), and one 500-player test can't see less than ~40 s.
+  0.3.22 = 0.3.21 with ONE change: sector 2 keeps half its Sentinels
+  (`SECURITY_SENTINELS` 0.5: ~18 → ~12 a sector, a Clamp Guard per two dropped in a
+  room, ~12% less enemy health, bolt still 10). Read it by sector 2 cleared / started and sector 3 starts,
+  not by the average. 0.3.21 goes to the Web Fit Test.
+
 - 2026-11-09 — From the 0.3.20 Player Fit Test (4:50; the first two minutes
   were weaker than 0.3.19's before any change applies, everything from
   minute 5 on held as well or better): with no ad after the first clear,
